@@ -31,7 +31,7 @@ export function registerSearchCommand(program: Command) {
       if (query) parts.push(query);
       if (opts.title) parts.push(`applicationMetaData.inventionTitle:${opts.title.includes(" ") ? `"${opts.title}"` : opts.title}`);
       if (opts.applicant) parts.push(`applicationMetaData.firstApplicantName:${opts.applicant.includes(" ") ? `"${opts.applicant}"` : opts.applicant}`);
-      if (opts.inventor) parts.push(`applicationMetaData.firstInventorName:${opts.inventor.includes(" ") ? `"${opts.inventor}"` : opts.inventor}`);
+      if (opts.inventor) parts.push(`applicationMetaData.inventorBag.inventorNameText:${opts.inventor.includes(" ") ? `"${opts.inventor}"` : opts.inventor}`);
       if (opts.patent) parts.push(`applicationMetaData.patentNumber:${opts.patent}`);
       if (opts.cpc) parts.push(`applicationMetaData.cpcClassificationBag:${opts.cpc}`);
       if (opts.status) parts.push(`applicationMetaData.applicationStatusCode:${opts.status}`);
