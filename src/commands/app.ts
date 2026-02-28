@@ -205,4 +205,56 @@ export function registerAppCommand(program: Command) {
       const savedPath = await client.downloadDocument(pdfOption.downloadUrl, outPath);
       console.log(`Saved to: ${savedPath}`);
     });
+
+  app
+    .command("download-all")
+    .alias("dl-all")
+    .description("Download entire file wrapper (all PDFs)")
+    .argument("<appNumber>", "Application number")
+    .option("-o, --output <dir>", "Output directory (default: downloads/<appNumber>)")
+    .option("--codes <codes>", "Filter by document codes (comma-separated)")
+    .option("--from <date>", "Filter from date (yyyy-MM-dd)")
+    .option("--to <date>", "Filter to date (yyyy-MM-dd)")
+    .action(async (appNumber, opts) => {
+      const client = createClient({ debug: program.opts().debug });
+      const result = await client.getDocuments(appNumber, {
+        documentCodes: opts.codes,
+        officialDateFrom: opts.from,
+        officialDateTo: opts.to,
+      });
+
+      const docs = result.documentBag;
+      if (!docs?.length) {
+        console.error("No documents found.");
+        process.exit(1);
+      }
+
+      const outDir = opts.output || `downloads/${appNumber}`;
+      const { mkdirSync } = await import("fs");
+      mkdirSync(outDir, { recursive: true });
+
+      const downloadable = docs.filter((d) => d.downloadOptionBag?.some((o) => o.mimeTypeIdentifier === "PDF"));
+      console.log(`\nDownloading ${downloadable.length}/${docs.length} documents to ${outDir}/\n`);
+
+      let downloaded = 0;
+      let failed = 0;
+      for (const doc of downloadable) {
+        const pdfOption = doc.downloadOptionBag.find((o) => o.mimeTypeIdentifier === "PDF")!;
+        const date = doc.officialDate?.split("T")[0] || "undated";
+        const code = doc.documentCode?.replace(/[^a-zA-Z0-9._-]/g, "") || "doc";
+        const filename = `${date}_${code}.pdf`;
+
+        try {
+          await client.downloadDocument(pdfOption.downloadUrl, `${outDir}/${filename}`);
+          downloaded++;
+          const pages = pdfOption.pageTotalQuantity ? ` (${pdfOption.pageTotalQuantity}p)` : "";
+          console.log(`  [${downloaded}/${downloadable.length}] ${filename}${pages} - ${doc.documentCodeDescriptionText}`);
+        } catch (err: any) {
+          failed++;
+          console.error(`  FAILED: ${filename} - ${err.message}`);
+        }
+      }
+
+      console.log(`\nDone: ${downloaded} downloaded, ${failed} failed, ${docs.length - downloadable.length} skipped (no PDF)`);
+    });
 }
