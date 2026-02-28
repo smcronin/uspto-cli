@@ -72,6 +72,16 @@ func initConfig(cmd *cobra.Command) error {
 		color.NoColor = true
 	}
 
+	// Warn early if no API key is configured (skip for dry-run, help, completion).
+	if flagAPIKey == "" && !flagDryRun && !isHelpOrCompletion(cmd) {
+		fmt.Fprintln(os.Stderr, "Warning: no API key configured. Requests will fail with 403.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  Set USPTO_API_KEY in your environment, pass --api-key, or add it to .env")
+		fmt.Fprintln(os.Stderr, "  Get a key: https://data.uspto.gov/apis/getting-started")
+		fmt.Fprintln(os.Stderr, "  Setup guide: https://github.com/sethcronin/uspto-cli/blob/main/docs/api-key-setup.md")
+		fmt.Fprintln(os.Stderr, "")
+	}
+
 	// Set up the API client singleton.
 	opts := []api.ClientOption{
 		api.WithDebug(flagDebug),
@@ -82,6 +92,12 @@ func initConfig(cmd *cobra.Command) error {
 	api.DefaultClient = api.NewClient(flagAPIKey, opts...)
 
 	return nil
+}
+
+// isHelpOrCompletion returns true for commands that don't need an API key.
+func isHelpOrCompletion(cmd *cobra.Command) bool {
+	name := cmd.Name()
+	return name == "help" || name == "completion" || name == "version"
 }
 
 // Execute runs the root command and exits with the appropriate code.
@@ -111,12 +127,14 @@ func handleError(err error) int {
 		case apiErr.StatusCode == 403:
 			code = types.ExitAuthFailure
 			errInfo.Type = "AUTH_FAILURE"
+			errInfo.Hint = "Set USPTO_API_KEY or use --api-key. Get a key at https://data.uspto.gov/apis/getting-started"
 		case apiErr.StatusCode == 404:
 			code = types.ExitNotFound
 			errInfo.Type = "NOT_FOUND"
 		case apiErr.StatusCode == 429:
 			code = types.ExitRateLimited
 			errInfo.Type = "RATE_LIMITED"
+			errInfo.Hint = "Rate limit exceeded. Wait a moment and retry."
 		case apiErr.StatusCode >= 500:
 			code = types.ExitServerError
 			errInfo.Type = "SERVER_ERROR"
@@ -130,6 +148,7 @@ func handleError(err error) int {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 		if errInfo.Type == "AUTH_FAILURE" {
 			fmt.Fprintln(os.Stderr, "Check your API key. Set USPTO_API_KEY or use --api-key.")
+			fmt.Fprintln(os.Stderr, "Need a key? https://data.uspto.gov/apis/getting-started")
 		} else if errInfo.Type == "RATE_LIMITED" {
 			fmt.Fprintln(os.Stderr, "Rate limit exceeded. Wait a moment and retry.")
 		}

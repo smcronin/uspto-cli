@@ -14,10 +14,33 @@ go install github.com/sethcronin/uspto-cli@latest
 # https://github.com/sethcronin/uspto-cli/releases
 ```
 
+## API Key
+
+An API key is required. See the [setup guide](docs/api-key-setup.md) for full instructions.
+
+1. Create an account at [data.uspto.gov](https://data.uspto.gov/apis/getting-started)
+2. Verify your identity through ID.me (one-time)
+3. Copy your key from the [MyODP dashboard](https://data.uspto.gov/myodp)
+
+```bash
+# Add to your shell profile
+export USPTO_API_KEY=your-key-here
+
+# Or create a .env file in your project
+echo "USPTO_API_KEY=your-key-here" > .env
+
+# Or pass directly
+uspto-cli search --api-key your-key-here --title "machine learning"
+```
+
+One key per user — no organization-wide keys. Keys must not be shared (USPTO
+policy). Keys don't expire if used at least once per year. See the
+[USPTO FAQ](https://data.uspto.gov/support/faq) for more details.
+
 ## Quick Start
 
 ```bash
-# Set your API key (get one at https://data.uspto.gov)
+# Set your API key
 export USPTO_API_KEY=your-key-here
 
 # Search patents

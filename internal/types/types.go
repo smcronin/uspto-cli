@@ -35,6 +35,7 @@ type CLIError struct {
 	Code    int    `json:"code"`
 	Type    string `json:"type"`
 	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
 }
 
 // ExitCodes defines differentiated exit codes for agent retry logic.
