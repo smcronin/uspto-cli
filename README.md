@@ -1,131 +1,159 @@
 # uspto-cli
 
-Agent-ready CLI for the [USPTO Open Data Portal](https://data.uspto.gov) API. Search patents, pull file wrappers, browse PTAB proceedings, download documents - all from the terminal.
+Agent-ready CLI for the [USPTO Open Data Portal](https://data.uspto.gov) API. Search patents, pull file wrappers, browse PTAB proceedings, download bulk data — all from the terminal.
 
-**First CLI tool ever built for the data.uspto.gov API.** No existing tools cover this API surface.
+**First CLI tool built for the data.uspto.gov API.** Single static binary, zero dependencies, 40+ API endpoints.
+
+## Install
+
+```bash
+# With Go (recommended)
+go install github.com/sethcronin/uspto-cli@latest
+
+# Or download a binary from GitHub Releases
+# https://github.com/sethcronin/uspto-cli/releases
+```
 
 ## Quick Start
 
 ```bash
-# Install
-bun install
-
-# Set your API key
-echo "USPTO_API_KEY=your-key-here" > .env
+# Set your API key (get one at https://data.uspto.gov)
+export USPTO_API_KEY=your-key-here
 
 # Search patents
-bun run index.ts search --title "machine learning" --limit 5
+uspto-cli search --title "machine learning" --limit 5
 
-# Get a specific application
-bun run index.ts app get 16123456
+# Get application details
+uspto-cli app get 16123456
 
-# JSON output for piping/agents
-bun run index.ts search --applicant "Google" -f json | jq '.patentFileWrapperDataBag[].applicationMetaData.inventionTitle'
+# One-shot summary (5 API calls combined)
+uspto-cli summary 16123456
+
+# JSON output for agents/piping
+uspto-cli search --applicant "Google" --granted -f json
 ```
 
 ## Commands
 
 ### Patent Search
 ```bash
-# Full-text search
-uspto search "applicationMetaData.inventionTitle:wireless AND applicationMetaData.filingDate:[2023-01-01 TO 2024-01-01]"
+# Shorthand flags (auto-selects GET or POST endpoint)
+uspto-cli search --title "neural network" --inventor "Smith" --limit 10
+uspto-cli search --cpc H04L --status "Patented Case" --filed-within 2y
+uspto-cli search --assignee "Apple" --granted --sort filingDate:desc
 
-# Shorthand flags
-uspto search --title "neural network" --applicant "OpenAI" --type UTL --limit 10
-uspto search --inventor "John Smith" --filed-after 2020-01-01
-uspto search --cpc H04L --status 150  # Patented cases in CPC H04L
+# Auto-paginate all results (up to 10,000)
+uspto-cli search --examiner "RILEY" --all -f ndjson
+
+# Structured filters via POST
+uspto-cli search --filter "applicationTypeLabelName=Utility" --facets applicationTypeCategory
 ```
 
 ### Application Data
 ```bash
-uspto app get <appNumber>          # Full application data
-uspto app meta <appNumber>         # Metadata only
-uspto app docs <appNumber>         # File wrapper documents
-uspto app txn <appNumber>          # Transaction/prosecution history
-uspto app cont <appNumber>         # Continuity (parents/children)
-uspto app assign <appNumber>       # Assignments/ownership
-uspto app attorney <appNumber>     # Attorney/agent info
-uspto app pta <appNumber>          # Patent term adjustment
-uspto app fp <appNumber>           # Foreign priority
-uspto app xml <appNumber>          # Associated XML doc metadata
-uspto app dl <appNumber> [index]   # Download a document PDF
+uspto-cli app get <appNumber>          # Full application data
+uspto-cli app meta <appNumber>         # Metadata only
+uspto-cli app docs <appNumber>         # File wrapper documents
+uspto-cli app txn <appNumber>          # Prosecution history
+uspto-cli app cont <appNumber>         # Continuity (parents/children)
+uspto-cli app assign <appNumber>       # Assignments/ownership
+uspto-cli app attorney <appNumber>     # Attorney/agent info
+uspto-cli app pta <appNumber>          # Patent term adjustment
+uspto-cli app pte <appNumber>          # Patent term extension
+uspto-cli app fp <appNumber>           # Foreign priority
+uspto-cli app xml <appNumber>          # Associated XML docs
+uspto-cli app dl <appNumber> [index]   # Download a document PDF
+uspto-cli app dl-all <appNumber>       # Download all document PDFs
+```
+
+### Compound Commands
+```bash
+# One-shot summary: metadata + continuity + assignments + events + documents
+uspto-cli summary 16123456
+
+# Recursive family tree (follows parents/children)
+uspto-cli family 16123456 --depth 3
 ```
 
 ### PTAB
 ```bash
-uspto ptab search --type IPR --limit 10
-uspto ptab search --patent 9876543 --petitioner "Samsung"
-uspto ptab get IPR2023-00001
-uspto ptab decisions --trial IPR2020-00388
-uspto ptab docs --trial IPR2025-01319
-uspto ptab appeals [query]
-uspto ptab interferences [query]
+# Proceedings
+uspto-cli ptab search --type IPR --patent 9876543
+uspto-cli ptab get IPR2023-00001
+
+# Decisions
+uspto-cli ptab decisions --trial IPR2020-00388
+uspto-cli ptab decision <documentId>
+
+# Documents
+uspto-cli ptab docs --trial IPR2025-01319
+uspto-cli ptab doc <documentId>
+
+# Appeals and interferences
+uspto-cli ptab appeals [query]
+uspto-cli ptab appeal <documentId>
+uspto-cli ptab interferences [query]
 ```
 
 ### Petition Decisions
 ```bash
-uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED
-uspto petition get <uuid>
+uspto-cli petition search --office "OFFICE OF PETITIONS" --decision GRANTED
+uspto-cli petition get <recordId> --include-documents
 ```
 
 ### Bulk Data
 ```bash
-uspto bulk search "patent"
-uspto bulk get PTFWPRE --include-files --latest
+uspto-cli bulk search "patent grant"
+uspto-cli bulk get PTGRXML --include-files
+uspto-cli bulk files PTFWPRE
+uspto-cli bulk download PTGRXML ipg240102.zip -o ./data/
 ```
 
 ### Status Codes
 ```bash
-uspto status 150                    # Look up code 150
-uspto status "rejection"            # Search by description
+uspto-cli status 150                    # Look up code 150 -> "Patented Case"
+uspto-cli status "abandoned"            # Search by description
 ```
 
 ## Output Formats
 
-Every command supports `-f json` for machine-readable output:
+All commands support four output formats via `-f`:
 
 ```bash
-# Table (default) - human readable
-uspto search --title sensor --limit 5
+# Table (default) — human readable
+uspto-cli search --title sensor --limit 5
 
-# JSON - agent/pipe friendly
-uspto search --title sensor --limit 5 -f json
+# JSON — structured envelope with pagination
+uspto-cli search --title sensor -f json
+# {ok: true, command: "search", pagination: {...}, results: [...], version: "0.2.0"}
 
-# Pipe to jq
-uspto app get 16123456 -f json | jq '.patentFileWrapperDataBag[0].applicationMetaData'
+# NDJSON — one JSON object per line (streaming friendly)
+uspto-cli search --title sensor -f ndjson
+
+# CSV — flat columns with dot-notation keys
+uspto-cli search --title sensor -f csv
 ```
 
-## API Coverage
+## Agent-Friendly Design
 
-53 endpoint-method combinations across 4 API groups:
+Built for AI agents and automation:
 
-| Group | Endpoints | Description |
-|-------|-----------|-------------|
-| Patent Applications | 16 | Search, get, metadata, PTA, assignments, attorney, continuity, foreign priority, transactions, documents, associated docs, status codes |
-| PTAB | 24 | Proceedings, trial decisions, trial documents, appeal decisions, interference decisions |
-| Petition Decisions | 5 | Search, get, download |
-| Bulk Data | 3 | Search products, get details, download files |
+- **Structured JSON envelope** with `ok`, `command`, `pagination`, `results`, `version`
+- **Typed exit codes**: 0=OK, 3=auth, 4=not-found, 5=rate-limited, 6=server-error
+- **`--dry-run`** shows the API request without executing
+- **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
+- **`--all`** auto-paginates up to 10,000 results
+- **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command
+- **NDJSON** format for streaming large result sets
 
 ## Rate Limiting
 
 Built-in rate limiter respects USPTO limits automatically:
-- **Peak** (5 AM - 10 PM EST): 60 req/min, 4 downloads/min
-- **Off-peak** (10 PM - 5 AM EST): 120 req/min, 12 downloads/min
-
-## Integration Tests
-
-```bash
-bun test                            # Run all tests
-bun test tests/integration/         # Integration tests (hits live API)
-```
-
-27 tests covering every API endpoint group.
-
-## Build
-
-```bash
-bun run build  # Compiles to dist/uspto standalone binary
-```
+- **Burst limit: 1** — strictly sequential requests per API key
+- **Cross-process coordination** via file-based state
+- **429 auto-retry** — 3 attempts with 5-second backoff
+- **Meta data APIs:** 5M calls/week
+- **Document APIs:** 1.2M calls/week
 
 ## License
 

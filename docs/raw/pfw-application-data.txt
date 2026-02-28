@@ -1,0 +1,185 @@
+Title: API - Application Data | Open Data Portal
+URL: https://data.uspto.gov/apis/patent-file-wrapper/application-data
+---
+
+Application Data
+
+The Application Data section contains key bibliographic information found on the front page of granted patents and published applications, as well as additional data not on the front page. To view the full Swagger documentation, visit the Swagger UI.
+
+This dataset includes published patent applications and issued patent data filed after January 1, 2001.
+
+GET
+https://api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/meta-data
+e.g. Returns application data for application number
+Note: API Key is required. Obtain an API key.
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+== Response ==
+
+=== 200 - Successful request ===
+
+Data Property | Description | Type
+PatentFileWrapperDataBag | Patent File Wrapper data. | N/A
+applicationNumberText | The unique number assigned by the USPTO to a patent application when it is filed. | String
+entityStatusData | Entity status data | Entity status
+smallEntityStatusIndicator | Small entity status indicator | boolean
+businessEntityStatusCategory | Status of business The large-or-small-entity payment status of the APPLICATION PATENT CASE at the time of the most recent fee payment. | String
+publicationDateBag | Publication dates | Array of dates
+publicationSequenceNumberBag | Publication sequence number | N/A
+publicationCategoryBag | One or more of the publication category | String
+docketNumber | Docket number | String
+applicationMetaData | MetaData of the application. | N/A
+firstInventorToFileIndicator | First inventor to file indicator | String
+firstApplicantName | First applicant name | String
+firstInventorName | First inventory name | String
+applicationConfirmationNumber | The application's confirmation number | String
+applicationStatusDate | The date of the application status | Date
+applicationStatusDescriptionText | status of the application; values: new = new application | String
+filingDate | Filing or 371(c) date on which a patent application was filed and received in the USPTO. | Date
+effectiveFilingDate | The date according to USPTO criteria that the patent case qualified as having been 'filed'. The effective filing date may differ from the filing date. | Date
+grantDate | The date a patent was granted. | String
+groupArtUnitNumber | A working unit responsible for a cluster of related patent art. Generally, staffed by one supervisory patent examiner and a number of patent examiners. | String
+applicationTypeCode | The specific value that indicates if the received patent application is considered a domestic application or a foreign application. | String
+applicationTypeLabelName | The label for the application type. | String
+applicationTypeCategory | The category of the application | String
+inventionTitle | Title of invention/application: The clear and concise technical description of the invention as provided by the applicant. | String
+patentNumber | The number that uniquely identifies an issued patent. It is also the document number in USTPO published patent. | String
+applicationStatusCode | Application status code | Number
+earliestPublicationNumber | Earliest publication number | String
+earliestPublicationDate | The first publication date | Date
+pctPublicationNumber | PCT publication number | String
+pctPublicationDate | PCT publication date | String
+internationalRegistrationPublicationDate | The date of publication by the International Bureau of an international registration of an industrial design. | String
+internationalRegistrationNumber | The number assigned by the International Bureau to an international registration upon registering the industrial design. | String
+examinerNameText | Examiner's name | String
+class | Class | String
+subclass | Subclass | String
+uspcSymbolText | uspcSymbolText | String
+customerNumber | A unique number created by the USPTO and is used in lieu of a physical address | Number
+nationalStageIndicator | National Stage indicator. | Boolean
+cpcClassificationBag | CPC classification data collection | N/A
+applicantBag | List of applicants | N/A
+applicantNameText | Applicant name | String
+firstName | First name of applicant | String
+middleName | Middle name of applicant | String
+lastName | Last name of application | String
+preferredName | Preferred name of applicant | String
+namePrefix | Name prefix | String
+nameSuffix | Name suffix | String
+countryCode | Country code | String
+correspondenceAddressBag | Correspondence address data | N/A
+nameLineOneText | Name first line | String
+nameLineTwoText | Name second line | String
+geographicRegionName | Geographic region name | String
+geographicRegionCode | Geographic region code | String
+cityName | City name | String
+countryCode | Country code | String
+countryName | Country Name | String
+postalAddressCategory | Postal category such as 'Residential' or 'Commercial' | String
+inventorBag | All the inventors associated to application. | N/A
+firstName | First name of inventor | String
+middleName | Middle name of inventor | String
+lastName | Last name of inventor | String
+namePrefix | Name prefix | String
+nameSuffix | Name suffix | String
+preferredName | Preferred name of inventor | String
+countryCode | Country code | String
+inventorNameText | Inventor full name | String
+correspondenceAddressBag | Correspondence address data | N/A
+nameLineOneText | Name line one | String
+nameLineTwoText | Name line two | String
+geographicRegionName | Geographic region name | String
+geographicRegionCode | Geographic region code | String
+cityName | City name | String
+countryCode | Country code | String
+countryName | Country name | String
+postalAddressCategory | Postal category such as 'Residential' or 'Commercial' | String
+
+=== 400 - Bad request ===
+Bad request.
+The server was unable to understand the request due to malformed syntax or invalid parameters.
+Update your syntax or parameters and try again.
+
+=== 403 - Access denied ===
+Access denied.
+Access to the requested patent or application is forbidden.
+
+=== 404 - Not found error ===
+Not found error.
+The server was unable to find the requested resource or URL.
+
+=== 500 - Internal server error ===
+Internal server error.
+An unexpected condition has occurred on the server.
+
+== ENDPOINT ==
+https://api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/meta-data
+
+== JSON RESPONSE SAMPLE ==
+{
+  "count": ...,
+  "patentFileWrapperDataBag": [
+    {
+      "applicationNumberText": "18045436",
+      "applicationMetaData": {
+        "firstInventorToFileIndicator": "Y",
+        "applicationStatusCode": 150,
+        "applicationTypeCode": "UTL",
+        "entityStatusData": {
+          "smallEntityStatusIndicator": false,
+          "businessEntityStatusCategory": "Regular Undiscounted"
+        },
+        "filingDate": "2022-10-10",
+        "uspcSymbolText": "530/358",
+        "nationalStageIndicator": false,
+        "firstInventorName": "Lubomir SEBO",
+        "cpcClassificationBag": ["C07H19/207", "C12Q2563/107", "C07K19/00", "C12Q1/6869", "C12Q2525/113", "C09B69/105", "C07H19/10"],
+        "effectiveFilingDate": "2022-10-10",
+        "publicationDateBag": ["2023-11-16"],
+        "publicationSequenceNumberBag": ["0366018"],
+        "earliestPublicationDate": "2023-11-16",
+        "applicationTypeLabelName": "Utility",
+        "applicationStatusDate": "2024-05-15",
+        "class": "530",
+        "applicationTypeCategory": "REGULAR",
+        "inventorBag": [
+          {
+            "firstName": "Lubomir",
+            "lastName": "SEBO",
+            "countryCode": "US",
+            "inventorNameText": "Lubomir SEBO",
+            "correspondenceAddressBag": [...]
+          },
+          {
+            "firstName": "Gene",
+            "lastName": "SHEN",
+            "countryCode": "US",
+            "inventorNameText": "Gene SHEN",
+            "correspondenceAddressBag": [...]
+          }
+        ],
+        "applicationStatusDescriptionText": "Patented Case",
+        "patentNumber": "12000000",
+        "grantDate": "2024-06-04",
+        "applicantBag": [
+          {
+            "applicantNameText": "Pacific Biosciences of California, Inc.",
+            "correspondenceAddressBag": [...]
+          }
+        ],
+        "firstApplicantName": "Pacific Biosciences of California, Inc.",
+        "customerNumber": 57770,
+        "groupArtUnitNumber": "1637",
+        "earliestPublicationNumber": "US20230366018A1",
+        "inventionTitle": "LABELED NUCLEOTIDE ANALOGS, REACTION MIXTURES, AND METHODS AND SYSTEMS FOR SEQUENCING",
+        "applicationConfirmationNumber": 2251,
+        "examinerNameText": "RILEY, JEZIA",
+        "subclass": "358",
+        "publicationCategoryBag": ["Granted/Issued", "Pre-Grant Publications - PGPub"],
+        "docketNumber": "1407-00-014U03"
+      },
+      "requestIdentifier": "ebdd573b-52c4-4316-8709-140d58d3dd2d"
+    }
+  ]
+}

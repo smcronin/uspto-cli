@@ -1,0 +1,353 @@
+Title: API - Search | Open Data Portal
+URL: https://data.uspto.gov/apis/patent-file-wrapper/search
+---
+
+Search
+
+Conduct a search of all patent application bibliographic/front page and patent relevant data fields.
+
+Use this endpoint if you are interested in searching across multiple patents or applications. For example, you may want to search for applications that have a specific "Utility" or "Design" application type.
+
+The other endpoints (such as Application Data, Continuity, etc.) should be used when you're using a specific application number and want to get details about a specific application.
+
+Note: Other details for using the Search endpoint:
+
+- The Search API has a maximum of 10,000 results. If you need more, please refine your search.
+- Search results are sorted by relevance by default, but you can sort by any field.
+
+All search syntaxes are applicable to this endpoint, meaning any number of combinations is possible. For more information on the query syntaxes, please visit the Open Data Portal API page or use the Swagger UI.
+
+You can download the JSON Schema file to parse the JSON responses returned by the APIs.
+
+GET
+https://api.uspto.gov/api/v1/patent/applications/search
+Returns a list of all patents and applications that match your search term.
+Note: API Key is required. Obtain an API key.
+
+POST
+See Swagger documentation (https://data.uspto.gov/swagger/index.html)
+Returns a list of all patents and applications that match your search term.
+Note: API Key is required. Obtain an API key.
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+== Response ==
+
+=== 200 - Successful request ===
+
+Data Property | Description | Type
+PatentFileWrapperDataBag | Patent File Wrapper data. | N/A
+applicationNumberText | The unique number assigned by the USPTO to a patent application when it is filed. | String
+applicationMetaData | MetaData of the application. | N/A
+firstInventorToFileIndicator | The first inventor to file (First Inventor to File- FITF) provision of the America Invents Act (AIA) | String
+nationalStageIndicator | National Stage indicator. | Boolean
+smallEntityStatusIndicator | Small entity status indicator. | Boolean
+docketNumber | An identifier assigned by a non-USPTO interest to an application patent case. The identifier is assigned by the applicant or their representative. | String
+firstApplicantName | Name of the Applicant with Rank One. Listed as first applicant in the patent application. | String
+firstInventorName | Name of the inventor with Rank One. Listed as first inventor in the patent application. | String
+applicationConfirmationNumber | A four-digit number that is assigned to each newly filed patent application. The confirmation number is used to verify the identity of the application. | Number
+applicationStatusDate | Application status date. | Date
+applicationStatusDescriptionText | Status of the application; values: new = new application | String
+filingDate | Filing or 371(c) date on which a patent application was filed and received in the USPTO. | Date
+effectiveFilingDate | The date according to USPTO criteria that the patent case qualified as having been 'filed'. The effective filing date may differ from the filing date. | Date
+grantDate | The date a patent was granted. | Date
+groupArtUnitNumber | A working unit responsible for a cluster of related patent art. Generally, staffed by one supervisory patent examiner and a number of patent examiners. | String
+applicationTypeCode | The specific value that indicates if the received patent application is considered a domestic application or a foreign application. | String
+applicationTypeLabelName | The label for the application type. | String
+applicationTypeCategory | The category of the application | String
+inventionTitle | Title of invention/application: The clear and concise technical description of the invention as provided by the applicant. | String
+patentNumber | The unique number assigned by the USPTO to a granted/issued patent. It is also the document number in the USTPO-published patent. | String
+applicationStatusCode | This data element classifies the application by its status relative to the total application process. | String
+businessEntityStatusCategory | Status of business The large-or-small-entity payment status of the APPLICATION PATENT CASE at the time of the most recent fee payment. | String
+earliestPublicationNumber | Earliest publication number. | String
+earliestPublicationDate | Earliest publication date. | Date
+pctPublicationNumber | PCT publication number | String
+pctPublicationDate | PCT publication date | String
+publicationSequenceNumberBag | Contains a number assigned to the publication of patent applications filed on or after November 29, 2000. | N/A
+correspondenceAddressBag | All address lines associated with applicant or inventor correspondence, depending on which bag it falls under. | N/A
+nameLineOneText | First line of name associated with correspondence address. | String
+nameLineTwoText | Second line of name associated with correspondence address, if applicable. | String
+addressLineOneText | First line of address associated with correspondence address. | String
+addressLineTwoText | Second line of address associated with correspondence address, if applicable. | String
+geographicRegionName | Geographic Region Name, e.g., state. | String
+geographicRegionCode | Geographic region code. | String
+postalCode | Postal Code. | String
+cityName | City Name. | String
+countryCode | Country code. | String
+countryName | Country name. | String
+postalAddressCategory | Postal address category. | String
+customerNumber | A unique number created by the USPTO and is used in lieu of a physical address. | Number
+cpcClassificationBag | All the CPCs associated to application. | N/A
+applicantBag | All applicants associated to application. | N/A
+applicantNameText | Applicant name | String
+firstName | First Name. | String
+middleName | Middle name. | String
+lastName | Last Name. | String
+preferredName | Preferred name. | String
+namePrefix | Name prefix. | String
+nameSuffix | Name suffix. | String
+countryCode | Country code. | String
+correspondenceAddressBag | All address lines associated with applicant or inventor correspondence, depending on which bag it falls under. | N/A
+nameLineOneText | First line of name associated with correspondence address. | String
+nameLineTwoText | Second line of name associated with correspondence address, if applicable. | String
+geographicRegionName | Geographic Region Name, e.g., state. | String
+geographicRegionCode | Geographic region code. | String
+cityName | City Name. | String
+countryCode | Country code. | String
+countryName | Country name. | String
+postalAddressCategory | Postal address category. | String
+inventorBag | All the inventors associated to application. | N/A
+firstName | First Name. | String
+middleName | Middle name. | String
+lastName | Last Name. | String
+preferredName | Preferred name. | String
+namePrefix | Name prefix. | String
+nameSuffix | Name suffix. | String
+countryCode | Country code. | String
+inventorNameText | Inventor Name. | String
+correspondenceAddressBag | All address lines associated with applicant or inventor correspondence, depending on which bag it falls under. | N/A
+nameLineOneText | First line of name associated with correspondence address. | String
+nameLineTwoText | Second line of name associated with correspondence address, if applicable. | String
+geographicRegionName | Geographic Region Name, e.g., state. | String
+geographicRegionCode | Geographic region code. | String
+cityName | City Name. | String
+countryCode | Country code. | String
+countryName | Country name. | String
+postalAddressCategory | Postal address category. | String
+assignmentBag | The collection of assignment data | N/A
+reelNumber | 1-6 digit number identifies the reel number to be used to locate the assignment on microfilm. | Number
+frameNumber | 1-4 digit number that identifies the frame number to be used to locate the first image (page) of the assignment on microfilm. | Number
+reelAndFrameNumber | 1-6 digit number identifies the reel number to be used to locate the assignment on microfilm. / 1-4 digit frame number. | String
+pageTotalQuantity | The total number of pages comprising the document | Number
+assignmentDocumentLocationURI | The Document Location URI | String
+assignmentReceivedDate | The date an assignment was received. Contains a date element with an 8-digit date in YYYY-MM-DD date format. | Date
+assignmentRecordedDate | Identifies when the assignment was recorded in the USPTO. Contains a date element with an 8-digit date in YYYY-MM-DD date format. | Date
+imageAvailableStatusCode | code to indicate the availability of the image | boolean
+assignmentMailedDate | The date an assignment request was mailed to the office or received by the office. Contains a date element with an 8-digit date in YYYY-MM-DD date format. | Date
+conveyanceText | Contains textual description of the interest conveyed or transaction recorded. | String
+assignorBag | Collection of assignors/details related to the assignor(s). | N/A
+assignorName | A party that transfers its interest and right to the patent to the transferee (assignee) or the party that grants a license. | String
+executionDate | Identifies the date from the supporting legal documentation that the assignment was executed. | Date
+assigneeBag | Collection of assignees/details related to the assignee(s). | N/A
+assigneeNameText | A person or entity that has the property rights to the patent, as a result of being the recipient of a transfer (assignment). | String
+assigneeAddress | Assignee address data. | N/A
+addressLineOneText | First line of address. | String
+addressLineTwoText | Second line of address. | String
+addressLineThreeText | Third line of address associated with the assignee. | String
+addressLineFourText | Fourth line of address associated with the assignee. | String
+cityName | Name of the city | String
+countryOrStateCode | Country or state code | String
+ictStateCode | International code for the state/region of the assignee (USPTO format) | String
+ictCountryCode | International code for the country of the assignee (USPTO format) | String
+geographicRegionName | Geographic region name. | String
+geographicRegionCode | Geographic region code. | String
+countryName | Country name. | String
+postalCode | Postal code. | String
+correspondenceAddress | Correspondence data collection | N/A
+correspondentNameText | The name of the correspondent | String
+addressLineOneText | Address line one. | String
+addressLineTwoText | Address line two. | String
+addressLineThreeText | Address line three, if existing | String
+addressLineFourText | Address line four, if existing | String
+domesticRepresentative | The address of the domestic representative | N/A
+name | The domestic representative name. | String
+addressLineOneText | First line of address associated with the correspondent. | String
+addressLineTwoText | Second line of address associated with the correspondent. | String
+addressLineThreeText | Third line of address associated with the correspondent. | String
+addressLineFourText | Fourth line of address associated with the correspondent, if applicable. | String
+cityName | Name of the city | String
+postalCode | Postal code | String
+geographicRegionName | Geographic region name | String
+countryName | Country name. | String
+emailAddress | Email address of the representative. | Date
+recordAttorney | Details of the attorney or agent associated with an application/patent. | N/A
+customerNumberCorrespondenceData | Correspondence Address of the application inherited from the Customer. | N/A
+patronIdentifier | The unique identifier of the patron | String
+organizationStandardName | Organization standard name | String
+powerOfAttorneyAddressBag | Power of attorney address data collection. | N/A
+nameLineOneText | First line of name associated with attorney/agent correspondence address. | String
+addressLineOneText | First line of the address | String
+addressLineTwoText | Second line of the address | String
+geographicRegionName | Geographic region name | String
+geographicRegionCode | Geographic region code | String
+postalCode | Postal code | String
+cityName | City name | String
+countryCode | Country code | String
+countryName | Country name | String
+telecommunicationAddressBag | List of telecommunication addresses, such as the phone number(s) associated with the aforementioned attorney or agent. | N/A
+telecommunicationNumber | Telecommunication number, such as the phone number associated with the aforementioned attorney or agent. | String
+extensionNumber | Telephone extension number. | String
+telecomTypeCode | Usage type category, such as the type of phone number associated with the aforementioned attorney or agent. | String
+attorneyBag | Data on file for all attorneys or agents associated with the application. | N/A
+firstName | First Name. | String
+middleName | Middle Name. | String
+lastName | Last Name. | String
+namePrefix | Name prefix. | String
+nameSuffix | Name suffix. | String
+registrationNumber | Registration number. | Number
+activeIndicator | Status of whether attorney is active or inactive. | Boolean
+registeredPractitionerCategory | Practitioner category | String
+telecommunicationAddressBag | List of telecommunication addresses, such as the phone number(s) associated with the aforementioned attorney or agent. | N/A
+telecommunicationNumber | Telecommunication number, such as the phone number associated with the aforementioned attorney or agent. | String
+extensionNumber | Telephone extension number. | Number
+telecomTypeCode | Usage type category, such as the type of phone number associated with the aforementioned attorney or agent. | String
+foreignPriorityBag | Contains information about relevant foreign priority. | N/A
+ipOfficeName | The complete, non abbreviated name of the ipOfficeName designated for a country according to the International Patent Classification system. | String
+filingDate | The date on which a priority claim was filed. | Date
+applicationNumberText | The unique number assigned by the USPTO to a patent application when it is filed. | String
+parentContinuityBag | All continuity details related to the parent application. | N/A
+firstInventorToFileIndicator | America Invents Act (AIA) indicator, which indicates first inventor to file. | Boolean
+parentApplicationStatusCode | This data element classifies the application by its status relative to the total application process. | Number
+parentPatentNumber | The number that uniquely identifies an issued patent. It is also the document number in the USTPO-published patent. | String
+parentApplicationStatusDescriptionText | Status of the parent or child application, depending on which bag it falls under; values: new = new application. | String
+parentApplicationfilingDate | Date on which a patent application was filed and received in the USPTO. | Date
+parentApplicationNumberText | Application number of the parent application, which is the unique value assigned by the USPTO to a patent application when it is filed. | String
+childApplicationNumberText | Application number of the child application, which is the unique value assigned by the USPTO to a patent application when it is filed. | String
+claimParentageTypeCode | Claim parentage type code. | String
+claimParentageTypeCodeDescriptionText | Claim Parentage Type Code Description | String
+childContinuityBag | All continuity details related to the child application | N/A
+childApplicationStatusCode | Application status code. | String
+parentApplicationNumberText | Parent application number for this child application. | String
+childApplicationNumberText | Application number of the child application, which is the unique value assigned by the USPTO to a patent application when it is filed. | String
+childApplicationStatusDescriptionText | Status of the parent or child application, depending on which bag it falls under; values: new = new application. | String
+childApplicationfilingDate | Date on which a patent application was filed and received in the USPTO. | Date
+firstInventorToFileIndicator | America Invents Act (AIA) indicator, which indicates first inventor to file. | Boolean
+childPatentNumber | The number that uniquely identifies an issued patent. It is also the document number in the USTPO-published patent. | String
+claimParentageTypeCode | Claim parentage type code. | String
+claimParentageTypeCodeDescriptionText | Description of claim parentage type | String
+patentTermAdjustmentData | Patent term adjustment data. | N/A
+aDelayQuantity | This entry reflects adjustments to the term of the patent based upon USPTO delays pursuant to 35 U.S.C. 154(b)(1)(A). | Number
+adjustmentTotalQuantity | This entry reflects the summation of the following entries: NONOVERLAPPING USPTO DELAYS (+/or - USPTO adjustments). | Number
+applicantDayDelayQuantity | This entry reflects adjustments of the patent term due to the Applicant's failure to engage in reasonable efforts to conclude prosecution. | Number
+bDelayQuantity | This entry reflects adjustments to the term of the patent based upon the patent failing to issue within three years. | Number
+cDelayQuantity | This entry reflects adjustments to the term of the patent based upon USPTO delays pursuant to 35 U.S.C. 154(b)(1)(C). | Number
+overlappingDayQuantity | Patent term adjustment overlapping days quantity number that reflects the calculation of overlapping days. | Number
+nonOverlappingDayQuantity | Patent term adjustment non overlapping days quantity number of overall summation of the USPTO delays. | Number
+patentTermAdjustmentHistoryDataBag | The recordation of patent case actions that are involved in the patent term adjustment calculation. | N/A
+applicantDayDelayQuantity | This entry reflects adjustments of the patent term due to the Applicant's failure to engage in reasonable efforts to conclude prosecution. | Number
+eventDate | The date that the symbol was assigned to the patent document. | Date
+eventDescriptionText | event description. | String
+eventSequenceNumber | Case action sequence number. | Number
+ipOfficeDayDelayQuantity | Number of days the USPTO personnel adjusting the calculation to increase or decrease the patent term. | Number
+originatingEventSequenceNumber | Start sequence number. | Number
+ptaPTECode | PTA or PTE code | String
+eventDataBag | Details of the contents of all transactions on an application/patent. | N/A
+eventCode | The unique reference value (number and letters) for an application/patent transaction. | String
+eventDescriptionText | Description of the Transaction's code. | String
+eventDate | The date the patent case action was recorded. | Date
+pgpubDocumentMetaData | Details of PgPub document meta data. | N/A
+zipFileName | Zip file name | String
+productIdentifier | Product identifier. | String
+fileLocationURI | File location URI. | String
+fileCreateDateTime | The date file was created. | Date
+xmlFileName | XML file name. | String
+grantDocumentMetaData | Grant document meta data. | N/A
+zipFileName | Zip file name | String
+productIdentifier | Product identifier. | String
+fileLocationURI | File location URI. | String
+fileCreateDateTime | The date file was created. | Date
+xmlFileName | XML file name. | String
+lastIngestionDateTime | Date time when application was last modified. | Date
+
+=== 400 - Bad request ===
+Bad request.
+The server was unable to understand the request due to malformed syntax or invalid parameters. This error is usually caused by incorrect query parameters or a missing required parameter.
+Update your syntax or parameters and try again.
+If you have any questions or additional errors, please visit the Support section for assistance.
+
+=== 403 - Access denied ===
+Access denied.
+Access to the requested patent or application is forbidden. There are many reasons this could be the case, including that the application is not yet published or that the application is restricted.
+If you have any questions or additional errors, please visit the Support section for assistance.
+
+=== 404 - Not found error ===
+Not found error.
+The server was unable to find the requested resource or URL. This code is commonly returned when you are looking for an application that does not exist.
+If you have any questions or additional errors, please visit the Support section for assistance.
+
+=== 413 - Request Entity Too Large ===
+Request Entity Too Large.
+The server is refusing to process a request because the request payload is larger than the server is willing or able to process.
+If you have any questions or additional errors, please visit the Support section for assistance.
+
+=== 500 - Internal server error ===
+Internal server error.
+An unexpected condition has occurred on the server, and the server was unable to fulfill the request.
+If you have any questions or additional errors, please visit the Support section for assistance.
+
+== ENDPOINT ==
+https://api.uspto.gov/api/v1/patent/applications/search
+
+== JSON RESPONSE SAMPLE ==
+{
+  "count": ...,
+  "patentFileWrapperDataBag": [
+    {
+      "applicationNumberText": "18045436",
+      "grantDocumentMetaData": {
+        "productIdentifier": "PTGRXML",
+        "zipFileName": "ipg240604.zip",
+        "fileCreateDateTime": "2024-09-30T17:48:45",
+        "xmlFileName": "18045436_12000000.xml",
+        "fileLocationURI": "https://api.uspto.gov/api/v1/datasets/products/files/PTGRXML-SPLT/2024/ipg240604/18045436_12000000.xml"
+      },
+      "eventDataBag": [
+        {
+          "eventCode": "CRFA",
+          "eventDescriptionText": "Sequence Moved to Public Database",
+          "eventDate": "2024-06-12"
+        },
+        {
+          "eventCode": "PGM/",
+          "eventDescriptionText": "Recordation of Patent Grant Mailed",
+          "eventDate": "2024-06-04"
+        }
+      ],
+      "applicationMetaData": {
+        "firstInventorToFileIndicator": "Y",
+        "applicationStatusCode": 150,
+        "applicationTypeCode": "UTL",
+        "entityStatusData": {
+          "smallEntityStatusIndicator": false,
+          "businessEntityStatusCategory": "Regular Undiscounted"
+        },
+        "filingDate": "2022-10-10",
+        "uspcSymbolText": "530/358",
+        "nationalStageIndicator": false,
+        "firstInventorName": "Lubomir SEBO",
+        "cpcClassificationBag": ["C07H19/207", "C12Q2563/107", "C07K19/00", "C12Q1/6869", "C12Q2525/113", "C09B69/105", "C07H19/10"],
+        "effectiveFilingDate": "2022-10-10",
+        "publicationDateBag": ["2023-11-16"],
+        "publicationSequenceNumberBag": ["0366018"],
+        "earliestPublicationDate": "2023-11-16",
+        "applicationTypeLabelName": "Utility",
+        "applicationStatusDate": "2024-05-15",
+        "class": "530",
+        "applicationTypeCategory": "REGULAR",
+        "inventorBag": [...],
+        "applicationStatusDescriptionText": "Patented Case",
+        "patentNumber": "12000000",
+        "grantDate": "2024-06-04",
+        "applicantBag": [...],
+        "firstApplicantName": "Pacific Biosciences of California, Inc.",
+        "customerNumber": 57770,
+        "groupArtUnitNumber": "1637",
+        "earliestPublicationNumber": "US20230366018A1",
+        "inventionTitle": "LABELED NUCLEOTIDE ANALOGS, REACTION MIXTURES, AND METHODS AND SYSTEMS FOR SEQUENCING",
+        "applicationConfirmationNumber": 2251,
+        "examinerNameText": "RILEY, JEZIA",
+        "subclass": "358",
+        "publicationCategoryBag": ["Granted/Issued", "Pre-Grant Publications - PGPub"],
+        "docketNumber": "1407-00-014U03"
+      },
+      "parentContinuityBag": [...],
+      "patentTermAdjustmentData": {...},
+      "assignmentBag": [...],
+      "pgpubDocumentMetaData": {...},
+      "childContinuityBag": [...],
+      "lastIngestionDateTime": "2025-01-29T23:32:15",
+      "recordAttorney": {...},
+      "requestIdentifier": "ff386887-1a12-4c26-bd65-b07b4b3b53ef"
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+Title: API - Documents | Open Data Portal
+URL: https://data.uspto.gov/apis/patent-file-wrapper/documents
+---
+
+Documents
+
+The Documents section contains details on documents attached to the patent application, as well as options for downloading these documents. To view the full Swagger documentation, visit the Swagger UI.
+
+This dataset includes published patent applications and issued patent data filed after January 1, 2001.
+
+GET
+https://api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/documents
+Returns document meta-data along with document download URI for supplied application number.
+Note: API Key is required. Obtain an API key.
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+== Response ==
+
+=== 200 - Successful request ===
+
+Data Property | Description | Type
+documentBag | Details of the documents related to an application. | N/A
+applicationNumberText | The unique number assigned by the USPTO to a patent application upon receipt when it is filed. | String
+officialDate | The date correspondence is received at the USPTO, either through the mail room or via the Internet. | Date
+documentIdentifier | A unique identifier for a document stored in the repository. | String
+documentCode | The unique reference value (number and letters) for an application/patent document. | String
+documentCodeDescriptionText | Document code's description. | String
+directionCategory | Category for the document type (Incoming, Outgoing). | String
+downloadOptionBag | Details about download options for the documents. | N/A
+mimeTypeIdentifier | Document type identifier (e.g., PDF/XML/Dox) | String
+downloadUrl | Link to download | String
+pageTotalQuantity | Total number of pages in the document. | Number
+
+=== 400 - Bad request ===
+Bad request.
+The server was unable to understand the request due to malformed syntax or invalid parameters.
+Update your syntax or parameters and try again.
+
+=== 403 - Access denied ===
+Access denied.
+Access to the requested patent or application is forbidden.
+
+=== 404 - Not found error ===
+Not found error.
+The server was unable to find the requested resource or URL.
+
+=== 500 - Internal server error ===
+Internal server error.
+An unexpected condition has occurred on the server.
+
+== ENDPOINT ==
+https://api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/documents
+
+== JSON RESPONSE SAMPLE ==
+{
+  "count": ...,
+  "documentBag": [
+    {
+      "applicationNumberText": "18045436",
+      "officialDate": "2023-07-14T14:58:32.000-0400",
+      "documentIdentifier": "LK2Y0NWNGREENX2",
+      "documentCode": "XT/",
+      "documentCodeDescriptionText": "Extension of Time",
+      "directionCategory": "INCOMING",
+      "downloadOptionBag": [
+        {
+          "mimeTypeIdentifier": "PDF",
+          "downloadUrl": "https://api.uspto.gov/api/v1/download/applications/18045436/LK2Y0NWNGREENX2.pdf"
+        }
+      ],
+      "pageTotalQuantity": null
+    },
+    {
+      "applicationNumberText": "18045436",
+      "officialDate": "2022-10-10T00:00:00.000-0400",
+      "documentIdentifier": "LCKEHTJ9XBLUEX3",
+      "documentCode": "SCORE",
+      "documentCodeDescriptionText": "Placeholder sheet indicating presence of supplemental content in Supplemental Complex Repository for electronic submissions",
+      "directionCategory": "INTERNAL",
+      "downloadOptionBag": [
+        {
+          "mimeTypeIdentifier": "PDF",
+          "downloadUrl": "https://api.uspto.gov/api/v1/download/applications/18045436/LCKEHTJ9XBLUEX3.pdf"
+        }
+      ],
+      "pageTotalQuantity": null
+    },
+    {
+      "applicationNumberText": "18045436",
+      "officialDate": "2023-07-14T14:58:32.000-0400",
+      "documentIdentifier": "LK2Y0NWJGREENX2",
+      "documentCode": "PEFR",
+      "documentCodeDescriptionText": "Applicant Response to Pre-Exam Formalities Notice",
+      "directionCategory": "INCOMING",
+      "downloadOptionBag": [
+        {
+          "mimeTypeIdentifier": "PDF",
+          "downloadUrl": "https://api.uspto.gov/api/v1/download/applications/18045436/LK2Y0NWJGREENX2.pdf"
+        }
+      ],
+      "pageTotalQuantity": null
+    }
+  ]
+}

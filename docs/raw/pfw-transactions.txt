@@ -1,0 +1,99 @@
+Title: API - Transactions | Open Data Portal
+URL: https://data.uspto.gov/apis/patent-file-wrapper/transactions
+---
+
+Transactions
+
+The transactions section contains additional information concerning the transaction activity that has taken place for the associated patent or application. To view the full Swagger documentation, visit the Swagger UI.
+
+This dataset includes published patent applications and issued patent data filed after January 1, 2001.
+
+GET
+https://api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/transactions
+Returns all transactions associated for supplied application.
+Note: API Key is required. Obtain an API key.
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+== Response ==
+
+=== 200 - Successful request ===
+
+Data Property | Description | Type
+eventDataBag | Details of the contents of all transactions on an application/patent. | N/A
+eventCode | A short text field that denotes the A16 CT codes. | String
+eventDescriptionText | A text field that denotes the use or function of the activity | String
+eventDate | The date of the legal status change event. | Date
+
+=== 400 - Bad request ===
+Bad request.
+The server was unable to understand the request due to malformed syntax or invalid parameters.
+Update your syntax or parameters and try again.
+
+=== 403 - Access denied ===
+Access denied.
+Access to the requested patent or application is forbidden.
+
+=== 404 - Not found error ===
+Not found error.
+The server was unable to find the requested resource or URL.
+
+=== 500 - Internal server error ===
+Internal server error.
+An unexpected condition has occurred on the server.
+
+== ENDPOINT ==
+https://api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/transactions
+
+== JSON RESPONSE SAMPLE ==
+{
+  "count": ...,
+  "patentFileWrapperDataBag": [
+    {
+      "applicationNumberText": "18045436",
+      "eventDataBag": [
+        {
+          "eventCode": "CRFA",
+          "eventDescriptionText": "Sequence Moved to Public Database",
+          "eventDate": "2024-06-12"
+        },
+        {
+          "eventCode": "PGM/",
+          "eventDescriptionText": "Recordation of Patent Grant Mailed",
+          "eventDate": "2024-06-04"
+        },
+        {
+          "eventCode": "EML_NTR",
+          "eventDescriptionText": "Email Notification",
+          "eventDate": "2024-06-04"
+        },
+        {
+          "eventCode": "MEPG_NTF",
+          "eventDescriptionText": "Mail Patent eGrant Notification",
+          "eventDate": "2024-06-04"
+        },
+        {
+          "eventCode": "EPG_NTF",
+          "eventDescriptionText": "Patent eGrant Notification",
+          "eventDate": "2024-06-04"
+        },
+        {
+          "eventCode": "EPG/",
+          "eventDescriptionText": "Recordation of Patent eGrant",
+          "eventDate": "2024-06-04"
+        },
+        {
+          "eventCode": "EML_NTR",
+          "eventDescriptionText": "Email Notification",
+          "eventDate": "2024-05-16"
+        },
+        {
+          "eventCode": "WPIR",
+          "eventDescriptionText": "Issue Notification Mailed",
+          "eventDate": "2024-05-15"
+        }
+      ],
+      "requestIdentifier": "457b4e2e-38d5-486e-bb98-a35ee46c28b9"
+    }
+  ]
+}

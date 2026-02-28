@@ -1,25 +1,27 @@
+# Build output
+dist/
+*.exe
+
 # Environment
 .env
 .env.local
 .env.*.local
 
-# Dependencies
-node_modules/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Build output
-dist/
-*.exe
-
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
-.idea/
+# Go
+vendor/
+
+# Downloaded files
+downloads/
 
 # Test output
 coverage/
-
-# Downloaded patent documents
-downloads/
