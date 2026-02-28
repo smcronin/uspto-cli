@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/sethcronin/uspto-cli/cmd"
+	"github.com/smcronin/uspto-cli/cmd"
 )
 
 func main() {

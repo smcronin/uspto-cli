@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sethcronin/uspto-cli/internal/api"
-	"github.com/sethcronin/uspto-cli/internal/types"
+	"github.com/smcronin/uspto-cli/internal/api"
+	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
 

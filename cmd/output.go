@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/sethcronin/uspto-cli/internal/types"
+	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
 

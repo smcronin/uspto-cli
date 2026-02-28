@@ -46,5 +46,5 @@ All endpoints under /api/v1/
 
 ## Distribution
 ```bash
-go install github.com/sethcronin/uspto-cli@latest
+go install github.com/smcronin/uspto-cli@latest
 ```

@@ -8,10 +8,10 @@ Agent-ready CLI for the [USPTO Open Data Portal](https://data.uspto.gov) API. Se
 
 ```bash
 # With Go (recommended)
-go install github.com/sethcronin/uspto-cli@latest
+go install github.com/smcronin/uspto-cli@latest
 
 # Or download a binary from GitHub Releases
-# https://github.com/sethcronin/uspto-cli/releases
+# https://github.com/smcronin/uspto-cli/releases
 ```
 
 ## API Key

@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sethcronin/uspto-cli/internal/types"
+	"github.com/smcronin/uspto-cli/internal/types"
 )
 
 // ---------------------------------------------------------------------------

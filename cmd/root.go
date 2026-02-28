@@ -7,8 +7,8 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
-	"github.com/sethcronin/uspto-cli/internal/api"
-	"github.com/sethcronin/uspto-cli/internal/types"
+	"github.com/smcronin/uspto-cli/internal/api"
+	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +78,7 @@ func initConfig(cmd *cobra.Command) error {
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "  Set USPTO_API_KEY in your environment, pass --api-key, or add it to .env")
 		fmt.Fprintln(os.Stderr, "  Get a key: https://data.uspto.gov/apis/getting-started")
-		fmt.Fprintln(os.Stderr, "  Setup guide: https://github.com/sethcronin/uspto-cli/blob/main/docs/api-key-setup.md")
+		fmt.Fprintln(os.Stderr, "  Setup guide: https://github.com/smcronin/uspto-cli/blob/main/docs/api-key-setup.md")
 		fmt.Fprintln(os.Stderr, "")
 	}
 

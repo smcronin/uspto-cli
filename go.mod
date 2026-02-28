@@ -1,4 +1,4 @@
-module github.com/sethcronin/uspto-cli
+module github.com/smcronin/uspto-cli
 
 go 1.25.0
 
