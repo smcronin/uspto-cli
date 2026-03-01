@@ -23,22 +23,26 @@ displayed on the dashboard.
 
 ## Step 4: Configure the CLI
 
-Set your API key as an environment variable:
+Recommended: store your key once in global CLI config:
 
 ```bash
-# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
+uspto-cli config set-api-key your-api-key-here
+```
+
+This writes your key to your user config directory (for example:
+`%AppData%\uspto-cli\config.env` on Windows, `~/.config/uspto-cli/config.env`
+on Linux/macOS), so `uspto-cli` works from any directory.
+
+This is runtime configuration only. Your API key is not embedded into
+the binary when you build/package the CLI.
+
+Alternative options:
+
+```bash
+# Set in shell profile (~/.bashrc, ~/.zshrc, PowerShell profile, etc.)
 export USPTO_API_KEY=your-api-key-here
-```
 
-Or create a `.env` file in your project directory:
-
-```
-USPTO_API_KEY=your-api-key-here
-```
-
-Or pass it directly on each command:
-
-```bash
+# Pass directly on each command
 uspto-cli search --api-key your-api-key-here --title "machine learning"
 ```
 

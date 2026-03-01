@@ -5,7 +5,6 @@ go 1.25.0
 require (
 	github.com/fatih/color v1.18.0
 	github.com/jedib0t/go-pretty/v6 v6.7.8
-	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.2
 )
 

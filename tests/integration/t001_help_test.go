@@ -13,6 +13,7 @@ func TestT001a_RootHelp(t *testing.T) {
 	assertContains(t, r.Stdout, "status")
 	assertContains(t, r.Stdout, "summary")
 	assertContains(t, r.Stdout, "family")
+	assertContains(t, r.Stdout, "config")
 }
 
 func TestT001b_Version(t *testing.T) {

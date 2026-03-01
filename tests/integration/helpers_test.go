@@ -18,12 +18,12 @@ type cmdResult struct {
 // CLIEnvelope mirrors types.CLIResponse but uses json.RawMessage for Results
 // so tests can parse results as array or object as needed.
 type CLIEnvelope struct {
-	OK         bool             `json:"ok"`
-	Command    string           `json:"command"`
-	Pagination *PaginationMeta  `json:"pagination,omitempty"`
-	Results    json.RawMessage  `json:"results"`
-	Version    string           `json:"version"`
-	Error      *CLIError        `json:"error,omitempty"`
+	OK         bool            `json:"ok"`
+	Command    string          `json:"command"`
+	Pagination *PaginationMeta `json:"pagination,omitempty"`
+	Results    json.RawMessage `json:"results"`
+	Version    string          `json:"version"`
+	Error      *CLIError       `json:"error,omitempty"`
 }
 
 // PaginationMeta mirrors types.PaginationMeta for test parsing.
@@ -46,7 +46,7 @@ type CLIError struct {
 // It inherits the current environment (including USPTO_API_KEY).
 func runCLI(args ...string) cmdResult {
 	cmd := exec.Command(binaryPath, args...)
-	cmd.Dir = projectRoot // So the binary finds .env
+	cmd.Dir = projectRoot
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -71,7 +71,7 @@ func runCLI(args ...string) cmdResult {
 // runCLINoKey executes the test binary with USPTO_API_KEY explicitly unset.
 func runCLINoKey(args ...string) cmdResult {
 	cmd := exec.Command(binaryPath, args...)
-	// Use temp dir so the binary won't find .env (which would re-set the key).
+	// Use temp dir and strip USPTO_API_KEY to guarantee a no-key invocation.
 	cmd.Dir = os.TempDir()
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -84,6 +84,11 @@ func runCLINoKey(args ...string) cmdResult {
 		if !strings.HasPrefix(e, "USPTO_API_KEY=") {
 			filtered = append(filtered, e)
 		}
+	}
+	cfgDir, _ := os.MkdirTemp("", "uspto-cli-no-key-config-*")
+	if cfgDir != "" {
+		defer os.RemoveAll(cfgDir)
+		filtered = append(filtered, "USPTO_CLI_CONFIG_DIR="+cfgDir)
 	}
 	cmd.Env = filtered
 

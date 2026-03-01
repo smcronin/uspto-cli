@@ -23,13 +23,13 @@ An API key is required. See the [setup guide](docs/api-key-setup.md) for full in
 3. Copy your key from the [MyODP dashboard](https://data.uspto.gov/myodp)
 
 ```bash
-# Add to your shell profile
+# Recommended: store key in global uspto-cli config
+uspto-cli config set-api-key your-key-here
+
+# Or set in your shell environment
 export USPTO_API_KEY=your-key-here
 
-# Or create a .env file in your project
-echo "USPTO_API_KEY=your-key-here" > .env
-
-# Or pass directly
+# Or pass directly per command
 uspto-cli search --api-key your-key-here --title "machine learning"
 ```
 
@@ -38,8 +38,8 @@ One key per user — no organization-wide keys. Keys must not be shared (USPTO p
 ## Quick Start
 
 ```bash
-# Set your API key
-export USPTO_API_KEY=your-key-here
+# Set your API key once (global)
+uspto-cli config set-api-key your-key-here
 
 # Search patents
 uspto-cli search --title "machine learning" --limit 5
@@ -58,6 +58,21 @@ uspto-cli search --assignee "Google" --granted -f json
 ```
 
 ## Commands
+
+### Config
+
+API keys are written at runtime to your user config file and are never baked into the binary during build/package.
+
+```bash
+# Save key to global config (works from any directory)
+uspto-cli config set-api-key your-key-here
+
+# Import key from a dotenv file
+uspto-cli config set-api-key --from-dotenv .env
+
+# Show config file location and key status (masked)
+uspto-cli config show
+```
 
 ### Patent Search
 

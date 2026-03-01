@@ -3,11 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/joho/godotenv"
 	"github.com/smcronin/uspto-cli/internal/api"
+	"github.com/smcronin/uspto-cli/internal/config"
 	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
@@ -30,7 +31,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:     "uspto",
 	Short:   "USPTO Open Data Portal CLI - Agent-ready patent data access",
-	Long:    "USPTO Open Data Portal CLI - Agent-ready patent data access.\n\nAccess patent applications, PTAB proceedings, petition decisions,\nassignments, and more from the USPTO Open Data Portal API.\n\nSet your API key via --api-key or the USPTO_API_KEY environment variable.",
+	Long:    "USPTO Open Data Portal CLI - Agent-ready patent data access.\n\nAccess patent applications, PTAB proceedings, petition decisions,\nassignments, and more from the USPTO Open Data Portal API.\n\nSet your API key via --api-key, USPTO_API_KEY, or `uspto config set-api-key`.",
 	Version: version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return initConfig(cmd)
@@ -56,13 +57,11 @@ func init() {
 // initConfig runs before every command. It loads environment variables,
 // resolves the API key, configures color output, and sets up the API client.
 func initConfig(cmd *cobra.Command) error {
-	// Load .env file if present; ignore error if missing.
-	_ = godotenv.Load()
-
-	// Resolve API key: flag takes precedence over env var.
-	if flagAPIKey == "" {
-		flagAPIKey = os.Getenv("USPTO_API_KEY")
+	resolvedKey, err := resolveAPIKey()
+	if err != nil {
+		return err
 	}
+	flagAPIKey = resolvedKey
 
 	// Respect NO_COLOR convention (https://no-color.org/).
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
@@ -73,10 +72,15 @@ func initConfig(cmd *cobra.Command) error {
 	}
 
 	// Warn early if no API key is configured (skip for dry-run, help, completion).
-	if flagAPIKey == "" && !flagDryRun && !isHelpOrCompletion(cmd) {
+	if flagAPIKey == "" && !flagDryRun && !isNonAPICommand(cmd) {
+		configPath, _ := config.ConfigFilePath()
 		fmt.Fprintln(os.Stderr, "Warning: no API key configured. Requests will fail with 403.")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "  Set USPTO_API_KEY in your environment, pass --api-key, or add it to .env")
+		fmt.Fprintln(os.Stderr, "  Set a key with: uspto config set-api-key <your-key>")
+		fmt.Fprintln(os.Stderr, "  Or set USPTO_API_KEY in your environment / pass --api-key")
+		if configPath != "" {
+			fmt.Fprintf(os.Stderr, "  Global config path: %s\n", configPath)
+		}
 		fmt.Fprintln(os.Stderr, "  Get a key: https://data.uspto.gov/apis/getting-started")
 		fmt.Fprintln(os.Stderr, "  Setup guide: https://github.com/smcronin/uspto-cli/blob/main/docs/api-key-setup.md")
 		fmt.Fprintln(os.Stderr, "")
@@ -96,10 +100,33 @@ func initConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-// isHelpOrCompletion returns true for commands that don't need an API key.
-func isHelpOrCompletion(cmd *cobra.Command) bool {
-	name := cmd.Name()
-	return name == "help" || name == "completion" || name == "version"
+// resolveAPIKey resolves API key precedence:
+// 1) --api-key flag
+// 2) USPTO_API_KEY environment variable
+// 3) global uspto-cli config file
+func resolveAPIKey() (string, error) {
+	if flagAPIKey != "" {
+		return strings.TrimSpace(flagAPIKey), nil
+	}
+	if envKey := strings.TrimSpace(os.Getenv(config.APIKeyEnvVar)); envKey != "" {
+		return envKey, nil
+	}
+	return config.LoadAPIKey()
+}
+
+// isNonAPICommand returns true for commands that don't call the USPTO API.
+func isNonAPICommand(cmd *cobra.Command) bool {
+	// Running the root command with no subcommand only prints help text.
+	if cmd.Parent() == nil && cmd.Name() == "uspto" {
+		return true
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		switch c.Name() {
+		case "help", "completion", "version", "config":
+			return true
+		}
+	}
+	return false
 }
 
 // Execute runs the root command and exits with the appropriate code.
