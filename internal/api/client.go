@@ -498,12 +498,6 @@ func (c *Client) GetAdjustment(ctx context.Context, appNumber string) (*types.Pa
 		"/api/v1/patent/applications/"+url.PathEscape(appNumber)+"/adjustment", nil, nil)
 }
 
-// GetExtension returns patent term extension data.
-func (c *Client) GetExtension(ctx context.Context, appNumber string) (*types.PatentDataResponse, error) {
-	return requestJSON[types.PatentDataResponse](c, ctx, http.MethodGet,
-		"/api/v1/patent/applications/"+url.PathEscape(appNumber)+"/extension", nil, nil)
-}
-
 // GetAssignment returns assignment data for an application.
 func (c *Client) GetAssignment(ctx context.Context, appNumber string) (*types.PatentDataResponse, error) {
 	return requestJSON[types.PatentDataResponse](c, ctx, http.MethodGet,

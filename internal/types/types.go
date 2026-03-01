@@ -8,6 +8,7 @@ package types
 import (
 	"encoding/json"
 	"encoding/xml"
+	"strings"
 )
 
 // ---------------------------------------------------------------------------
@@ -984,16 +985,264 @@ type PetitionDecisionResponse struct {
 
 // PatentGrantXML is the top-level element of a USPTO patent grant XML file.
 type PatentGrantXML struct {
-	XMLName  xml.Name          `xml:"us-patent-grant" json:"-"`
-	BibData  BibliographicData `xml:"us-bibliographic-data-grant" json:"-"`
-	Abstract XMLAbstract       `xml:"abstract" json:"abstract,omitempty"`
-	Claims   XMLClaims         `xml:"claims" json:"claims"`
+	XMLName     xml.Name          `xml:"us-patent-grant" json:"-"`
+	BibData     BibliographicData `xml:"us-bibliographic-data-grant" json:"-"`
+	Abstract    XMLAbstract       `xml:"abstract" json:"abstract,omitempty"`
+	Description XMLDescription    `xml:"description" json:"-"`
+	Drawings    XMLDrawings       `xml:"drawings" json:"-"`
+	Claims      XMLClaims         `xml:"claims" json:"claims"`
 }
 
-// BibliographicData holds citation and classification data from the grant XML.
+// BibliographicData holds citation, classification, parties, and related data.
 type BibliographicData struct {
-	ReferencesCited XMLReferencesCited `xml:"us-references-cited" json:"referencesCited"`
-	NumberOfClaims  string             `xml:"number-of-claims" json:"numberOfClaims,omitempty"`
+	PublicationRef       XMLPublicationRef      `xml:"publication-reference" json:"-"`
+	ApplicationRef       XMLApplicationRef      `xml:"application-reference" json:"-"`
+	PriorityClaims       XMLPriorityClaims      `xml:"priority-claims" json:"-"`
+	TermOfGrant          XMLTermOfGrant         `xml:"us-term-of-grant" json:"-"`
+	ClassificationsCPC   XMLClassificationsCPC  `xml:"classifications-cpc" json:"-"`
+	ClassificationsIPCR  XMLClassificationsIPCR `xml:"classifications-ipcr" json:"-"`
+	FieldOfSearch        XMLFieldOfSearch       `xml:"us-field-of-classification-search" json:"-"`
+	Figures              XMLFigures             `xml:"figures" json:"-"`
+	ReferencesCited      XMLReferencesCited     `xml:"us-references-cited" json:"referencesCited"`
+	NumberOfClaims       string                 `xml:"number-of-claims" json:"numberOfClaims,omitempty"`
+	ExemplaryClaim       string                 `xml:"us-exemplary-claim" json:"-"`
+	Parties              XMLParties             `xml:"us-parties" json:"-"`
+	Examiners            XMLExaminers           `xml:"examiners" json:"-"`
+	Assignees            XMLAssignees           `xml:"assignees" json:"-"`
+	InventionTitle       string                 `xml:"invention-title" json:"-"`
+	RelatedDocuments     XMLRelatedDocuments    `xml:"us-related-documents" json:"-"`
+}
+
+// XMLPublicationRef holds the publication document ID.
+type XMLPublicationRef struct {
+	DocumentID XMLDocumentID `xml:"document-id"`
+}
+
+// XMLApplicationRef holds the application document ID.
+type XMLApplicationRef struct {
+	ApplType   string        `xml:"appl-type,attr"`
+	DocumentID XMLDocumentID `xml:"document-id"`
+}
+
+// XMLPriorityClaims holds foreign priority claims.
+type XMLPriorityClaims struct {
+	Claims []XMLPriorityClaim `xml:"priority-claim"`
+}
+
+// XMLPriorityClaim is a single priority claim.
+type XMLPriorityClaim struct {
+	Sequence string `xml:"sequence,attr"`
+	Kind     string `xml:"kind,attr"`
+	Country  string `xml:"country"`
+	DocNum   string `xml:"doc-number"`
+	Date     string `xml:"date"`
+}
+
+// XMLTermOfGrant holds patent term data.
+type XMLTermOfGrant struct {
+	Extension string `xml:"us-term-extension"`
+}
+
+// XMLClassificationsCPC holds all CPC classifications.
+type XMLClassificationsCPC struct {
+	Main    XMLMainCPC    `xml:"main-cpc"`
+	Further XMLFurtherCPC `xml:"further-cpc"`
+}
+
+// XMLMainCPC holds the main CPC classification.
+type XMLMainCPC struct {
+	Classifications []XMLClassCPC `xml:"classification-cpc"`
+}
+
+// XMLFurtherCPC holds additional CPC classifications.
+type XMLFurtherCPC struct {
+	Classifications []XMLClassCPC `xml:"classification-cpc"`
+}
+
+// XMLClassCPC is a single CPC classification entry.
+type XMLClassCPC struct {
+	Section  string `xml:"section"`
+	Class    string `xml:"class"`
+	Subclass string `xml:"subclass"`
+	MainGrp  string `xml:"main-group"`
+	SubGrp   string `xml:"subgroup"`
+	Position string `xml:"symbol-position"`
+	Value    string `xml:"classification-value"`
+}
+
+// CPCSymbol returns the full CPC symbol string (e.g. "G06K9/6256").
+func (c XMLClassCPC) CPCSymbol() string {
+	return c.Section + c.Class + c.Subclass + c.MainGrp + "/" + c.SubGrp
+}
+
+// XMLClassificationsIPCR holds all IPC classifications.
+type XMLClassificationsIPCR struct {
+	Classifications []XMLClassIPCR `xml:"classification-ipcr"`
+}
+
+// XMLClassIPCR is a single IPC classification entry.
+type XMLClassIPCR struct {
+	Section  string `xml:"section"`
+	Class    string `xml:"class"`
+	Subclass string `xml:"subclass"`
+	MainGrp  string `xml:"main-group"`
+	SubGrp   string `xml:"subgroup"`
+	Position string `xml:"symbol-position"`
+	Value    string `xml:"classification-value"`
+}
+
+// IPCSymbol returns the full IPC symbol string (e.g. "G06K9/62").
+func (c XMLClassIPCR) IPCSymbol() string {
+	return c.Section + c.Class + c.Subclass + " " + c.MainGrp + "/" + c.SubGrp
+}
+
+// XMLFieldOfSearch holds the field of classification search.
+type XMLFieldOfSearch struct {
+	NationalClass XMLNationalClass `xml:"classification-national"`
+	CPCText       []string         `xml:"classification-cpc-text"`
+}
+
+// XMLNationalClass holds the US national classification.
+type XMLNationalClass struct {
+	Country string `xml:"country"`
+	Main    string `xml:"main-classification"`
+}
+
+// XMLFigures holds figure/drawing metadata.
+type XMLFigures struct {
+	DrawingSheets int `xml:"number-of-drawing-sheets"`
+	FigureCount   int `xml:"number-of-figures"`
+}
+
+// XMLDrawings holds the actual drawing figure entries.
+type XMLDrawings struct {
+	Figures []XMLFigure `xml:"figure"`
+}
+
+// XMLFigure is a single drawing figure.
+type XMLFigure struct {
+	ID  string   `xml:"id,attr"`
+	Num string   `xml:"num,attr"`
+	Img XMLImage `xml:"img"`
+}
+
+// XMLImage holds image metadata for a drawing.
+type XMLImage struct {
+	ID          string `xml:"id,attr"`
+	Height      string `xml:"he,attr"`
+	Width       string `xml:"wi,attr"`
+	File        string `xml:"file,attr"`
+	Format      string `xml:"img-format,attr"`
+	Orientation string `xml:"orientation,attr"`
+}
+
+// XMLParties holds applicants, inventors, and agents.
+type XMLParties struct {
+	Applicants XMLApplicants `xml:"us-applicants"`
+	Inventors  XMLInventors  `xml:"inventors"`
+	Agents     XMLAgents     `xml:"agents"`
+}
+
+// XMLApplicants wraps the applicant list.
+type XMLApplicants struct {
+	Applicants []XMLApplicant `xml:"us-applicant"`
+}
+
+// XMLApplicant is a single applicant entry.
+type XMLApplicant struct {
+	Sequence string         `xml:"sequence,attr"`
+	AppType  string         `xml:"app-type,attr"`
+	AddrBook XMLAddressBook `xml:"addressbook"`
+}
+
+// XMLInventors wraps the inventor list.
+type XMLInventors struct {
+	Inventors []XMLInventor `xml:"inventor"`
+}
+
+// XMLInventor is a single inventor entry.
+type XMLInventor struct {
+	Sequence string         `xml:"sequence,attr"`
+	AddrBook XMLAddressBook `xml:"addressbook"`
+}
+
+// XMLAgents wraps the agent list.
+type XMLAgents struct {
+	Agents []XMLAgent `xml:"agent"`
+}
+
+// XMLAgent is a single agent/attorney entry.
+type XMLAgent struct {
+	Sequence string         `xml:"sequence,attr"`
+	RepType  string         `xml:"rep-type,attr"`
+	AddrBook XMLAddressBook `xml:"addressbook"`
+}
+
+// XMLAddressBook holds name and address for a party.
+type XMLAddressBook struct {
+	OrgName   string     `xml:"orgname"`
+	FirstName string     `xml:"first-name"`
+	LastName  string     `xml:"last-name"`
+	Address   XMLAddress `xml:"address"`
+}
+
+// FullName returns the display name from the address book.
+func (a XMLAddressBook) FullName() string {
+	if a.OrgName != "" {
+		return a.OrgName
+	}
+	parts := []string{}
+	if a.FirstName != "" {
+		parts = append(parts, a.FirstName)
+	}
+	if a.LastName != "" {
+		parts = append(parts, a.LastName)
+	}
+	return strings.Join(parts, " ")
+}
+
+// XMLAddress holds address fields.
+type XMLAddress struct {
+	City    string `xml:"city"`
+	State   string `xml:"state"`
+	Country string `xml:"country"`
+}
+
+// XMLExaminers wraps the examiner list.
+type XMLExaminers struct {
+	Primary XMLExaminer `xml:"primary-examiner"`
+}
+
+// XMLExaminer holds examiner name and department.
+type XMLExaminer struct {
+	LastName   string `xml:"last-name"`
+	FirstName  string `xml:"first-name"`
+	Department string `xml:"department"`
+}
+
+// XMLAssignees wraps the assignee list.
+type XMLAssignees struct {
+	Assignees []XMLAssigneeEntry `xml:"assignee"`
+}
+
+// XMLAssigneeEntry is a single assignee.
+type XMLAssigneeEntry struct {
+	AddrBook XMLAddressBook `xml:"addressbook"`
+}
+
+// XMLRelatedDocuments holds related publication data.
+type XMLRelatedDocuments struct {
+	RelatedPub XMLRelatedPub `xml:"related-publication"`
+}
+
+// XMLRelatedPub holds a related publication reference.
+type XMLRelatedPub struct {
+	DocumentID XMLDocumentID `xml:"document-id"`
+}
+
+// XMLDescription holds the full description/specification text.
+type XMLDescription struct {
+	Text string `xml:",innerxml"`
 }
 
 // XMLReferencesCited wraps the list of citations in a grant XML.
@@ -1099,4 +1348,55 @@ type AbstractResult struct {
 	ApplicationNumber string `json:"applicationNumber"`
 	PatentNumber      string `json:"patentNumber"`
 	Abstract          string `json:"abstract"`
+}
+
+// DescriptionResult is the structured output for the description command.
+type DescriptionResult struct {
+	ApplicationNumber string `json:"applicationNumber"`
+	PatentNumber      string `json:"patentNumber"`
+	Description       string `json:"description"`
+	WordCount         int    `json:"wordCount"`
+}
+
+// DrawingInfo is metadata about a single patent drawing.
+type DrawingInfo struct {
+	FigureNum   string `json:"figureNum"`
+	FileName    string `json:"fileName"`
+	Format      string `json:"format"`
+	Height      string `json:"height"`
+	Width       string `json:"width"`
+	Orientation string `json:"orientation,omitempty"`
+}
+
+// FullTextResult is the comprehensive output from the fulltext command.
+type FullTextResult struct {
+	ApplicationNumber  string          `json:"applicationNumber"`
+	PatentNumber       string          `json:"patentNumber"`
+	Title              string          `json:"title"`
+	Abstract           string          `json:"abstract"`
+	GrantDate          string          `json:"grantDate,omitempty"`
+	FilingDate         string          `json:"filingDate,omitempty"`
+	ApplicationType    string          `json:"applicationType,omitempty"`
+	Examiner           string          `json:"examiner,omitempty"`
+	ExaminerDepartment string          `json:"examinerDepartment,omitempty"`
+	Assignee           string          `json:"assignee,omitempty"`
+	Inventors          []string        `json:"inventors"`
+	CPC                []string        `json:"cpc"`
+	IPC                []string        `json:"ipc"`
+	FieldOfSearch      []string        `json:"fieldOfSearch,omitempty"`
+	PriorityDate       string          `json:"priorityDate,omitempty"`
+	PriorityCountry    string          `json:"priorityCountry,omitempty"`
+	TermExtensionDays  string          `json:"termExtensionDays,omitempty"`
+	ExemplaryClaim     int             `json:"exemplaryClaim,omitempty"`
+	TotalClaims        int             `json:"totalClaims"`
+	Claims             []ClaimText     `json:"claims"`
+	TotalCitations     int             `json:"totalCitations"`
+	PatentCitations    []PatentCitRef  `json:"patentCitations"`
+	NPLCitations       []NPLCitRef     `json:"nplCitations"`
+	DrawingSheets      int             `json:"drawingSheets"`
+	FigureCount        int             `json:"figureCount"`
+	Drawings           []DrawingInfo   `json:"drawings,omitempty"`
+	Description        string          `json:"description"`
+	DescriptionWords   int             `json:"descriptionWords"`
+	PublicationNumber  string          `json:"publicationNumber,omitempty"`
 }
