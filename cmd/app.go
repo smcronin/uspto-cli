@@ -376,51 +376,6 @@ func writeAdjustmentTable(data *types.PatentTermAdjustmentData) {
 	}
 }
 
-func writeExtensionTable(data *types.PatentTermExtensionData) {
-	if data == nil {
-		fmt.Fprintln(os.Stderr, "No patent term extension data found.")
-		return
-	}
-
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.SetStyle(table.StyleLight)
-	t.AppendHeader(table.Row{"Component", "Days"})
-
-	t.AppendRow(table.Row{"A Delay (USPTO processing)", data.ADelayQuantity})
-	t.AppendRow(table.Row{"B Delay (3-year issue window)", data.BDelayQuantity})
-	t.AppendRow(table.Row{"C Delay (interference/secrecy/appeal)", data.CDelayQuantity})
-	t.AppendRow(table.Row{"Overlapping", data.OverlappingDayQuantity})
-	t.AppendRow(table.Row{"Non-Overlapping", data.NonOverlappingDayQuantity})
-	t.AppendRow(table.Row{"IP Office Extension Delay", data.IpOfficeExtensionDelayQuantity})
-	t.AppendRow(table.Row{"Applicant Delay", data.ApplicantDayDelayQuantity})
-	t.AppendSeparator()
-	t.AppendRow(table.Row{"TOTAL EXTENSION", data.ExtensionTotalQuantity})
-
-	t.Render()
-
-	if len(data.PatentTermExtensionHistoryDataBag) > 0 {
-		fmt.Fprintln(os.Stdout)
-		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "Extension History (%d events):\n", len(data.PatentTermExtensionHistoryDataBag))
-		}
-		ht := table.NewWriter()
-		ht.SetOutputMirror(os.Stdout)
-		ht.SetStyle(table.StyleLight)
-		ht.AppendHeader(table.Row{"Seq", "Date", "Code", "Description"})
-
-		for _, h := range data.PatentTermExtensionHistoryDataBag {
-			ht.AppendRow(table.Row{
-				fmtOptFloat(h.EventSequenceNumber),
-				safeStr(h.EventDate, "-"),
-				safeStr(h.PtaPTECode, "-"),
-				safeStr(h.EventDescriptionText, "-"),
-			})
-		}
-		ht.Render()
-	}
-}
-
 func writeForeignPriorityTable(entries []types.ForeignPriorityData) {
 	if len(entries) == 0 {
 		fmt.Fprintln(os.Stderr, "No foreign priority data found.")
@@ -526,7 +481,7 @@ func filterEmpty(parts ...string) []string {
 var appCmd = &cobra.Command{
 	Use:   "app",
 	Short: "Work with individual patent applications",
-	Long:  "Retrieve detailed data for a patent application by application number.\n\nSubcommands provide access to metadata, documents, prosecution history,\ncontinuity, assignments, attorneys, term adjustment/extension, and more.",
+	Long:  "Retrieve detailed data for a patent application by application number.\n\nSubcommands provide access to metadata, documents, prosecution history,\ncontinuity, assignments, attorneys, term adjustment, and more.",
 }
 
 // --- app get ---
@@ -819,40 +774,6 @@ var appAdjustmentCmd = &cobra.Command{
 		}
 
 		outputResult(cmd, pfw.PatentTermAdjustmentData, nil)
-		return nil
-	},
-}
-
-// --- app extension ---
-
-var appExtensionCmd = &cobra.Command{
-	Use:     "extension <appNumber>",
-	Aliases: []string{"pte"},
-	Short:   "Get patent term extension data",
-	Long:    "Retrieve patent term extension (PTE) data for an application.\nPTE applies to pharmaceutical and certain regulated products.",
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appNumber := args[0]
-		if err := validateAppNumber(appNumber); err != nil {
-			return err
-		}
-
-		resp, err := api.DefaultClient.GetExtension(context.Background(), appNumber)
-		if err != nil {
-			return err
-		}
-
-		pfw, err := extractPFW(resp, appNumber)
-		if err != nil {
-			return err
-		}
-
-		if flagFormat == "table" {
-			writeExtensionTable(pfw.PatentTermExtensionData)
-			return nil
-		}
-
-		outputResult(cmd, pfw.PatentTermExtensionData, nil)
 		return nil
 	},
 }
@@ -1178,7 +1099,6 @@ func init() {
 	appCmd.AddCommand(appAssignmentsCmd)
 	appCmd.AddCommand(appAttorneyCmd)
 	appCmd.AddCommand(appAdjustmentCmd)
-	appCmd.AddCommand(appExtensionCmd)
 	appCmd.AddCommand(appForeignPriorityCmd)
 	appCmd.AddCommand(appAssociatedDocsCmd)
 	appCmd.AddCommand(appDownloadCmd)
