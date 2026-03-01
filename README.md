@@ -53,7 +53,7 @@ uspto-cli app get 16123456
 uspto-cli summary 16123456
 
 # JSON output for agents/piping
-uspto-cli search --applicant "Google" --granted -f json
+uspto-cli search --assignee "Google" --granted -f json
 ```
 
 ## Commands
@@ -82,7 +82,6 @@ uspto-cli app cont <appNumber>         # Continuity (parents/children)
 uspto-cli app assign <appNumber>       # Assignments/ownership
 uspto-cli app attorney <appNumber>     # Attorney/agent info
 uspto-cli app pta <appNumber>          # Patent term adjustment
-uspto-cli app pte <appNumber>          # Patent term extension
 uspto-cli app fp <appNumber>           # Foreign priority
 uspto-cli app xml <appNumber>          # Associated XML docs
 uspto-cli app dl <appNumber> [index]   # Download a document PDF

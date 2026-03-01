@@ -10,7 +10,7 @@ cmd/
   root.go                  - Cobra root command, global flags, error handling
   output.go                - JSON envelope, NDJSON, CSV, table formatters
   search.go                - Patent search with 20+ flags, GET/POST auto-detection
-  app.go                   - Application data (13 subcommands)
+  app.go                   - Application data (12 subcommands)
   ptab.go                  - PTAB proceedings, decisions, docs, appeals, interferences (14 subcommands)
   petition.go              - Petition decision search/get
   bulk.go                  - Bulk data search/get/files/download

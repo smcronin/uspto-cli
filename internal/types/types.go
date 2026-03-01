@@ -647,25 +647,6 @@ type BulkDataResponse struct {
 	Facets             []FacetValue      `json:"facets,omitempty"`
 }
 
-// BulkDataProductResponse wraps a single bulk data product lookup.
-type BulkDataProductResponse struct {
-	ProductIdentifier               string          `json:"productIdentifier"`
-	ProductTitleText                 string          `json:"productTitleText"`
-	ProductDescriptionText           string          `json:"productDescriptionText"`
-	ProductFrequencyText             string          `json:"productFrequencyText"`
-	DaysOfWeekText                   string          `json:"daysOfWeekText"`
-	ProductLabelArrayText            []string        `json:"productLabelArrayText"`
-	ProductDataSetArrayText          []string        `json:"productDataSetArrayText"`
-	ProductDataSetCategoryArrayText  []string        `json:"productDataSetCategoryArrayText"`
-	ProductFromDate                  string          `json:"productFromDate"`
-	ProductToDate                    string          `json:"productToDate"`
-	ProductTotalFileSize             int64           `json:"productTotalFileSize"`
-	ProductFileTotalQuantity         int             `json:"productFileTotalQuantity"`
-	LastModifiedDateTime             string          `json:"lastModifiedDateTime"`
-	MimeTypeIdentifierArrayText      []string        `json:"mimeTypeIdentifierArrayText"`
-	ProductFileBag                   BulkDataFileBag `json:"productFileBag"`
-}
-
 // ---------------------------------------------------------------------------
 // PTAB Trial Types
 // ---------------------------------------------------------------------------

@@ -656,9 +656,29 @@ func (c *Client) GetBulkDataProduct(ctx context.Context, productID string, opts 
 }
 
 // DownloadBulkFile downloads a bulk data file to outputPath.
+// It looks up the file's actual download URI from the product listing
+// because the URL structure includes a year segment that can't be guessed.
 func (c *Client) DownloadBulkFile(ctx context.Context, productID, fileName, outputPath string) (string, error) {
-	dlURL := c.baseURL + "/api/v1/datasets/products/" + url.PathEscape(productID) + "/files/" + url.PathEscape(fileName)
-	return c.DownloadDocument(ctx, dlURL, outputPath)
+	// Fetch the product with its file list so we get the real download URI.
+	product, err := c.GetBulkDataProduct(ctx, productID, types.BulkDataProductOptions{
+		IncludeFiles: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("looking up product files: %w", err)
+	}
+
+	// Find the file in the listing.
+	for _, f := range product.ProductFileBag.FileDataBag {
+		if f.FileName == fileName {
+			if f.FileDownloadURI == "" {
+				return "", fmt.Errorf("file %q has no download URI", fileName)
+			}
+			return c.DownloadDocument(ctx, f.FileDownloadURI, outputPath)
+		}
+	}
+
+	return "", fmt.Errorf("file %q not found in product %s (have %d files)",
+		fileName, productID, len(product.ProductFileBag.FileDataBag))
 }
 
 // ==========================================================================

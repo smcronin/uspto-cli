@@ -22,6 +22,7 @@ vendor/
 
 # Downloaded files
 downloads/
+data/
 
 # Test output
 coverage/

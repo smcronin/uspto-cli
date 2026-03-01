@@ -71,7 +71,7 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 		parts = append(parts, fmt.Sprintf("patentNumber:%s", petitionSearchFlags.patent))
 	}
 
-	query := strings.TrimSpace(strings.Join(parts, " "))
+	query := strings.TrimSpace(strings.Join(parts, " AND "))
 
 	opts := types.SearchOptions{
 		Limit:  petitionSearchFlags.limit,

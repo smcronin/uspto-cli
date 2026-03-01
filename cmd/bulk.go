@@ -64,7 +64,7 @@ func runBulkSearch(cmd *cobra.Command, args []string) error {
 		parts = append(parts, fmt.Sprintf("productFrequencyText:%s", bulkSearchFlags.frequency))
 	}
 
-	query := strings.TrimSpace(strings.Join(parts, " "))
+	query := strings.TrimSpace(strings.Join(parts, " AND "))
 
 	opts := types.SearchOptions{
 		Limit:  bulkSearchFlags.limit,
@@ -252,8 +252,8 @@ func runBulkDownload(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagDryRun {
-		fmt.Fprintf(os.Stderr, "GET /api/v1/datasets/products/%s/files/%s\n", productID, fileName)
-		fmt.Fprintf(os.Stderr, "Output: %s\n", outputPath)
+		fmt.Fprintf(os.Stderr, "GET /api/v1/datasets/products/%s?includeFiles=true (lookup fileDownloadURI)\n", productID)
+		fmt.Fprintf(os.Stderr, "Then: GET <fileDownloadURI for %s> -> %s\n", fileName, outputPath)
 		return nil
 	}
 
