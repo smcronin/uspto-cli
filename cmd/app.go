@@ -500,7 +500,8 @@ func findPDFOption(doc *types.Document) string {
 // defaultOutputPath builds a default filename for a downloaded document.
 func defaultOutputPath(doc *types.Document, appNumber string) string {
 	name := appNumber + "_" + doc.OfficialDate + "_" + doc.DocumentCode + ".pdf"
-	// Sanitize for filesystem safety.
+	// Sanitize for filesystem safety (colons illegal on Windows, slashes everywhere).
+	name = strings.ReplaceAll(name, ":", "-")
 	name = strings.ReplaceAll(name, "/", "_")
 	name = strings.ReplaceAll(name, "\\", "_")
 	name = strings.ReplaceAll(name, " ", "_")
@@ -1074,6 +1075,22 @@ Progress is shown on stderr.`,
 		}
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return fmt.Errorf("creating output directory: %w", err)
+		}
+
+		// Dry-run: show what would be downloaded without executing.
+		if flagDryRun {
+			for i, doc := range docResp.DocumentBag {
+				pdfURL := findPDFOption(&doc)
+				status := "DOWNLOAD"
+				if pdfURL == "" {
+					status = "SKIP (no PDF)"
+				}
+				outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber))
+				fmt.Fprintf(os.Stdout, "[%d/%d] %s %s (%s) -> %s\n",
+					i+1, len(docResp.DocumentBag), status, doc.DocumentCode, doc.OfficialDate, outPath)
+			}
+			fmt.Fprintf(os.Stdout, "\nDry run: %d documents found.\n", len(docResp.DocumentBag))
+			return nil
 		}
 
 		// Download each document that has a PDF option.

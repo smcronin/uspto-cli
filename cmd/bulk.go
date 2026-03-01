@@ -161,7 +161,7 @@ func runBulkGet(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	resp, err := api.DefaultClient.GetBulkDataProduct(context.Background(), productID, types.BulkDataProductOptions{
+	product, err := api.DefaultClient.GetBulkDataProduct(context.Background(), productID, types.BulkDataProductOptions{
 		IncludeFiles: bulkGetFlags.includeFiles,
 		Latest:       bulkGetFlags.latest,
 	})
@@ -169,7 +169,7 @@ func runBulkGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	outputResult(cmd, resp, nil)
+	outputResult(cmd, product, nil)
 	return nil
 }
 
@@ -196,14 +196,14 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	resp, err := api.DefaultClient.GetBulkDataProduct(context.Background(), productID, types.BulkDataProductOptions{
+	product, err := api.DefaultClient.GetBulkDataProduct(context.Background(), productID, types.BulkDataProductOptions{
 		IncludeFiles: true,
 	})
 	if err != nil {
 		return err
 	}
 
-	files := resp.ProductFileBag.FileDataBag
+	files := product.ProductFileBag.FileDataBag
 	if !flagQuiet {
 		fmt.Fprintf(os.Stderr, "%d files available for %s\n", len(files), productID)
 	}

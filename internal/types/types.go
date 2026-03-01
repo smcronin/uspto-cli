@@ -3,8 +3,9 @@
 //
 // Every struct field maps to the exact JSON key returned by the API.
 // Pointer types are used for fields that may be absent or null.
-// No interface{} or any types are used.
 package types
+
+import "encoding/json"
 
 // ---------------------------------------------------------------------------
 // CLI Output Envelope
@@ -324,8 +325,27 @@ type Assignment struct {
 	ConveyanceText               string                            `json:"conveyanceText"`
 	AssignorBag                  []Assignor                        `json:"assignorBag"`
 	AssigneeBag                  []Assignee                        `json:"assigneeBag"`
-	CorrespondenceAddress        []AssignmentCorrespondenceAddress `json:"correspondenceAddress"`
+	CorrespondenceAddress        json.RawMessage `json:"correspondenceAddress,omitempty"`
 	DomesticRepresentative       *DomesticRepresentative           `json:"domesticRepresentative,omitempty"`
+}
+
+// CorrespondenceAddresses parses the CorrespondenceAddress field which may
+// be either a JSON object or a JSON array in the API response.
+func (a *Assignment) CorrespondenceAddresses() []AssignmentCorrespondenceAddress {
+	if len(a.CorrespondenceAddress) == 0 {
+		return nil
+	}
+	// Try array first.
+	var arr []AssignmentCorrespondenceAddress
+	if json.Unmarshal(a.CorrespondenceAddress, &arr) == nil {
+		return arr
+	}
+	// Try single object.
+	var single AssignmentCorrespondenceAddress
+	if json.Unmarshal(a.CorrespondenceAddress, &single) == nil {
+		return []AssignmentCorrespondenceAddress{single}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -753,6 +773,16 @@ type TrialDocumentResponse struct {
 	PatentTrialDecisionDataBag []TrialDocument `json:"patentTrialDecisionDataBag,omitempty"`
 }
 
+// Decisions returns trial decisions from whichever bag contains them.
+// The API inconsistently places decisions in either patentTrialDecisionDataBag
+// or patentTrialDocumentDataBag depending on the endpoint.
+func (r *TrialDocumentResponse) Decisions() []TrialDocument {
+	if len(r.PatentTrialDecisionDataBag) > 0 {
+		return r.PatentTrialDecisionDataBag
+	}
+	return r.PatentTrialDocumentDataBag
+}
+
 // ---------------------------------------------------------------------------
 // PTAB Appeal Types
 // ---------------------------------------------------------------------------
@@ -928,7 +958,7 @@ type PetitionDecision struct {
 	CourtActionIndicator                    bool     `json:"courtActionIndicator"`
 	ActionTakenByCourtName                  string   `json:"actionTakenByCourtName"`
 	PetitionMailDate                        string   `json:"petitionMailDate"`
-	ProsecutionStatusCode                   string   `json:"prosecutionStatusCode,omitempty"`
+	ProsecutionStatusCode                   json.Number `json:"prosecutionStatusCode,omitempty"`
 	ProsecutionStatusCodeDescriptionText    string   `json:"prosecutionStatusCodeDescriptionText"`
 	PetitionIssueConsideredTextBag          []string `json:"petitionIssueConsideredTextBag"`
 	RuleBag                                 []string `json:"ruleBag"`

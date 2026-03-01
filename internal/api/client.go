@@ -575,7 +575,10 @@ func (c *Client) SearchBulkData(ctx context.Context, query string, opts types.Se
 }
 
 // GetBulkDataProduct retrieves a single bulk data product by ID.
-func (c *Client) GetBulkDataProduct(ctx context.Context, productID string, opts types.BulkDataProductOptions) (*types.BulkDataProductResponse, error) {
+// The API wraps the response in the same format as the search endpoint
+// (with bulkDataProductBag array), so we use BulkDataResponse and extract
+// the first product.
+func (c *Client) GetBulkDataProduct(ctx context.Context, productID string, opts types.BulkDataProductOptions) (*types.BulkDataProduct, error) {
 	params := make(map[string]string)
 	if opts.IncludeFiles {
 		params["includeFiles"] = "true"
@@ -583,8 +586,15 @@ func (c *Client) GetBulkDataProduct(ctx context.Context, productID string, opts 
 	if opts.Latest {
 		params["latest"] = "true"
 	}
-	return requestJSON[types.BulkDataProductResponse](c, ctx, http.MethodGet,
+	resp, err := requestJSON[types.BulkDataResponse](c, ctx, http.MethodGet,
 		"/api/v1/datasets/products/"+url.PathEscape(productID), nil, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.BulkDataProductBag) == 0 {
+		return nil, fmt.Errorf("no product found with ID %q", productID)
+	}
+	return &resp.BulkDataProductBag[0], nil
 }
 
 // DownloadBulkFile downloads a bulk data file to outputPath.

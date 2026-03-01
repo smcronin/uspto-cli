@@ -200,8 +200,13 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 		progress(fmt.Sprintf("  Found %d related application(s) for %s.", len(related), appNumber))
 	}
 
-	// Recursively build child nodes.
+	// Recursively build child nodes. Re-check visited before each recursion
+	// because an earlier sibling's subtree may have already visited an app
+	// that was in our related list.
 	for _, rel := range related {
+		if visited[rel.appNumber] {
+			continue
+		}
 		childNode := buildFamilyNode(ctx, client, rel.appNumber, rel.relationship, depth-1, visited)
 		node.Children = append(node.Children, childNode)
 	}

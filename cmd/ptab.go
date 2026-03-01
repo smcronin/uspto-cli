@@ -180,7 +180,7 @@ func runPtabDecisions(cmd *cobra.Command, args []string) error {
 		HasMore: offset+limit < resp.Count,
 	}
 
-	outputResult(cmd, resp.PatentTrialDecisionDataBag, pagination)
+	outputResult(cmd, resp.Decisions(), pagination)
 	return nil
 }
 
@@ -202,10 +202,11 @@ func runPtabDecision(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if len(resp.PatentTrialDecisionDataBag) == 1 {
-		outputResult(cmd, resp.PatentTrialDecisionDataBag[0], nil)
+	decisions := resp.Decisions()
+	if len(decisions) == 1 {
+		outputResult(cmd, decisions[0], nil)
 	} else {
-		outputResult(cmd, resp.PatentTrialDecisionDataBag, nil)
+		outputResult(cmd, decisions, nil)
 	}
 	return nil
 }
@@ -228,14 +229,15 @@ func runPtabDecisionsFor(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	decisions := resp.Decisions()
 	pagination := &types.PaginationMeta{
 		Offset:  0,
-		Limit:   resp.Count,
+		Limit:   len(decisions),
 		Total:   resp.Count,
 		HasMore: false,
 	}
 
-	outputResult(cmd, resp.PatentTrialDecisionDataBag, pagination)
+	outputResult(cmd, decisions, pagination)
 	return nil
 }
 
