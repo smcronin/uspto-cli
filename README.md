@@ -214,6 +214,10 @@ All commands support four output formats via `-f`:
 uspto-cli search --title sensor -f json --minify -q
 ```
 
+## Examples & Use Cases
+
+See **[EXAMPLES.md](EXAMPLES.md)** for detailed walkthroughs: competitive monitoring, prior art search, patent family trees, file wrapper downloads, PTAB tracking, bulk data exports, AI agent workflows, and more.
+
 ## Agent-Friendly Design
 
 Built for AI agents and automation:
