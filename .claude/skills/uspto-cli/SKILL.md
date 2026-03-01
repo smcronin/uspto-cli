@@ -136,6 +136,15 @@ uspto-cli app citations 16123456 -f json -q
 # Patent abstract text (from grant XML)
 uspto-cli app abstract 16123456 -f json -q
 
+# Full patent description/specification text (from grant XML)
+uspto-cli app description 16123456 -f json -q
+
+# ALL structured data from grant XML in one shot (the nuclear option)
+# Returns: title, abstract, examiner, assignee, inventors, CPC, IPC,
+# field of search, priority, term extension, claims, citations,
+# drawings metadata, and full description text
+uspto-cli app fulltext 16123456 -f json -q
+
 # Download a document PDF (by 1-based index in doc list)
 uspto-cli app dl 16123456 1 -o ./output.pdf
 
