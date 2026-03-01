@@ -28,6 +28,8 @@ var searchFlags struct {
 	examiner  string
 	artUnit   string
 	assignee  string
+	assignor  string
+	reelFrame string
 	docket    string
 	pubNumber string
 
@@ -113,6 +115,8 @@ func init() {
 	f.StringVar(&searchFlags.examiner, "examiner", "", "Search by examiner name")
 	f.StringVar(&searchFlags.artUnit, "art-unit", "", "Search by group art unit number")
 	f.StringVar(&searchFlags.assignee, "assignee", "", "Search by assignee name")
+	f.StringVar(&searchFlags.assignor, "assignor", "", "Search by assignor name")
+	f.StringVar(&searchFlags.reelFrame, "reel-frame", "", "Search by assignment reel/frame number")
 	f.StringVar(&searchFlags.docket, "docket", "", "Search by docket number")
 	f.StringVar(&searchFlags.pubNumber, "pub-number", "", "Search by publication number")
 
@@ -453,6 +457,8 @@ func buildGetQuery(freeTextQuery string) string {
 		{searchFlags.examiner, "applicationMetaData.examinerNameText"},
 		{searchFlags.artUnit, "applicationMetaData.groupArtUnitNumber"},
 		{searchFlags.assignee, "assignmentBag.assigneeBag.assigneeNameText"},
+		{searchFlags.assignor, "assignmentBag.assignorBag.assignorName"},
+		{searchFlags.reelFrame, "assignmentBag.reelAndFrameNumber"},
 		{searchFlags.docket, "applicationMetaData.docketNumber"},
 		{searchFlags.pubNumber, "applicationMetaData.earliestPublicationNumber"},
 	}

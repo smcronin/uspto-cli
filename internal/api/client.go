@@ -558,6 +558,70 @@ func (c *Client) GetAssociatedDocuments(ctx context.Context, appNumber string) (
 		"/api/v1/patent/applications/"+url.PathEscape(appNumber)+"/associated-documents", nil, nil)
 }
 
+// FetchGrantXML fetches the patent grant XML for an application. It first
+// calls the associated-documents endpoint to get the XML file URL, then
+// downloads and returns the raw XML bytes. Returns nil if no grant XML exists
+// (e.g. application is not yet granted).
+func (c *Client) FetchGrantXML(ctx context.Context, appNumber string) ([]byte, error) {
+	resp, err := c.GetAssociatedDocuments(ctx, appNumber)
+	if err != nil {
+		return nil, fmt.Errorf("fetching associated documents: %w", err)
+	}
+
+	if len(resp.PatentFileWrapperDataBag) == 0 {
+		return nil, fmt.Errorf("no associated documents found for %s", appNumber)
+	}
+
+	fw := resp.PatentFileWrapperDataBag[0]
+	grantXML := fw.GrantDocumentMetaData
+	if grantXML == nil || grantXML.FileLocationURI == "" {
+		return nil, fmt.Errorf("no grant XML available for %s (application may not be granted)", appNumber)
+	}
+
+	// The file location URI points to the bulk data file endpoint which
+	// returns a redirect to a signed S3 URL. Use the standard request
+	// flow to follow redirects.
+	c.debugf("Fetching grant XML from %s", grantXML.FileLocationURI)
+
+	xmlURL := grantXML.FileLocationURI
+	if !strings.HasPrefix(xmlURL, "http") {
+		xmlURL = c.baseURL + "/" + strings.TrimLeft(xmlURL, "/")
+	}
+
+	// Use the download client with longer timeout since the file can be large.
+	dlClient := &http.Client{
+		Timeout: downloadTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	c.rl.waitForSlot()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, xmlURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building XML request: %w", err)
+	}
+	c.setHeaders(req)
+
+	xmlResp, err := c.followRedirectsWithClient(dlClient, req)
+	c.rl.markRequestComplete()
+	if err != nil {
+		return nil, fmt.Errorf("fetching grant XML: %w", err)
+	}
+	defer xmlResp.Body.Close()
+
+	if xmlResp.StatusCode < 200 || xmlResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(xmlResp.Body)
+		return nil, &UsptoAPIError{
+			StatusCode: xmlResp.StatusCode,
+			Message:    fmt.Sprintf("grant XML download failed: HTTP %d", xmlResp.StatusCode),
+			Body:       string(body),
+		}
+	}
+
+	return io.ReadAll(xmlResp.Body)
+}
+
 // SearchStatusCodes searches patent application status codes.
 func (c *Client) SearchStatusCodes(ctx context.Context, query string, opts types.SearchOptions) (*types.StatusCodeResponse, error) {
 	return requestJSON[types.StatusCodeResponse](c, ctx, http.MethodGet,

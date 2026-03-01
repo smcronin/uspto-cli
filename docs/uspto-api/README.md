@@ -16,6 +16,8 @@ Complete reference for the USPTO Open Data Portal REST API at `api.uspto.gov`.
 | [response-schemas.md](./response-schemas.md) | All response JSON schemas |
 | [error-codes.md](./error-codes.md) | HTTP error codes and error response format |
 | [field-reference.md](./field-reference.md) | All searchable/filterable field names |
+| [grant-xml.md](./grant-xml.md) | Patent grant XML schema (claims, citations, abstract, description) |
+| [api-ecosystem.md](./api-ecosystem.md) | Complete USPTO API ecosystem map (ODP, PatentsView, TSDR, legacy) |
 
 ## Quick Reference
 

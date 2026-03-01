@@ -58,6 +58,8 @@ uspto-cli search --examiner "RILEY" --art-unit "2617" -f json -q
 uspto-cli search --patent 10902286 -f json -q
 uspto-cli search --pub-number "US20190095759A1" -f json -q
 uspto-cli search --docket "1982-1042PUS1" -f json -q
+uspto-cli search --assignor "GOOGLE" -f json -q
+uspto-cli search --reel-frame "060620/769" -f json -q
 
 # Date ranges
 uspto-cli search --title "battery" --filed-after 2023-01-01 --filed-before 2024-12-31 -f json -q
@@ -124,6 +126,15 @@ uspto-cli app fp 16123456 -f json -q
 
 # Associated XML documents (grant/pgpub metadata)
 uspto-cli app xml 16123456 -f json -q
+
+# Structured claim text (from grant XML)
+uspto-cli app claims 16123456 -f json -q
+
+# Prior art citations (from grant XML)
+uspto-cli app citations 16123456 -f json -q
+
+# Patent abstract text (from grant XML)
+uspto-cli app abstract 16123456 -f json -q
 
 # Download a document PDF (by 1-based index in doc list)
 uspto-cli app dl 16123456 1 -o ./output.pdf

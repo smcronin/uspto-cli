@@ -5,7 +5,10 @@
 // Pointer types are used for fields that may be absent or null.
 package types
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"encoding/xml"
+)
 
 // ---------------------------------------------------------------------------
 // CLI Output Envelope
@@ -973,4 +976,127 @@ type PetitionDecisionResponse struct {
 	RequestIdentifier       string             `json:"requestIdentifier,omitempty"`
 	PetitionDecisionDataBag []PetitionDecision `json:"petitionDecisionDataBag"`
 	Facets                  []FacetValue       `json:"facets,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Patent Grant XML Types (for claims, citations, abstract extraction)
+// ---------------------------------------------------------------------------
+
+// PatentGrantXML is the top-level element of a USPTO patent grant XML file.
+type PatentGrantXML struct {
+	XMLName  xml.Name          `xml:"us-patent-grant" json:"-"`
+	BibData  BibliographicData `xml:"us-bibliographic-data-grant" json:"-"`
+	Abstract XMLAbstract       `xml:"abstract" json:"abstract,omitempty"`
+	Claims   XMLClaims         `xml:"claims" json:"claims"`
+}
+
+// BibliographicData holds citation and classification data from the grant XML.
+type BibliographicData struct {
+	ReferencesCited XMLReferencesCited `xml:"us-references-cited" json:"referencesCited"`
+	NumberOfClaims  string             `xml:"number-of-claims" json:"numberOfClaims,omitempty"`
+}
+
+// XMLReferencesCited wraps the list of citations in a grant XML.
+type XMLReferencesCited struct {
+	Citations []XMLCitation `xml:"us-citation" json:"citations"`
+}
+
+// XMLCitation is a single citation entry in a grant XML.
+type XMLCitation struct {
+	PatentCitation    *XMLPatentCitation    `xml:"patcit" json:"patentCitation,omitempty"`
+	NPLCitation       *XMLNPLCitation       `xml:"nplcit" json:"nplCitation,omitempty"`
+	Category          string                `xml:"category" json:"category"`
+}
+
+// XMLPatentCitation is a patent reference cited in a grant.
+type XMLPatentCitation struct {
+	Num      string        `xml:"num,attr" json:"num"`
+	Document XMLDocumentID `xml:"document-id" json:"document"`
+}
+
+// XMLNPLCitation is a non-patent literature citation.
+type XMLNPLCitation struct {
+	Num      string         `xml:"num,attr" json:"num"`
+	OtherCit []XMLOtherCit  `xml:"othercit" json:"text,omitempty"`
+}
+
+// XMLOtherCit holds the text of a non-patent literature citation.
+type XMLOtherCit struct {
+	Text string `xml:",chardata" json:"text"`
+}
+
+// XMLDocumentID is a patent document reference (country, number, kind, date).
+type XMLDocumentID struct {
+	Country string `xml:"country" json:"country"`
+	DocNum  string `xml:"doc-number" json:"docNumber"`
+	Kind    string `xml:"kind" json:"kind,omitempty"`
+	Name    string `xml:"name" json:"name,omitempty"`
+	Date    string `xml:"date" json:"date,omitempty"`
+}
+
+// XMLClaims wraps the claims section of a grant XML.
+type XMLClaims struct {
+	Claims []XMLClaim `xml:"claim" json:"claims"`
+}
+
+// XMLClaim is a single patent claim with nested claim text.
+type XMLClaim struct {
+	ID   string `xml:"id,attr" json:"id"`
+	Num  string `xml:"num,attr" json:"num"`
+	Text string `xml:",innerxml" json:"-"`
+}
+
+// XMLAbstract wraps the abstract text.
+type XMLAbstract struct {
+	Text string `xml:",innerxml" json:"text,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Parsed output types for CLI display
+// ---------------------------------------------------------------------------
+
+// CitationResult is the structured output for the citations command.
+type CitationResult struct {
+	ApplicationNumber string          `json:"applicationNumber"`
+	PatentNumber      string          `json:"patentNumber"`
+	TotalCitations    int             `json:"totalCitations"`
+	PatentCitations   []PatentCitRef  `json:"patentCitations"`
+	NPLCitations      []NPLCitRef     `json:"nplCitations"`
+}
+
+// PatentCitRef is a flattened patent citation for output.
+type PatentCitRef struct {
+	Number   string `json:"number"`
+	Country  string `json:"country"`
+	Kind     string `json:"kind,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Date     string `json:"date,omitempty"`
+	Category string `json:"category"`
+}
+
+// NPLCitRef is a flattened non-patent literature citation for output.
+type NPLCitRef struct {
+	Text     string `json:"text"`
+	Category string `json:"category"`
+}
+
+// ClaimsResult is the structured output for the claims command.
+type ClaimsResult struct {
+	ApplicationNumber string      `json:"applicationNumber"`
+	PatentNumber      string      `json:"patentNumber"`
+	TotalClaims       int         `json:"totalClaims"`
+	Claims            []ClaimText `json:"claims"`
+}
+
+// ClaimText is a single claim with its number and text.
+type ClaimText struct {
+	Number int    `json:"number"`
+	Text   string `json:"text"`
+}
+
+// AbstractResult is the structured output for the abstract command.
+type AbstractResult struct {
+	ApplicationNumber string `json:"applicationNumber"`
+	PatentNumber      string `json:"patentNumber"`
+	Abstract          string `json:"abstract"`
 }
