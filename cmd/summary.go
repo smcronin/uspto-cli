@@ -117,6 +117,9 @@ func inventorName(inv types.Inventor) string {
 
 func runSummary(cmd *cobra.Command, args []string) error {
 	appNumber := args[0]
+	if err := validateAppNumber(appNumber); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	client := api.DefaultClient
 

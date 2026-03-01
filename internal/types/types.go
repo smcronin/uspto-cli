@@ -19,12 +19,13 @@ import (
 // Every command wraps its results in this structure for consistent parsing
 // by both human users and AI agents.
 type CLIResponse struct {
-	OK         bool            `json:"ok"`
-	Command    string          `json:"command"`
-	Pagination *PaginationMeta `json:"pagination,omitempty"`
-	Results    any             `json:"results"`
-	Version    string          `json:"version"`
-	Error      *CLIError       `json:"error,omitempty"`
+	OK         bool                       `json:"ok"`
+	Command    string                     `json:"command"`
+	Pagination *PaginationMeta            `json:"pagination,omitempty"`
+	Results    any                        `json:"results"`
+	Facets     map[string][]FacetValue    `json:"facets,omitempty"`
+	Version    string                     `json:"version"`
+	Error      *CLIError                  `json:"error,omitempty"`
 }
 
 // PaginationMeta contains offset-based pagination metadata for the CLI envelope.
@@ -594,7 +595,7 @@ type PatentFileWrapper struct {
 type PatentDataResponse struct {
 	Count                    int                 `json:"count"`
 	PatentFileWrapperDataBag []PatentFileWrapper `json:"patentFileWrapperDataBag"`
-	Facets                   []FacetValue        `json:"facets,omitempty"`
+	Facets                   map[string][]FacetValue        `json:"facets,omitempty"`
 	RequestIdentifier        string              `json:"requestIdentifier,omitempty"`
 }
 
@@ -644,7 +645,7 @@ type BulkDataProduct struct {
 type BulkDataResponse struct {
 	Count              int               `json:"count"`
 	BulkDataProductBag []BulkDataProduct `json:"bulkDataProductBag"`
-	Facets             []FacetValue      `json:"facets,omitempty"`
+	Facets             map[string][]FacetValue      `json:"facets,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -752,7 +753,7 @@ type TrialDocument struct {
 // document and decision searches.
 type TrialDocumentResponse struct {
 	Count                      int             `json:"count"`
-	Facets                     []FacetValue    `json:"facets,omitempty"`
+	Facets                     map[string][]FacetValue    `json:"facets,omitempty"`
 	RequestIdentifier          string          `json:"requestIdentifier,omitempty"`
 	PatentTrialDocumentDataBag []TrialDocument `json:"patentTrialDocumentDataBag,omitempty"`
 	PatentTrialDecisionDataBag []TrialDocument `json:"patentTrialDecisionDataBag,omitempty"`
@@ -957,7 +958,7 @@ type PetitionDecisionResponse struct {
 	Count                   int                `json:"count"`
 	RequestIdentifier       string             `json:"requestIdentifier,omitempty"`
 	PetitionDecisionDataBag []PetitionDecision `json:"petitionDecisionDataBag"`
-	Facets                  []FacetValue       `json:"facets,omitempty"`
+	Facets                  map[string][]FacetValue       `json:"facets,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

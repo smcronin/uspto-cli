@@ -692,9 +692,11 @@ func (c *Client) SearchProceedings(ctx context.Context, query string, opts types
 }
 
 // DownloadProceedingsSearch hits the proceedings search download endpoint.
-func (c *Client) DownloadProceedingsSearch(ctx context.Context, query string, opts types.SearchOptions) ([]byte, error) {
+func (c *Client) DownloadProceedingsSearch(ctx context.Context, query string, format string, opts types.SearchOptions) ([]byte, error) {
+	params := searchParams(query, opts)
+	params["format"] = format
 	return c.request(ctx, http.MethodGet,
-		"/api/v1/patent/trials/proceedings/search/download", nil, searchParams(query, opts))
+		"/api/v1/patent/trials/proceedings/search/download", nil, params)
 }
 
 // GetProceeding retrieves a single proceeding by trial number.
@@ -714,9 +716,11 @@ func (c *Client) SearchDecisions(ctx context.Context, query string, opts types.S
 }
 
 // DownloadDecisionsSearch hits the decisions search download endpoint.
-func (c *Client) DownloadDecisionsSearch(ctx context.Context, query string, opts types.SearchOptions) ([]byte, error) {
+func (c *Client) DownloadDecisionsSearch(ctx context.Context, query string, format string, opts types.SearchOptions) ([]byte, error) {
+	params := searchParams(query, opts)
+	params["format"] = format
 	return c.request(ctx, http.MethodGet,
-		"/api/v1/patent/trials/decisions/search/download", nil, searchParams(query, opts))
+		"/api/v1/patent/trials/decisions/search/download", nil, params)
 }
 
 // GetTrialDecision retrieves a single trial decision by document ID.
@@ -742,9 +746,11 @@ func (c *Client) SearchTrialDocuments(ctx context.Context, query string, opts ty
 }
 
 // DownloadTrialDocumentsSearch hits the trial documents search download endpoint.
-func (c *Client) DownloadTrialDocumentsSearch(ctx context.Context, query string, opts types.SearchOptions) ([]byte, error) {
+func (c *Client) DownloadTrialDocumentsSearch(ctx context.Context, query string, format string, opts types.SearchOptions) ([]byte, error) {
+	params := searchParams(query, opts)
+	params["format"] = format
 	return c.request(ctx, http.MethodGet,
-		"/api/v1/patent/trials/documents/search/download", nil, searchParams(query, opts))
+		"/api/v1/patent/trials/documents/search/download", nil, params)
 }
 
 // GetTrialDocument retrieves a single trial document by document ID.
@@ -770,9 +776,11 @@ func (c *Client) SearchAppeals(ctx context.Context, query string, opts types.Sea
 }
 
 // DownloadAppealsSearch hits the appeals search download endpoint.
-func (c *Client) DownloadAppealsSearch(ctx context.Context, query string, opts types.SearchOptions) ([]byte, error) {
+func (c *Client) DownloadAppealsSearch(ctx context.Context, query string, format string, opts types.SearchOptions) ([]byte, error) {
+	params := searchParams(query, opts)
+	params["format"] = format
 	return c.request(ctx, http.MethodGet,
-		"/api/v1/patent/appeals/decisions/search/download", nil, searchParams(query, opts))
+		"/api/v1/patent/appeals/decisions/search/download", nil, params)
 }
 
 // GetAppealDecision retrieves a single appeal decision by document ID.
@@ -798,9 +806,11 @@ func (c *Client) SearchInterferences(ctx context.Context, query string, opts typ
 }
 
 // DownloadInterferencesSearch hits the interferences search download endpoint.
-func (c *Client) DownloadInterferencesSearch(ctx context.Context, query string, opts types.SearchOptions) ([]byte, error) {
+func (c *Client) DownloadInterferencesSearch(ctx context.Context, query string, format string, opts types.SearchOptions) ([]byte, error) {
+	params := searchParams(query, opts)
+	params["format"] = format
 	return c.request(ctx, http.MethodGet,
-		"/api/v1/patent/interferences/decisions/search/download", nil, searchParams(query, opts))
+		"/api/v1/patent/interferences/decisions/search/download", nil, params)
 }
 
 // GetInterferenceDecision retrieves a single interference decision by

@@ -3,12 +3,34 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
 	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
+
+// downloadFormat returns the download format from the --download flag.
+// Empty string means --download was not set.
+func downloadFormat(cmd *cobra.Command) string {
+	v, _ := cmd.Flags().GetString("download")
+	return v
+}
+
+// addDownloadFlag adds the --download flag to a command.
+func addDownloadFlag(cmd *cobra.Command) {
+	cmd.Flags().String("download", "", "Download all results in one request (json or csv)")
+}
+
+// writeDownloadResult writes raw bytes from a download endpoint to stdout.
+func writeDownloadResult(data []byte) {
+	os.Stdout.Write(data)
+	// Ensure trailing newline for terminal friendliness.
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		os.Stdout.Write([]byte("\n"))
+	}
+}
 
 // ---------------------------------------------------------------------------
 // ptab -- parent command
@@ -42,6 +64,7 @@ func init() {
 	f.Int("limit", 25, "Maximum results to return")
 	f.Int("offset", 0, "Number of results to skip")
 	f.String("sort", "", "Sort field and order (e.g. trialNumber:asc)")
+	addDownloadFlag(ptabSearchCmd)
 }
 
 func runPtabSearch(cmd *cobra.Command, args []string) error {
@@ -77,6 +100,15 @@ func runPtabSearch(cmd *cobra.Command, args []string) error {
 		Limit:  limit,
 		Offset: offset,
 		Sort:   sort,
+	}
+
+	if fmt := downloadFormat(cmd); fmt != "" {
+		data, err := api.DefaultClient.DownloadProceedingsSearch(context.Background(), query, fmt, opts)
+		if err != nil {
+			return err
+		}
+		writeDownloadResult(data)
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchProceedings(context.Background(), query, opts)
@@ -140,6 +172,7 @@ func init() {
 	f.String("type", "", "Filter by decision type category")
 	f.Int("limit", 25, "Maximum results to return")
 	f.Int("offset", 0, "Number of results to skip")
+	addDownloadFlag(ptabDecisionsCmd)
 }
 
 func runPtabDecisions(cmd *cobra.Command, args []string) error {
@@ -166,6 +199,15 @@ func runPtabDecisions(cmd *cobra.Command, args []string) error {
 	opts := types.SearchOptions{
 		Limit:  limit,
 		Offset: offset,
+	}
+
+	if fmt := downloadFormat(cmd); fmt != "" {
+		data, err := api.DefaultClient.DownloadDecisionsSearch(context.Background(), query, fmt, opts)
+		if err != nil {
+			return err
+		}
+		writeDownloadResult(data)
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchDecisions(context.Background(), query, opts)
@@ -258,6 +300,7 @@ func init() {
 	f.String("trial", "", "Filter by trial number")
 	f.Int("limit", 25, "Maximum results to return")
 	f.Int("offset", 0, "Number of results to skip")
+	addDownloadFlag(ptabDocsCmd)
 }
 
 func runPtabDocs(cmd *cobra.Command, args []string) error {
@@ -278,6 +321,15 @@ func runPtabDocs(cmd *cobra.Command, args []string) error {
 	opts := types.SearchOptions{
 		Limit:  limit,
 		Offset: offset,
+	}
+
+	if fmt := downloadFormat(cmd); fmt != "" {
+		data, err := api.DefaultClient.DownloadTrialDocumentsSearch(context.Background(), query, fmt, opts)
+		if err != nil {
+			return err
+		}
+		writeDownloadResult(data)
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchTrialDocuments(context.Background(), query, opts)
@@ -367,6 +419,7 @@ func init() {
 	f := ptabAppealsCmd.Flags()
 	f.Int("limit", 25, "Maximum results to return")
 	f.Int("offset", 0, "Number of results to skip")
+	addDownloadFlag(ptabAppealsCmd)
 }
 
 func runPtabAppeals(cmd *cobra.Command, args []string) error {
@@ -381,6 +434,15 @@ func runPtabAppeals(cmd *cobra.Command, args []string) error {
 	opts := types.SearchOptions{
 		Limit:  limit,
 		Offset: offset,
+	}
+
+	if fmt := downloadFormat(cmd); fmt != "" {
+		data, err := api.DefaultClient.DownloadAppealsSearch(context.Background(), query, fmt, opts)
+		if err != nil {
+			return err
+		}
+		writeDownloadResult(data)
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchAppeals(context.Background(), query, opts)
@@ -470,6 +532,7 @@ func init() {
 	f := ptabInterferencesCmd.Flags()
 	f.Int("limit", 25, "Maximum results to return")
 	f.Int("offset", 0, "Number of results to skip")
+	addDownloadFlag(ptabInterferencesCmd)
 }
 
 func runPtabInterferences(cmd *cobra.Command, args []string) error {
@@ -484,6 +547,15 @@ func runPtabInterferences(cmd *cobra.Command, args []string) error {
 	opts := types.SearchOptions{
 		Limit:  limit,
 		Offset: offset,
+	}
+
+	if fmt := downloadFormat(cmd); fmt != "" {
+		data, err := api.DefaultClient.DownloadInterferencesSearch(context.Background(), query, fmt, opts)
+		if err != nil {
+			return err
+		}
+		writeDownloadResult(data)
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchInterferences(context.Background(), query, opts)

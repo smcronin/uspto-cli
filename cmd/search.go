@@ -144,6 +144,7 @@ func init() {
 	f.StringVar(&searchFlags.fields, "fields", "", "Comma-separated list of fields to return")
 	f.StringArrayVar(&searchFlags.filters, "filter", nil, "Structured filter: field=value (repeatable, comma-separated values)")
 	f.StringVar(&searchFlags.facets, "facets", "", "Comma-separated facet fields")
+	f.String("download", "", "Download all results in one request (json or csv)")
 
 	rootCmd.AddCommand(searchCmd)
 }
@@ -178,6 +179,22 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
+	// --download: use the bulk download endpoint instead of paginated search.
+	if dlFmt := downloadFormat(cmd); dlFmt != "" {
+		query := buildGetQuery(freeTextQuery)
+		opts := types.SearchOptions{
+			Limit:  searchFlags.limit,
+			Offset: searchFlags.offset,
+			Sort:   buildGetSort(),
+		}
+		data, err := api.DefaultClient.DownloadPatents(ctx, query, dlFmt, opts)
+		if err != nil {
+			return err
+		}
+		writeDownloadResult(data)
+		return nil
+	}
+
 	if searchFlags.all {
 		return runSearchAllPages(ctx, cmd, freeTextQuery, needsPost)
 	}
@@ -210,7 +227,7 @@ func runSearchSinglePage(ctx context.Context, cmd *cobra.Command, freeTextQuery 
 			resultEnd)
 	}
 
-	outputResult(cmd, resp.PatentFileWrapperDataBag, pagination)
+	outputResultWithFacets(cmd, resp.PatentFileWrapperDataBag, pagination, resp.Facets)
 	return nil
 }
 

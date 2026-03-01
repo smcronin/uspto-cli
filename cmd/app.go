@@ -922,6 +922,13 @@ the output file path (defaults to a generated filename).`,
 			outPath = defaultOutputPath(doc, appNumber)
 		}
 
+		if flagDryRun {
+			fmt.Fprintf(os.Stdout, "DOWNLOAD %s (%s) -> %s\n",
+				doc.DocumentCode, doc.OfficialDate, outPath)
+			fmt.Fprintf(os.Stdout, "URL: %s\n", pdfURL)
+			return nil
+		}
+
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "Downloading: %s (%s) -> %s\n",
 				doc.DocumentCodeDescriptionText, doc.OfficialDate, outPath)

@@ -72,6 +72,9 @@ func init() {
 
 func runFamily(cmd *cobra.Command, args []string) error {
 	appNumber := args[0]
+	if err := validateAppNumber(appNumber); err != nil {
+		return err
+	}
 
 	// Clamp depth.
 	if flagFamilyDepth < 1 {

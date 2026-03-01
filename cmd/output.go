@@ -41,27 +41,35 @@ func getOutputOptions() OutputOptions {
 //   - data:       the results payload; should be a slice or single object
 //   - pagination: optional pagination metadata (may be nil)
 func outputResult(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta) {
+	outputResultWithFacets(cmd, data, pagination, nil)
+}
+
+func outputResultWithFacets(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue) {
 	opts := getOutputOptions()
 
 	switch opts.Format {
 	case "json":
-		writeJSON(cmd, data, pagination, opts)
+		writeJSON(cmd, data, pagination, facets, opts)
 	case "ndjson":
 		writeNDJSON(cmd, data, opts)
 	case "csv":
 		writeCSV(data, opts)
 	default:
 		writeTable(data, opts)
+		if len(facets) > 0 {
+			writeFacetsTable(facets)
+		}
 	}
 }
 
 // writeJSON outputs the standardized JSON envelope to stdout.
-func writeJSON(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, opts OutputOptions) {
+func writeJSON(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue, opts OutputOptions) {
 	env := types.CLIResponse{
 		OK:         true,
 		Command:    cmd.Name(),
 		Pagination: pagination,
 		Results:    data,
+		Facets:     facets,
 		Version:    version,
 	}
 
@@ -206,6 +214,22 @@ func outputErrorJSON(errInfo *types.CLIError) {
 		return
 	}
 	fmt.Fprintln(os.Stdout, string(out))
+}
+
+// writeFacetsTable renders faceted search results as one table per facet field.
+func writeFacetsTable(facets map[string][]types.FacetValue) {
+	fmt.Fprintln(os.Stdout)
+	for field, values := range facets {
+		fmt.Fprintf(os.Stdout, "Facet: %s\n", field)
+		t := table.NewWriter()
+		t.SetOutputMirror(os.Stdout)
+		t.AppendHeader(table.Row{"VALUE", "COUNT"})
+		for _, v := range values {
+			t.AppendRow(table.Row{v.Value, v.Count})
+		}
+		t.Render()
+		fmt.Fprintln(os.Stdout)
+	}
 }
 
 // ---------- helpers ----------
