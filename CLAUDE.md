@@ -40,6 +40,17 @@ go install .               # Install to $GOBIN
 go vet ./...               # Static analysis
 ```
 
+## Testing
+Integration tests live in `tests/integration/` and shell out to the built binary against the live USPTO API.
+```bash
+go test ./tests/integration/ -v -count=1 -timeout 600s    # Full suite (~55 tests)
+go test ./tests/integration/ -v -run "TestT001"            # Help only (no API key needed)
+go test ./tests/integration/ -v -run "BUG"                 # All bug regression tests
+```
+- Tests require `USPTO_API_KEY` (from env or `.env` file); API tests skip gracefully if missing
+- No `t.Parallel()` — sequential execution respects the CLI's rate limiter
+- Test names follow `TestTNNNx_Description` pattern (e.g., `TestT004b_AssigneeSearch_BUG001`)
+
 ## API Base URL
 Production: https://api.uspto.gov
 All endpoints under /api/v1/
