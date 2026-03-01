@@ -83,12 +83,14 @@ func initConfig(cmd *cobra.Command) error {
 	}
 
 	// Set up the API client singleton.
+	if flagTimeout <= 0 {
+		return fmt.Errorf("invalid --timeout %d: must be > 0 seconds", flagTimeout)
+	}
+
 	opts := []api.ClientOption{
 		api.WithDebug(flagDebug),
 	}
-	if flagTimeout > 0 {
-		opts = append(opts, api.WithTimeout(time.Duration(flagTimeout)*time.Second))
-	}
+	opts = append(opts, api.WithTimeout(time.Duration(flagTimeout)*time.Second))
 	api.DefaultClient = api.NewClient(flagAPIKey, opts...)
 
 	return nil

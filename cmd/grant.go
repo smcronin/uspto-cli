@@ -194,6 +194,11 @@ Example:
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			return nil
+		}
 
 		ctx := context.Background()
 		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
@@ -278,6 +283,11 @@ Example:
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			return nil
+		}
 
 		ctx := context.Background()
 		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
@@ -359,6 +369,11 @@ Example:
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			return nil
+		}
 
 		ctx := context.Background()
 		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
@@ -413,6 +428,11 @@ Example:
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			return nil
 		}
 
 		ctx := context.Background()
@@ -473,6 +493,11 @@ Example:
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			return nil
 		}
 
 		ctx := context.Background()

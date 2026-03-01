@@ -949,7 +949,19 @@ type PetitionDecision struct {
 	PetitionIssueConsideredTextBag          []string `json:"petitionIssueConsideredTextBag"`
 	RuleBag                                 []string `json:"ruleBag"`
 	StatuteBag                              []string `json:"statuteBag"`
+	DocumentBag                             []PetitionDocument `json:"documentBag,omitempty"`
 	LastIngestionDateTime                   string   `json:"lastIngestionDateTime"`
+}
+
+// PetitionDocument describes a petition-associated file-wrapper document.
+type PetitionDocument struct {
+	ApplicationNumberText       string           `json:"applicationNumberText"`
+	OfficialDate                string           `json:"officialDate"`
+	DocumentIdentifier          string           `json:"documentIdentifier"`
+	DocumentCode                string           `json:"documentCode"`
+	DocumentCodeDescriptionText string           `json:"documentCodeDescriptionText"`
+	DirectionCategory           string           `json:"directionCategory"`
+	DownloadOptionBag           []DownloadOption `json:"downloadOptionBag"`
 }
 
 // PetitionDecisionResponse is the top-level response for petition

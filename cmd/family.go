@@ -75,6 +75,12 @@ func runFamily(cmd *cobra.Command, args []string) error {
 	if err := validateAppNumber(appNumber); err != nil {
 		return err
 	}
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/meta-data", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/continuity", nil)
+		fmt.Fprintln(os.Stderr, "Then: recursively fetch related applications up to --depth")
+		return nil
+	}
 
 	// Clamp depth.
 	if flagFamilyDepth < 1 {

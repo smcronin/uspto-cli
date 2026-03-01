@@ -174,6 +174,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if err := validateSearchInputs(); err != nil {
+		return err
+	}
+
 	// Decide whether we need the POST endpoint.
 	needsPost := needsPostEndpoint()
 
@@ -186,6 +190,12 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			Limit:  searchFlags.limit,
 			Offset: searchFlags.offset,
 			Sort:   buildGetSort(),
+		}
+		if flagDryRun {
+			params := searchOptionsToParams(query, opts)
+			params["format"] = dlFmt
+			printDryRunGET("/api/v1/patent/applications/search/download", params)
+			return nil
 		}
 		data, err := api.DefaultClient.DownloadPatents(ctx, query, dlFmt, opts)
 		if err != nil {
@@ -284,7 +294,8 @@ func executeSearch(ctx context.Context, freeTextQuery string, usePost bool, limi
 		body := buildPostBody(freeTextQuery, limit, offset)
 
 		if flagDryRun {
-			return dryRunPost(body)
+			printDryRunPOST("/api/v1/patent/applications/search", nil, body)
+			return &types.PatentDataResponse{}, nil
 		}
 
 		return client.SearchPatentsPost(ctx, body)
@@ -302,10 +313,41 @@ func executeSearch(ctx context.Context, freeTextQuery string, usePost bool, limi
 	}
 
 	if flagDryRun {
-		return dryRunGet(query, opts)
+		printDryRunGET("/api/v1/patent/applications/search", searchOptionsToParams(query, opts))
+		return &types.PatentDataResponse{}, nil
 	}
 
 	return client.SearchPatents(ctx, query, opts)
+}
+
+func validateSearchInputs() error {
+	if searchFlags.limit <= 0 {
+		return fmt.Errorf("invalid --limit %d: must be > 0", searchFlags.limit)
+	}
+	if searchFlags.offset < 0 {
+		return fmt.Errorf("invalid --offset %d: must be >= 0", searchFlags.offset)
+	}
+	if searchFlags.page < 0 {
+		return fmt.Errorf("invalid --page %d: must be >= 1", searchFlags.page)
+	}
+	if searchFlags.granted && searchFlags.pending {
+		return fmt.Errorf("cannot combine --granted and --pending")
+	}
+	if err := validateSortExpr("--sort", searchFlags.sort); err != nil {
+		return err
+	}
+	if err := validateDateRange("--filed-after", searchFlags.filedAfter, "--filed-before", searchFlags.filedBefore); err != nil {
+		return err
+	}
+	if err := validateDateRange("--granted-after", searchFlags.grantedAfter, "--granted-before", searchFlags.grantedBefore); err != nil {
+		return err
+	}
+	for _, expr := range searchFlags.filters {
+		if !strings.Contains(expr, "=") {
+			return fmt.Errorf("invalid --filter %q: expected field=value", expr)
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

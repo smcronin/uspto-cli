@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -53,6 +52,16 @@ func init() {
 }
 
 func runPetitionSearch(cmd *cobra.Command, args []string) error {
+	if petitionSearchFlags.limit <= 0 {
+		return fmt.Errorf("invalid --limit %d: must be > 0", petitionSearchFlags.limit)
+	}
+	if petitionSearchFlags.offset < 0 {
+		return fmt.Errorf("invalid --offset %d: must be >= 0", petitionSearchFlags.offset)
+	}
+	if err := validateSortExpr("--sort", petitionSearchFlags.sort); err != nil {
+		return err
+	}
+
 	// Build the query string from the positional argument and filter flags.
 	var parts []string
 	if len(args) > 0 && args[0] != "" {
@@ -62,7 +71,13 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 		parts = append(parts, fmt.Sprintf("finalDecidingOfficeName:\"%s\"", petitionSearchFlags.office))
 	}
 	if petitionSearchFlags.decision != "" {
-		parts = append(parts, fmt.Sprintf("decisionTypeCode:%s", petitionSearchFlags.decision))
+		decision := strings.ToUpper(strings.TrimSpace(petitionSearchFlags.decision))
+		switch decision {
+		case "GRANTED", "DENIED", "DISMISSED":
+			parts = append(parts, fmt.Sprintf("decisionTypeCodeDescriptionText:%s", decision))
+		default:
+			return fmt.Errorf("invalid --decision %q: expected GRANTED, DENIED, or DISMISSED", petitionSearchFlags.decision)
+		}
 	}
 	if petitionSearchFlags.app != "" {
 		parts = append(parts, fmt.Sprintf("applicationNumberText:%s", petitionSearchFlags.app))
@@ -80,7 +95,8 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagDryRun {
-		return dryRunPetitionSearch(query, opts)
+		printDryRunGET("/api/v1/petition/decisions/search", searchOptionsToParams(query, opts))
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchPetitionDecisions(context.Background(), query, opts)
@@ -103,32 +119,6 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	outputResult(cmd, resp.PetitionDecisionDataBag, pagination)
-	return nil
-}
-
-// dryRunPetitionSearch prints the request that would be sent without
-// executing it.
-func dryRunPetitionSearch(query string, opts types.SearchOptions) error {
-	fmt.Fprintln(os.Stderr, "GET /api/v1/petition/decisions/search")
-
-	var params []string
-	if query != "" {
-		params = append(params, "q="+query)
-	}
-	if opts.Limit > 0 {
-		params = append(params, "limit="+strconv.Itoa(opts.Limit))
-	}
-	if opts.Offset > 0 {
-		params = append(params, "offset="+strconv.Itoa(opts.Offset))
-	}
-	if opts.Sort != "" {
-		params = append(params, "sort="+opts.Sort)
-	}
-
-	if len(params) > 0 {
-		fmt.Fprintf(os.Stderr, "  ?%s\n", strings.Join(params, "&"))
-	}
-
 	return nil
 }
 
@@ -156,11 +146,11 @@ func runPetitionGet(cmd *cobra.Command, args []string) error {
 	recordID := args[0]
 
 	if flagDryRun {
-		path := "GET /api/v1/petition/decisions/" + recordID
+		params := map[string]string{}
 		if petitionGetFlags.includeDocuments {
-			path += "\n  ?includeDocuments=true"
+			params["includeDocuments"] = "true"
 		}
-		fmt.Fprintln(os.Stderr, path)
+		printDryRunGET("/api/v1/petition/decisions/"+recordID, params)
 		return nil
 	}
 

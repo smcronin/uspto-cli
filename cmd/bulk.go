@@ -277,6 +277,9 @@ func runBulkDownload(cmd *cobra.Command, args []string) error {
 		"fileName":  fileName,
 		"savedTo":   savedPath,
 	}
+	if flagQuiet && flagFormat == "table" {
+		return nil
+	}
 	outputResult(cmd, result, nil)
 	return nil
 }

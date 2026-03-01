@@ -102,6 +102,17 @@ func runPtabSearch(cmd *cobra.Command, args []string) error {
 		Sort:   sort,
 	}
 
+	if flagDryRun {
+		if fmt := downloadFormat(cmd); fmt != "" {
+			params := searchOptionsToParams(query, opts)
+			params["format"] = fmt
+			printDryRunGET("/api/v1/patent/trials/proceedings/search/download", params)
+			return nil
+		}
+		printDryRunGET("/api/v1/patent/trials/proceedings/search", searchOptionsToParams(query, opts))
+		return nil
+	}
+
 	if fmt := downloadFormat(cmd); fmt != "" {
 		data, err := api.DefaultClient.DownloadProceedingsSearch(context.Background(), query, fmt, opts)
 		if err != nil {
@@ -140,6 +151,10 @@ var ptabGetCmd = &cobra.Command{
 }
 
 func runPtabGet(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/proceedings/"+args[0], nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetProceeding(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -201,6 +216,17 @@ func runPtabDecisions(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
+	if flagDryRun {
+		if fmt := downloadFormat(cmd); fmt != "" {
+			params := searchOptionsToParams(query, opts)
+			params["format"] = fmt
+			printDryRunGET("/api/v1/patent/trials/decisions/search/download", params)
+			return nil
+		}
+		printDryRunGET("/api/v1/patent/trials/decisions/search", searchOptionsToParams(query, opts))
+		return nil
+	}
+
 	if fmt := downloadFormat(cmd); fmt != "" {
 		data, err := api.DefaultClient.DownloadDecisionsSearch(context.Background(), query, fmt, opts)
 		if err != nil {
@@ -239,6 +265,10 @@ var ptabDecisionCmd = &cobra.Command{
 }
 
 func runPtabDecision(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/decisions/"+args[0], nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetTrialDecision(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -266,6 +296,10 @@ var ptabDecisionsForCmd = &cobra.Command{
 }
 
 func runPtabDecisionsFor(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/"+args[0]+"/decisions", nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetTrialDecisionsByTrial(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -323,6 +357,17 @@ func runPtabDocs(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
+	if flagDryRun {
+		if fmt := downloadFormat(cmd); fmt != "" {
+			params := searchOptionsToParams(query, opts)
+			params["format"] = fmt
+			printDryRunGET("/api/v1/patent/trials/documents/search/download", params)
+			return nil
+		}
+		printDryRunGET("/api/v1/patent/trials/documents/search", searchOptionsToParams(query, opts))
+		return nil
+	}
+
 	if fmt := downloadFormat(cmd); fmt != "" {
 		data, err := api.DefaultClient.DownloadTrialDocumentsSearch(context.Background(), query, fmt, opts)
 		if err != nil {
@@ -361,6 +406,10 @@ var ptabDocCmd = &cobra.Command{
 }
 
 func runPtabDoc(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/documents/"+args[0], nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetTrialDocument(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -387,6 +436,10 @@ var ptabDocsForCmd = &cobra.Command{
 }
 
 func runPtabDocsFor(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/"+args[0]+"/documents", nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetTrialDocumentsByTrial(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -436,6 +489,17 @@ func runPtabAppeals(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
+	if flagDryRun {
+		if fmt := downloadFormat(cmd); fmt != "" {
+			params := searchOptionsToParams(query, opts)
+			params["format"] = fmt
+			printDryRunGET("/api/v1/patent/appeals/decisions/search/download", params)
+			return nil
+		}
+		printDryRunGET("/api/v1/patent/appeals/decisions/search", searchOptionsToParams(query, opts))
+		return nil
+	}
+
 	if fmt := downloadFormat(cmd); fmt != "" {
 		data, err := api.DefaultClient.DownloadAppealsSearch(context.Background(), query, fmt, opts)
 		if err != nil {
@@ -474,6 +538,10 @@ var ptabAppealCmd = &cobra.Command{
 }
 
 func runPtabAppeal(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/appeals/decisions/"+args[0], nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetAppealDecision(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -500,6 +568,10 @@ var ptabAppealsForCmd = &cobra.Command{
 }
 
 func runPtabAppealsFor(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/appeals/"+args[0]+"/decisions", nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetAppealDecisionsByAppeal(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -549,6 +621,17 @@ func runPtabInterferences(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
+	if flagDryRun {
+		if fmt := downloadFormat(cmd); fmt != "" {
+			params := searchOptionsToParams(query, opts)
+			params["format"] = fmt
+			printDryRunGET("/api/v1/patent/interferences/decisions/search/download", params)
+			return nil
+		}
+		printDryRunGET("/api/v1/patent/interferences/decisions/search", searchOptionsToParams(query, opts))
+		return nil
+	}
+
 	if fmt := downloadFormat(cmd); fmt != "" {
 		data, err := api.DefaultClient.DownloadInterferencesSearch(context.Background(), query, fmt, opts)
 		if err != nil {
@@ -587,6 +670,10 @@ var ptabInterferenceCmd = &cobra.Command{
 }
 
 func runPtabInterference(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/interferences/decisions/"+args[0], nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetInterferenceDecision(context.Background(), args[0])
 	if err != nil {
 		return err
@@ -613,6 +700,10 @@ var ptabInterferencesForCmd = &cobra.Command{
 }
 
 func runPtabInterferencesFor(cmd *cobra.Command, args []string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/interferences/"+args[0]+"/decisions", nil)
+		return nil
+	}
 	resp, err := api.DefaultClient.GetInterferenceDecisionsByNumber(context.Background(), args[0])
 	if err != nil {
 		return err

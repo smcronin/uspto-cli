@@ -120,6 +120,14 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err := validateAppNumber(appNumber); err != nil {
 		return err
 	}
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/meta-data", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/continuity", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/assignment", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/transactions", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/documents", nil)
+		return nil
+	}
 	ctx := context.Background()
 	client := api.DefaultClient
 

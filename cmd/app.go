@@ -496,6 +496,10 @@ var appGetCmd = &cobra.Command{
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber, nil)
+			return nil
+		}
 
 		resp, err := api.DefaultClient.GetApplication(context.Background(), appNumber)
 		if err != nil {
@@ -527,6 +531,10 @@ var appMetaCmd = &cobra.Command{
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/meta-data", nil)
+			return nil
 		}
 
 		resp, err := api.DefaultClient.GetMetadata(context.Background(), appNumber)
@@ -566,11 +574,28 @@ var appDocsCmd = &cobra.Command{
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if err := validateDateRange("--from", appDocsFromFlag, "--to", appDocsToFlag); err != nil {
+			return err
+		}
 
 		opts := types.DocumentOptions{
 			DocumentCodes:    appDocsCodesFlag,
 			OfficialDateFrom: appDocsFromFlag,
 			OfficialDateTo:   appDocsToFlag,
+		}
+		if flagDryRun {
+			params := map[string]string{}
+			if opts.DocumentCodes != "" {
+				params["documentCodes"] = opts.DocumentCodes
+			}
+			if opts.OfficialDateFrom != "" {
+				params["officialDateFrom"] = opts.OfficialDateFrom
+			}
+			if opts.OfficialDateTo != "" {
+				params["officialDateTo"] = opts.OfficialDateTo
+			}
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/documents", params)
+			return nil
 		}
 
 		resp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, opts)
@@ -604,6 +629,10 @@ var appTransactionsCmd = &cobra.Command{
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/transactions", nil)
+			return nil
 		}
 
 		resp, err := api.DefaultClient.GetTransactions(context.Background(), appNumber)
@@ -642,6 +671,10 @@ var appContinuityCmd = &cobra.Command{
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/continuity", nil)
+			return nil
 		}
 
 		resp, err := api.DefaultClient.GetContinuity(context.Background(), appNumber)
@@ -682,6 +715,10 @@ var appAssignmentsCmd = &cobra.Command{
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/assignment", nil)
+			return nil
+		}
 
 		resp, err := api.DefaultClient.GetAssignment(context.Background(), appNumber)
 		if err != nil {
@@ -718,6 +755,10 @@ var appAttorneyCmd = &cobra.Command{
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/attorney", nil)
+			return nil
 		}
 
 		resp, err := api.DefaultClient.GetAttorney(context.Background(), appNumber)
@@ -757,6 +798,10 @@ var appAdjustmentCmd = &cobra.Command{
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/adjustment", nil)
+			return nil
+		}
 
 		resp, err := api.DefaultClient.GetAdjustment(context.Background(), appNumber)
 		if err != nil {
@@ -790,6 +835,10 @@ var appForeignPriorityCmd = &cobra.Command{
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/foreign-priority", nil)
+			return nil
 		}
 
 		resp, err := api.DefaultClient.GetForeignPriority(context.Background(), appNumber)
@@ -829,6 +878,10 @@ var appAssociatedDocsCmd = &cobra.Command{
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
+			return nil
+		}
 
 		resp, err := api.DefaultClient.GetAssociatedDocuments(context.Background(), appNumber)
 		if err != nil {
@@ -846,7 +899,7 @@ var appAssociatedDocsCmd = &cobra.Command{
 		}
 
 		result := map[string]interface{}{
-			"grantDocumentMetaData":  pfw.GrantDocumentMetaData,
+			"grantDocumentMetaData": pfw.GrantDocumentMetaData,
 			"pgpubDocumentMetaData": pfw.PgpubDocumentMetaData,
 		}
 		outputResult(cmd, result, nil)
@@ -978,6 +1031,9 @@ Progress is shown on stderr.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
+			return err
+		}
+		if err := validateDateRange("--from", appDownloadAllFromFlag, "--to", appDownloadAllToFlag); err != nil {
 			return err
 		}
 
