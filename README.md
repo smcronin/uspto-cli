@@ -53,6 +53,9 @@ uspto-cli summary 16123456
 # Extract claims from a granted patent
 uspto-cli app claims 16123456
 
+# One-liner full artifact bundle by publication/patent/app ID
+uspto-cli patent bundle US20050021049A1
+
 # JSON output for agents/piping
 uspto-cli search --assignee "Google" --granted -f json
 ```
@@ -105,6 +108,33 @@ uspto-cli search --filter "applicationTypeLabelName=Utility" --facets applicatio
 `--granted-after`, `--granted-before`,
 `--sort`, `--limit`, `--offset`, `--page`, `--all`,
 `--filter`, `--facets`, `--fields`, `--download`
+
+### Patent Bundle
+
+One-command export for the full patent artifact set (not metadata-only). Works with application numbers, publication numbers, or patent numbers.
+
+```bash
+# Auto-resolve ID and export everything into ./uspto/<id>/
+uspto-cli patent bundle US20050021049A1
+
+# Explicit output folder
+uspto-cli patent bundle US20050021049A1 --out ./uspto/single/US20050021049A1
+
+# Force identifier type if needed
+uspto-cli patent bundle 10924035 --id-type app
+uspto-cli patent bundle US20050021049A1 --id-type publication
+uspto-cli patent bundle 7284931 --id-type patent
+```
+
+Bundle contents:
+- `00_resolution.json` - identifier resolution + core metadata
+- `01_associated-docs.json` - grant/pgpub XML metadata
+- `02_fulltext.json` - parsed grant XML full text (if available)
+- `03_docs.json` - file-wrapper document index
+- `04_download-all.json` - PDF download results
+- `xml/grant.xml` and `xml/pgpub.xml` (when available)
+- `pdf/` directory with downloaded file-wrapper PDFs
+- `README.md` describing what was downloaded and any gaps
 
 ### Application Data
 
@@ -256,6 +286,10 @@ Built-in rate limiter respects USPTO limits automatically:
 - **429 auto-retry** — 3 attempts with 5-second backoff
 - **Meta data APIs:** 5M calls/week
 - **Document APIs:** 1.2M calls/week
+
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or sponsored by the United States Patent and Trademark Office (USPTO). Data provided by the [USPTO Open Data Portal API](https://data.uspto.gov) (api.uspto.gov).
 
 ## License
 
