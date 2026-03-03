@@ -435,7 +435,7 @@ func TestCLIResponse_MarshalJSON_Basic(t *testing.T) {
 		OK:      true,
 		Command: "search",
 		Results: []string{"result1", "result2"},
-		Version: "0.2.1",
+		Version: "0.2.3",
 	}
 
 	b, err := json.Marshal(resp)
@@ -454,8 +454,8 @@ func TestCLIResponse_MarshalJSON_Basic(t *testing.T) {
 	if raw["command"] != "search" {
 		t.Errorf("command: got %v, want %q", raw["command"], "search")
 	}
-	if raw["version"] != "0.2.1" {
-		t.Errorf("version: got %v, want %q", raw["version"], "0.2.1")
+	if raw["version"] != "0.2.3" {
+		t.Errorf("version: got %v, want %q", raw["version"], "0.2.3")
 	}
 	results, ok := raw["results"].([]interface{})
 	if !ok {
@@ -477,7 +477,7 @@ func TestCLIResponse_MarshalJSON_WithPagination(t *testing.T) {
 			HasMore: true,
 		},
 		Results: []string{},
-		Version: "0.2.1",
+		Version: "0.2.3",
 	}
 
 	b, err := json.Marshal(resp)
@@ -513,7 +513,7 @@ func TestCLIResponse_MarshalJSON_NilPaginationOmitted(t *testing.T) {
 		OK:      true,
 		Command: "get",
 		Results: "single",
-		Version: "0.2.1",
+		Version: "0.2.3",
 	}
 
 	b, err := json.Marshal(resp)
@@ -542,7 +542,7 @@ func TestCLIResponse_MarshalJSON_WithFacets(t *testing.T) {
 				{Value: "design", Count: 20},
 			},
 		},
-		Version: "0.2.1",
+		Version: "0.2.3",
 	}
 
 	b, err := json.Marshal(resp)
@@ -585,7 +585,7 @@ func TestCLIResponse_MarshalJSON_NilFacetsOmitted(t *testing.T) {
 		OK:      true,
 		Command: "get",
 		Results: "data",
-		Version: "0.2.1",
+		Version: "0.2.3",
 	}
 
 	b, err := json.Marshal(resp)
@@ -606,7 +606,7 @@ func TestCLIResponse_MarshalJSON_NilFacetsOmitted(t *testing.T) {
 func TestCLIResponse_MarshalJSON_ErrorEnvelope(t *testing.T) {
 	resp := types.CLIResponse{
 		OK:      false,
-		Version: "0.2.1",
+		Version: "0.2.3",
 		Error: &types.CLIError{
 			Code:    404,
 			Type:    "not_found",
@@ -652,7 +652,7 @@ func TestCLIResponse_MarshalJSON_NilErrorOmitted(t *testing.T) {
 		OK:      true,
 		Command: "search",
 		Results: "ok",
-		Version: "0.2.1",
+		Version: "0.2.3",
 	}
 
 	b, err := json.Marshal(resp)

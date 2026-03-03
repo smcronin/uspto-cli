@@ -311,7 +311,7 @@ All commands support four output formats via `-f`:
 
 ```bash
 # JSON envelope structure
-# {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.2.1"}
+# {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.2.3"}
 
 # Minified JSON for piping
 uspto search --title sensor -f json --minify -q
