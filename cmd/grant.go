@@ -25,7 +25,7 @@ func fetchGrantXML(ctx context.Context, client *api.Client, appNumber string) (*
 	progress("Fetching grant XML metadata...")
 	xmlBytes, err := client.FetchGrantXML(ctx, appNumber)
 	if err != nil {
-		return nil, err
+		return nil, grantXMLUnavailableHint(err, appNumber)
 	}
 
 	progress(fmt.Sprintf("Parsing %d bytes of grant XML...", len(xmlBytes)))
@@ -36,6 +36,16 @@ func fetchGrantXML(ctx context.Context, client *api.Client, appNumber string) (*
 	}
 
 	return &grant, nil
+}
+
+func grantXMLUnavailableHint(err error, appNumber string) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "no grant XML available") {
+		return fmt.Errorf("%w. Hint: for pending applications, try `uspto app docs %s --codes CLM`", err, appNumber)
+	}
+	return err
 }
 
 // grantPatentNumber extracts the patent number from the grant XML bib data.
@@ -89,7 +99,7 @@ func extractClaims(grant *types.PatentGrantXML) []types.ClaimText {
 // extractPatentCitations extracts patent citations from the grant XML.
 func extractPatentCitations(grant *types.PatentGrantXML) []types.PatentCitRef {
 	var refs []types.PatentCitRef
-	for _, cit := range grant.BibData.ReferencesCited.Citations {
+	for _, cit := range grant.BibData.Citations() {
 		if cit.PatentCitation != nil {
 			refs = append(refs, types.PatentCitRef{
 				Number:   cit.PatentCitation.Document.DocNum,
@@ -107,7 +117,7 @@ func extractPatentCitations(grant *types.PatentGrantXML) []types.PatentCitRef {
 // extractNPLCitations extracts non-patent literature citations from the grant XML.
 func extractNPLCitations(grant *types.PatentGrantXML) []types.NPLCitRef {
 	var refs []types.NPLCitRef
-	for _, cit := range grant.BibData.ReferencesCited.Citations {
+	for _, cit := range grant.BibData.Citations() {
 		if cit.NPLCitation != nil {
 			text := ""
 			for _, oc := range cit.NPLCitation.OtherCit {
@@ -122,6 +132,30 @@ func extractNPLCitations(grant *types.PatentGrantXML) []types.NPLCitRef {
 		}
 	}
 	return refs
+}
+
+func citationCategoryCounts(patCits []types.PatentCitRef, nplCits []types.NPLCitRef) (examiner, applicant, other int) {
+	for _, c := range patCits {
+		switch {
+		case strings.Contains(strings.ToLower(c.Category), "examiner"):
+			examiner++
+		case strings.Contains(strings.ToLower(c.Category), "applicant"):
+			applicant++
+		default:
+			other++
+		}
+	}
+	for _, c := range nplCits {
+		switch {
+		case strings.Contains(strings.ToLower(c.Category), "examiner"):
+			examiner++
+		case strings.Contains(strings.ToLower(c.Category), "applicant"):
+			applicant++
+		default:
+			other++
+		}
+	}
+	return examiner, applicant, other
 }
 
 // extractCPCCodes extracts all CPC classification symbols.
@@ -297,12 +331,18 @@ Example:
 
 		patCits := extractPatentCitations(grant)
 		nplCits := extractNPLCitations(grant)
+		examinerCount, applicantCount, otherCount := citationCategoryCounts(patCits, nplCits)
 		result := types.CitationResult{
-			ApplicationNumber: appNumber,
-			PatentNumber:      grantPatentNumber(grant),
-			TotalCitations:    len(patCits) + len(nplCits),
-			PatentCitations:   patCits,
-			NPLCitations:      nplCits,
+			ApplicationNumber:      appNumber,
+			PatentNumber:           grantPatentNumber(grant),
+			TotalCitations:         len(patCits) + len(nplCits),
+			PatentCitationCount:    len(patCits),
+			NPLCitationCount:       len(nplCits),
+			ExaminerCitationCount:  examinerCount,
+			ApplicantCitationCount: applicantCount,
+			OtherCitationCount:     otherCount,
+			PatentCitations:        patCits,
+			NPLCitations:           nplCits,
 		}
 
 		progress(fmt.Sprintf("Found %d citations (%d patent, %d NPL).",
@@ -325,6 +365,8 @@ func writeCitationsTable(r types.CitationResult) {
 		fmt.Fprintf(os.Stdout, " (Pat. %s)", r.PatentNumber)
 	}
 	fmt.Fprintf(os.Stdout, " — %d total\n", r.TotalCitations)
+	fmt.Fprintf(os.Stdout, "Patent: %d | NPL: %d | Examiner: %d | Applicant: %d | Other: %d\n",
+		r.PatentCitationCount, r.NPLCitationCount, r.ExaminerCitationCount, r.ApplicantCitationCount, r.OtherCitationCount)
 	fmt.Fprintln(os.Stdout, strings.Repeat("=", 70))
 
 	if len(r.PatentCitations) > 0 {

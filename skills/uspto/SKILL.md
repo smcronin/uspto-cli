@@ -131,9 +131,11 @@ uspto search "wireless sensor network" -f json -q
 # Shorthand field filters
 uspto search --title "neural network" --inventor "Smith" --limit 10 -f json -q
 uspto search --assignee "Apple" --cpc "G06N" --granted -f json -q
+uspto search --cpc-group H01M --granted-after 2024-01-01 -f json -q
 uspto search --examiner "RILEY" --art-unit "2617" -f json -q
 uspto search --patent 10902286 -f json -q
 uspto search --pub-number "US20190095759A1" -f json -q
+uspto search --publication-number "US20190095759A1" -f json -q   # alias
 uspto search --docket "1982-1042PUS1" -f json -q
 uspto search --assignor "GOOGLE" -f json -q
 uspto search --reel-frame "060620/769" -f json -q
@@ -164,6 +166,7 @@ uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json 
 # Server-side bulk download (single request, entire result set)
 uspto search --assignee "Tesla" --download csv > tesla.csv
 uspto search --title "battery" --download json > batteries.json
+uspto search --granted --filed-after 2024-01-01 --filter "applicationTypeLabelName=Utility" --download csv > granted_utility.csv
 
 # Advanced: structured filters and facets (uses POST endpoint)
 uspto search --filter "applicationTypeLabelName=Utility" --facets "applicationTypeCategory" -f json -q
@@ -174,12 +177,17 @@ uspto search --title "drone" --fields "applicationNumberText,applicationMetaData
 
 **All search flags:**
 `--title`, `--inventor`, `--assignee`, `--examiner`, `--applicant`, `--assignor`,
-`--cpc`, `--patent`, `--pub-number`, `--docket`, `--art-unit`, `--reel-frame`,
+`--cpc`, `--cpc-group`, `--patent`, `--pub-number`, `--publication-number`, `--docket`, `--art-unit`, `--reel-frame`,
 `--status`, `--type`, `--granted`, `--pending`,
 `--filed-after`, `--filed-before`, `--filed-within`,
 `--granted-after`, `--granted-before`,
 `--sort`, `--limit`, `--offset`, `--page`, `--all`, `--count-only`,
 `--filter`, `--facets`, `--fields`, `--download`
+
+**GET vs POST behavior**:
+- `search` uses **POST** when advanced params are present (`--filter`, `--facets`, date ranges, `--granted/--pending`).
+- `search` uses **GET** for simple query-only requests.
+- `search --download` uses **POST /search/download** for advanced params; otherwise **GET /search/download**.
 
 **Sortable fields** (use with `--sort "field:asc"` or `--sort "field:desc"`):
 `filingDate`, `applicationStatusDate`, `patentNumber`, `grantDate`, `effectiveFilingDate`, `earliestPublicationDate`, `firstApplicantName`, `firstInventorName`, `examinerNameText`, `groupArtUnitNumber`, `applicationStatusCode`, `applicationTypeCode`, `inventionTitle`, `firstInventorToFileIndicator`
@@ -198,6 +206,7 @@ uspto app meta 16123456 -f json -q
 # File wrapper documents
 uspto app docs 16123456 -f json -q
 uspto app docs 16123456 --codes "CLM,SPEC" --from 2020-01-01 -f json -q
+uspto app docs 16123456 --sort date:asc -f json -q
 
 # Prosecution history (transaction events)
 uspto app txn 16123456 -f json -q
@@ -210,6 +219,7 @@ uspto app assign 16123456 -f json -q
 
 # Attorney/agent info
 uspto app attorney 16123456 -f json -q
+uspto app attorney 16123456 --primary -f json -q
 
 # Patent term adjustment (PTA)
 uspto app pta 16123456 -f json -q
@@ -220,8 +230,9 @@ uspto app fp 16123456 -f json -q
 # Associated XML documents (grant/pgpub metadata)
 uspto app xml 16123456 -f json -q
 
-# Download a document PDF (by 1-based index from app docs list)
+# Download a document PDF (by 1-based index or documentIdentifier from app docs list)
 uspto app dl 16123456 1 -o ./output.pdf
+uspto app dl 16123456 L7AH385RGREENX5 --dry-run
 
 # Download all PDFs from file wrapper
 uspto app dl-all 16123456 -o ./downloads/
@@ -319,6 +330,7 @@ uspto summary 16123456 -f json -q
 # Returns: tree structure + allApplicationNumbers (deduplicated flat list)
 uspto family 16123456 -f json -q
 uspto family 16123456 --depth 3 -f json -q    # Default depth=2, max=5
+uspto family 16123456 --depth 3 --with-dates -f json -q
 ```
 
 ### PTAB (Patent Trial and Appeal Board)
@@ -326,12 +338,14 @@ uspto family 16123456 --depth 3 -f json -q    # Default depth=2, max=5
 ```bash
 # Trial proceedings
 uspto ptab search --type IPR --patent 9876543 -f json -q
+uspto ptab search --app 15144741 -f json -q
+uspto ptab search --family 15144741 -f json -q
 uspto ptab search --petitioner "Samsung" --status "Instituted" -f json -q
 uspto ptab get IPR2023-00001 -f json -q
 
 # Trial decisions
 uspto ptab decisions "final written decision" --limit 10 -f json -q
-uspto ptab decisions-for IPR2020-00388 -f json -q
+uspto ptab decisions-for IPR2022-00302 -f json -q   # includes institution + FWD when available
 uspto ptab decision <documentId> -f json -q
 
 # Trial documents
@@ -360,6 +374,7 @@ uspto petition search "revival" -f json -q
 uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED -f json -q
 uspto petition search --app 16123456 -f json -q
 uspto petition search --patent 10902286 -f json -q
+uspto petition search --facets decisionTypeCodeDescriptionText -f json -q
 uspto petition get <recordId> -f json -q
 uspto petition get <recordId> --include-documents -f json -q
 ```
@@ -374,9 +389,11 @@ uspto bulk search --category "Issued patents" --frequency WEEKLY -f json -q
 # Get product details
 uspto bulk get PTGRXML -f json -q
 uspto bulk get PTGRXML --include-files --latest -f json -q
+uspto bulk get PTGRXML --include-files --latest --type Data -f json -q
 
 # List downloadable files for a product
 uspto bulk files PTFWPRE -f json -q
+uspto bulk files PTFWPRE --limit 10 -f json -q
 
 # Download a bulk data file (rate limit: 20 downloads/file/year/key)
 uspto bulk download PTGRXML ipg240102.zip -o ./data/
@@ -541,9 +558,11 @@ uspto search --filter "applicationMetaData.cpcClassificationBag=H04W*" -f json -
 
 **`--type` flag is unreliable via GET**: For filtering by application type (Utility, Design, Plant, Reissue), use the POST filter:
 ```bash
-# More reliable than --type DSN:
+# More reliable than --type DES:
 uspto search --filter "applicationTypeLabelName=Design" -f json -q
 ```
+
+**`--granted-after` is more reliable than `--filed-after + --granted`** for issued-only date windows. If `--granted --filed-after ...` returns 404, switch to `--granted-after`.
 
 **Table output for search/PTAB is very wide**: Always use `-f json`, `-f csv`, or `-f ndjson` for search and PTAB results. The default table has 200+ columns.
 
@@ -585,7 +604,7 @@ This CLI uses the USPTO **Open Data Portal (ODP)** API at `api.uspto.gov`. It do
 
 - **Start with `summary`**: It's the fastest way to get a comprehensive view of any application (5 API calls combined into one)
 - **Use `--fields` aggressively**: Reduces response size and token usage dramatically for search results
-- **Use `--download csv`** for large exports: Single request, no pagination, server-side processing
+- **Use `--download csv`** for large exports: Single request, no pagination, server-side processing (filters/ranges are passed via POST when needed)
 - **Use `--facets`** for landscape analysis: Get aggregated counts by any field alongside results
 - **Application numbers are bare digits**: `16123456`, not `16/123,456`
 - **The `family` command deduplicates**: It follows continuity chains and prevents cycles automatically

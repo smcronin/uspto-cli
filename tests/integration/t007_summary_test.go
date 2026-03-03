@@ -15,4 +15,7 @@ func TestT007a_SummaryJSON(t *testing.T) {
 	if obj["title"] == nil {
 		t.Error("expected results to have 'title' field")
 	}
+	if obj["foreignPriorityCount"] == nil {
+		t.Error("expected results to have 'foreignPriorityCount' field")
+	}
 }

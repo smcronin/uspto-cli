@@ -50,7 +50,7 @@ uspto search --title "machine learning" --limit 5
 # Get application details
 uspto app get 16123456
 
-# One-shot summary (5 API calls combined)
+# One-shot summary (6 API calls combined)
 uspto summary 16123456
 
 # Extract claims from a granted patent
@@ -99,7 +99,9 @@ uspto update --version v0.1.2
 # Field search with shorthand flags
 uspto search --title "neural network" --inventor "Smith" --limit 10
 uspto search --cpc H04L --status "Patented Case" --filed-within 2y
+uspto search --cpc-group H01M --granted-after 2024-01-01 --limit 10
 uspto search --assignee "Apple" --granted --sort filingDate:desc
+uspto search --publication-number US20190095759A1 --limit 1
 
 # Assignor / reel-frame (assignment records)
 uspto search --assignor "Samsung" --limit 20
@@ -114,14 +116,21 @@ uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json 
 # Download all results server-side (single request, supports CSV)
 uspto search --title "battery" --download csv > batteries.csv
 uspto search --assignee "Tesla" --download json > tesla.json
+# With filters/ranges, --download automatically uses POST body syntax
+uspto search --granted --filed-after 2024-01-01 --filter "applicationTypeLabelName=Utility" --download csv > granted_utility.csv
 
 # Structured filters via POST
 uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTypeCategory
 ```
 
+`search` auto-selects endpoint mode:
+- Uses `POST /search` when `--filter`, `--facets`, date ranges, or `--granted/--pending` are present.
+- Uses `GET /search` for simple query-only cases.
+- For `--download`, it uses `POST /search/download` when those advanced parameters are present; otherwise `GET /search/download`.
+
 **All search flags:**
 `--title`, `--inventor`, `--assignee`, `--examiner`, `--applicant`, `--assignor`,
-`--cpc`, `--patent`, `--pub-number`, `--docket`, `--art-unit`, `--reel-frame`,
+`--cpc`, `--cpc-group`, `--patent`, `--pub-number`, `--publication-number`, `--docket`, `--art-unit`, `--reel-frame`,
 `--status`, `--type`, `--granted`, `--pending`,
 `--filed-after`, `--filed-before`, `--filed-within`,
 `--granted-after`, `--granted-before`,
@@ -164,6 +173,7 @@ Bundle contents:
 uspto app get <appNumber>              # Full application data
 uspto app meta <appNumber>             # Metadata only
 uspto app docs <appNumber>             # File wrapper documents
+uspto app docs <appNumber> --sort date:asc
 uspto app transactions <appNumber>     # Prosecution history
 uspto app continuity <appNumber>       # Parent/child continuity
 uspto app assignments <appNumber>      # Assignment/ownership records
@@ -173,7 +183,7 @@ uspto app foreign-priority <appNumber> # Foreign priority claims
 uspto app associated-docs <appNumber>  # Associated XML document metadata
 
 # Document downloads
-uspto app download <appNumber> [index] # Download a specific document PDF
+uspto app download <appNumber> [index|documentIdentifier] # Download a specific document PDF
 uspto app download-all <appNumber>     # Download all document PDFs
 
 # Grant XML extraction (for granted patents)
@@ -189,12 +199,13 @@ The grant XML commands (`abstract`, `claims`, `citations`, `description`, `fullt
 ### Compound Commands
 
 ```bash
-# One-shot summary: metadata + continuity + assignments + transactions + documents
-# Makes 5 API calls and returns a unified view
+# One-shot summary: metadata + continuity + assignments + transactions + foreign priority + documents
+# Makes 6 API calls and returns a unified view
 uspto summary 16123456
 
 # Recursive family tree (follows parent/child continuity chains)
 uspto family 16123456 --depth 3
+uspto family 16123456 --depth 3 --with-dates
 ```
 
 ### PTAB (Patent Trial and Appeal Board)
@@ -204,12 +215,14 @@ uspto family 16123456 --depth 3
 ```bash
 # Trial proceedings
 uspto ptab search --type IPR --patent 9876543
+uspto ptab search --app 15144741
+uspto ptab search --family 15144741
 uspto ptab get IPR2023-00001
 
 # Trial decisions
 uspto ptab decisions --trial IPR2020-00388
 uspto ptab decision <documentId>
-uspto ptab decisions-for <trialNumber>        # All decisions for a trial
+uspto ptab decisions-for <trialNumber>        # All decisions for a trial (institution + FWD when available)
 
 # Trial documents
 uspto ptab docs --trial IPR2025-01319
@@ -237,6 +250,7 @@ uspto ptab decisions --download json > decisions.json
 uspto petition search "revival"
 uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED
 uspto petition search --app 16123456 --patent 10000000
+uspto petition search --facets decisionTypeCodeDescriptionText -f json -q
 uspto petition get <recordId> --include-documents
 ```
 
@@ -246,9 +260,10 @@ uspto petition get <recordId> --include-documents
 # Discover products (weekly patent grants, file wrappers, etc.)
 uspto bulk search "patent grant"
 uspto bulk get PTGRXML --include-files
+uspto bulk get PTGRXML --include-files --latest --type Data
 
 # List and download files
-uspto bulk files PTFWPRE
+uspto bulk files PTFWPRE --limit 10
 uspto bulk download PTGRXML ipg240102.zip -o ./data/
 ```
 

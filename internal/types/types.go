@@ -19,13 +19,13 @@ import (
 // Every command wraps its results in this structure for consistent parsing
 // by both human users and AI agents.
 type CLIResponse struct {
-	OK         bool                       `json:"ok"`
-	Command    string                     `json:"command"`
-	Pagination *PaginationMeta            `json:"pagination,omitempty"`
-	Results    any                        `json:"results"`
-	Facets     map[string][]FacetValue    `json:"facets,omitempty"`
-	Version    string                     `json:"version"`
-	Error      *CLIError                  `json:"error,omitempty"`
+	OK         bool                    `json:"ok"`
+	Command    string                  `json:"command"`
+	Pagination *PaginationMeta         `json:"pagination,omitempty"`
+	Results    any                     `json:"results"`
+	Facets     map[string][]FacetValue `json:"facets,omitempty"`
+	Version    string                  `json:"version"`
+	Error      *CLIError               `json:"error,omitempty"`
 }
 
 // PaginationMeta contains offset-based pagination metadata for the CLI envelope.
@@ -175,58 +175,58 @@ type Inventor struct {
 // CorrespondenceAddress represents a mailing address used across the PFW API
 // for applicant, inventor, and attorney correspondence.
 type CorrespondenceAddress struct {
-	NameLineOneText      string `json:"nameLineOneText,omitempty"`
-	NameLineTwoText      string `json:"nameLineTwoText,omitempty"`
-	AddressLineOneText   string `json:"addressLineOneText,omitempty"`
-	AddressLineTwoText   string `json:"addressLineTwoText,omitempty"`
-	CityName             string `json:"cityName,omitempty"`
-	GeographicRegionName string `json:"geographicRegionName,omitempty"`
-	GeographicRegionCode string `json:"geographicRegionCode,omitempty"`
-	PostalCode           string `json:"postalCode,omitempty"`
-	CountryCode          string `json:"countryCode,omitempty"`
-	CountryName          string `json:"countryName,omitempty"`
+	NameLineOneText       string `json:"nameLineOneText,omitempty"`
+	NameLineTwoText       string `json:"nameLineTwoText,omitempty"`
+	AddressLineOneText    string `json:"addressLineOneText,omitempty"`
+	AddressLineTwoText    string `json:"addressLineTwoText,omitempty"`
+	CityName              string `json:"cityName,omitempty"`
+	GeographicRegionName  string `json:"geographicRegionName,omitempty"`
+	GeographicRegionCode  string `json:"geographicRegionCode,omitempty"`
+	PostalCode            string `json:"postalCode,omitempty"`
+	CountryCode           string `json:"countryCode,omitempty"`
+	CountryName           string `json:"countryName,omitempty"`
 	PostalAddressCategory string `json:"postalAddressCategory,omitempty"`
 }
 
 // ApplicationMetaData holds the core metadata for a patent application.
 // This is the most field-rich structure in the PFW API.
 type ApplicationMetaData struct {
-	NationalStageIndicator                   bool              `json:"nationalStageIndicator"`
-	EntityStatusData                         EntityStatusData  `json:"entityStatusData"`
-	PublicationDateBag                       []string          `json:"publicationDateBag"`
-	PublicationSequenceNumberBag             []string          `json:"publicationSequenceNumberBag"`
-	PublicationCategoryBag                   []string          `json:"publicationCategoryBag"`
-	DocketNumber                             string            `json:"docketNumber"`
-	FirstInventorToFileIndicator             string            `json:"firstInventorToFileIndicator"`
-	FirstApplicantName                       string            `json:"firstApplicantName"`
-	FirstInventorName                        string            `json:"firstInventorName"`
-	ApplicationConfirmationNumber            int               `json:"applicationConfirmationNumber"`
-	ApplicationStatusDate                    string            `json:"applicationStatusDate"`
-	ApplicationStatusDescriptionText         string            `json:"applicationStatusDescriptionText"`
-	ApplicationStatusCode                    int               `json:"applicationStatusCode"`
-	FilingDate                               string            `json:"filingDate"`
-	EffectiveFilingDate                      string            `json:"effectiveFilingDate"`
-	GrantDate                                string            `json:"grantDate"`
-	GroupArtUnitNumber                       string            `json:"groupArtUnitNumber"`
-	ApplicationTypeCode                      string            `json:"applicationTypeCode"`
-	ApplicationTypeLabelName                 string            `json:"applicationTypeLabelName"`
-	ApplicationTypeCategory                  string            `json:"applicationTypeCategory"`
-	InventionTitle                           string            `json:"inventionTitle"`
-	PatentNumber                             string            `json:"patentNumber"`
-	EarliestPublicationNumber                string            `json:"earliestPublicationNumber"`
-	EarliestPublicationDate                  string            `json:"earliestPublicationDate"`
-	PctPublicationNumber                     string            `json:"pctPublicationNumber"`
-	PctPublicationDate                       string            `json:"pctPublicationDate"`
-	InternationalRegistrationPublicationDate string            `json:"internationalRegistrationPublicationDate"`
-	InternationalRegistrationNumber          string            `json:"internationalRegistrationNumber"`
-	ExaminerNameText                         string            `json:"examinerNameText"`
-	Class                                    string            `json:"class"`
-	Subclass                                 string            `json:"subclass"`
-	UspcSymbolText                           string            `json:"uspcSymbolText"`
-	CustomerNumber                           int               `json:"customerNumber"`
-	CpcClassificationBag                     []string          `json:"cpcClassificationBag"`
-	ApplicantBag                             []Applicant       `json:"applicantBag"`
-	InventorBag                              []Inventor        `json:"inventorBag"`
+	NationalStageIndicator                   bool             `json:"nationalStageIndicator"`
+	EntityStatusData                         EntityStatusData `json:"entityStatusData"`
+	PublicationDateBag                       []string         `json:"publicationDateBag"`
+	PublicationSequenceNumberBag             []string         `json:"publicationSequenceNumberBag"`
+	PublicationCategoryBag                   []string         `json:"publicationCategoryBag"`
+	DocketNumber                             string           `json:"docketNumber"`
+	FirstInventorToFileIndicator             string           `json:"firstInventorToFileIndicator"`
+	FirstApplicantName                       string           `json:"firstApplicantName"`
+	FirstInventorName                        string           `json:"firstInventorName"`
+	ApplicationConfirmationNumber            int              `json:"applicationConfirmationNumber"`
+	ApplicationStatusDate                    string           `json:"applicationStatusDate"`
+	ApplicationStatusDescriptionText         string           `json:"applicationStatusDescriptionText"`
+	ApplicationStatusCode                    int              `json:"applicationStatusCode"`
+	FilingDate                               string           `json:"filingDate"`
+	EffectiveFilingDate                      string           `json:"effectiveFilingDate"`
+	GrantDate                                string           `json:"grantDate"`
+	GroupArtUnitNumber                       string           `json:"groupArtUnitNumber"`
+	ApplicationTypeCode                      string           `json:"applicationTypeCode"`
+	ApplicationTypeLabelName                 string           `json:"applicationTypeLabelName"`
+	ApplicationTypeCategory                  string           `json:"applicationTypeCategory"`
+	InventionTitle                           string           `json:"inventionTitle"`
+	PatentNumber                             string           `json:"patentNumber"`
+	EarliestPublicationNumber                string           `json:"earliestPublicationNumber"`
+	EarliestPublicationDate                  string           `json:"earliestPublicationDate"`
+	PctPublicationNumber                     string           `json:"pctPublicationNumber"`
+	PctPublicationDate                       string           `json:"pctPublicationDate"`
+	InternationalRegistrationPublicationDate string           `json:"internationalRegistrationPublicationDate"`
+	InternationalRegistrationNumber          string           `json:"internationalRegistrationNumber"`
+	ExaminerNameText                         string           `json:"examinerNameText"`
+	Class                                    string           `json:"class"`
+	Subclass                                 string           `json:"subclass"`
+	UspcSymbolText                           string           `json:"uspcSymbolText"`
+	CustomerNumber                           int              `json:"customerNumber"`
+	CpcClassificationBag                     []string         `json:"cpcClassificationBag"`
+	ApplicantBag                             []Applicant      `json:"applicantBag"`
+	InventorBag                              []Inventor       `json:"inventorBag"`
 }
 
 // ---------------------------------------------------------------------------
@@ -318,20 +318,20 @@ type DomesticRepresentative struct {
 
 // Assignment describes a patent assignment record.
 type Assignment struct {
-	ReelNumber                   int                               `json:"reelNumber"`
-	FrameNumber                  int                               `json:"frameNumber"`
-	ReelAndFrameNumber           string                            `json:"reelAndFrameNumber"`
-	PageTotalQuantity            int                               `json:"pageTotalQuantity"`
-	ImageAvailableStatusCode     bool                              `json:"imageAvailableStatusCode"`
-	AssignmentDocumentLocationURI string                           `json:"assignmentDocumentLocationURI"`
-	AssignmentReceivedDate       string                            `json:"assignmentReceivedDate"`
-	AssignmentRecordedDate       string                            `json:"assignmentRecordedDate"`
-	AssignmentMailedDate         string                            `json:"assignmentMailedDate"`
-	ConveyanceText               string                            `json:"conveyanceText"`
-	AssignorBag                  []Assignor                        `json:"assignorBag"`
-	AssigneeBag                  []Assignee                        `json:"assigneeBag"`
-	CorrespondenceAddress        json.RawMessage `json:"correspondenceAddress,omitempty"`
-	DomesticRepresentative       *DomesticRepresentative           `json:"domesticRepresentative,omitempty"`
+	ReelNumber                    int                     `json:"reelNumber"`
+	FrameNumber                   int                     `json:"frameNumber"`
+	ReelAndFrameNumber            string                  `json:"reelAndFrameNumber"`
+	PageTotalQuantity             int                     `json:"pageTotalQuantity"`
+	ImageAvailableStatusCode      bool                    `json:"imageAvailableStatusCode"`
+	AssignmentDocumentLocationURI string                  `json:"assignmentDocumentLocationURI"`
+	AssignmentReceivedDate        string                  `json:"assignmentReceivedDate"`
+	AssignmentRecordedDate        string                  `json:"assignmentRecordedDate"`
+	AssignmentMailedDate          string                  `json:"assignmentMailedDate"`
+	ConveyanceText                string                  `json:"conveyanceText"`
+	AssignorBag                   []Assignor              `json:"assignorBag"`
+	AssigneeBag                   []Assignee              `json:"assigneeBag"`
+	CorrespondenceAddress         json.RawMessage         `json:"correspondenceAddress,omitempty"`
+	DomesticRepresentative        *DomesticRepresentative `json:"domesticRepresentative,omitempty"`
 }
 
 // CorrespondenceAddresses parses the CorrespondenceAddress field which may
@@ -360,29 +360,29 @@ func (a *Assignment) CorrespondenceAddresses() []AssignmentCorrespondenceAddress
 // ParentContinuity describes a parent continuity relationship.
 // Uses parent-prefixed field names as returned by the API.
 type ParentContinuity struct {
-	FirstInventorToFileIndicator            bool   `json:"firstInventorToFileIndicator"`
-	ParentApplicationStatusCode             *int   `json:"parentApplicationStatusCode"`
-	ParentPatentNumber                      string `json:"parentPatentNumber,omitempty"`
-	ParentApplicationStatusDescriptionText  string `json:"parentApplicationStatusDescriptionText,omitempty"`
-	ParentApplicationNumberText             string `json:"parentApplicationNumberText,omitempty"`
-	ParentApplicationFilingDate             string `json:"parentApplicationFilingDate,omitempty"`
-	ChildApplicationNumberText              string `json:"childApplicationNumberText,omitempty"`
-	ClaimParentageTypeCode                  string `json:"claimParentageTypeCode"`
-	ClaimParentageTypeCodeDescriptionText   string `json:"claimParentageTypeCodeDescriptionText"`
+	FirstInventorToFileIndicator           bool   `json:"firstInventorToFileIndicator"`
+	ParentApplicationStatusCode            *int   `json:"parentApplicationStatusCode"`
+	ParentPatentNumber                     string `json:"parentPatentNumber,omitempty"`
+	ParentApplicationStatusDescriptionText string `json:"parentApplicationStatusDescriptionText,omitempty"`
+	ParentApplicationNumberText            string `json:"parentApplicationNumberText,omitempty"`
+	ParentApplicationFilingDate            string `json:"parentApplicationFilingDate,omitempty"`
+	ChildApplicationNumberText             string `json:"childApplicationNumberText,omitempty"`
+	ClaimParentageTypeCode                 string `json:"claimParentageTypeCode"`
+	ClaimParentageTypeCodeDescriptionText  string `json:"claimParentageTypeCodeDescriptionText"`
 }
 
 // ChildContinuity describes a child continuity relationship.
 // Uses child-prefixed field names as returned by the API.
 type ChildContinuity struct {
-	FirstInventorToFileIndicator            bool   `json:"firstInventorToFileIndicator"`
-	ChildApplicationStatusCode              *int   `json:"childApplicationStatusCode"`
-	ChildPatentNumber                       string `json:"childPatentNumber,omitempty"`
-	ChildApplicationStatusDescriptionText   string `json:"childApplicationStatusDescriptionText,omitempty"`
-	ChildApplicationNumberText              string `json:"childApplicationNumberText,omitempty"`
-	ChildApplicationFilingDate              string `json:"childApplicationFilingDate,omitempty"`
-	ParentApplicationNumberText             string `json:"parentApplicationNumberText,omitempty"`
-	ClaimParentageTypeCode                  string `json:"claimParentageTypeCode"`
-	ClaimParentageTypeCodeDescriptionText   string `json:"claimParentageTypeCodeDescriptionText"`
+	FirstInventorToFileIndicator          bool   `json:"firstInventorToFileIndicator"`
+	ChildApplicationStatusCode            *int   `json:"childApplicationStatusCode"`
+	ChildPatentNumber                     string `json:"childPatentNumber,omitempty"`
+	ChildApplicationStatusDescriptionText string `json:"childApplicationStatusDescriptionText,omitempty"`
+	ChildApplicationNumberText            string `json:"childApplicationNumberText,omitempty"`
+	ChildApplicationFilingDate            string `json:"childApplicationFilingDate,omitempty"`
+	ParentApplicationNumberText           string `json:"parentApplicationNumberText,omitempty"`
+	ClaimParentageTypeCode                string `json:"claimParentageTypeCode"`
+	ClaimParentageTypeCodeDescriptionText string `json:"claimParentageTypeCodeDescriptionText"`
 }
 
 // ---------------------------------------------------------------------------
@@ -402,15 +402,15 @@ type PatentTermAdjustmentHistoryData struct {
 
 // PatentTermAdjustmentData holds patent term adjustment details.
 type PatentTermAdjustmentData struct {
-	ADelayQuantity                          int                                `json:"aDelayQuantity"`
-	BDelayQuantity                          int                                `json:"bDelayQuantity"`
-	CDelayQuantity                          int                                `json:"cDelayQuantity"`
-	AdjustmentTotalQuantity                 int                                `json:"adjustmentTotalQuantity"`
-	ApplicantDayDelayQuantity               int                                `json:"applicantDayDelayQuantity"`
-	NonOverlappingDayQuantity               int                                `json:"nonOverlappingDayQuantity"`
-	OverlappingDayQuantity                  int                                `json:"overlappingDayQuantity"`
-	IpOfficeAdjustmentDelayQuantity         int                                `json:"ipOfficeAdjustmentDelayQuantity"`
-	PatentTermAdjustmentHistoryDataBag      []PatentTermAdjustmentHistoryData  `json:"patentTermAdjustmentHistoryDataBag"`
+	ADelayQuantity                     int                               `json:"aDelayQuantity"`
+	BDelayQuantity                     int                               `json:"bDelayQuantity"`
+	CDelayQuantity                     int                               `json:"cDelayQuantity"`
+	AdjustmentTotalQuantity            int                               `json:"adjustmentTotalQuantity"`
+	ApplicantDayDelayQuantity          int                               `json:"applicantDayDelayQuantity"`
+	NonOverlappingDayQuantity          int                               `json:"nonOverlappingDayQuantity"`
+	OverlappingDayQuantity             int                               `json:"overlappingDayQuantity"`
+	IpOfficeAdjustmentDelayQuantity    int                               `json:"ipOfficeAdjustmentDelayQuantity"`
+	PatentTermAdjustmentHistoryDataBag []PatentTermAdjustmentHistoryData `json:"patentTermAdjustmentHistoryDataBag"`
 }
 
 // ---------------------------------------------------------------------------
@@ -430,15 +430,15 @@ type PatentTermExtensionHistoryData struct {
 // PatentTermExtensionData holds patent term extension details.
 // This mirrors the PTA structure with extension-specific field names.
 type PatentTermExtensionData struct {
-	ADelayQuantity                          int                                `json:"aDelayQuantity"`
-	BDelayQuantity                          int                                `json:"bDelayQuantity"`
-	CDelayQuantity                          int                                `json:"cDelayQuantity"`
-	ExtensionTotalQuantity                  int                                `json:"extensionTotalQuantity"`
-	ApplicantDayDelayQuantity               int                                `json:"applicantDayDelayQuantity"`
-	NonOverlappingDayQuantity               int                                `json:"nonOverlappingDayQuantity"`
-	OverlappingDayQuantity                  int                                `json:"overlappingDayQuantity"`
-	IpOfficeExtensionDelayQuantity          int                                `json:"ipOfficeExtensionDelayQuantity"`
-	PatentTermExtensionHistoryDataBag       []PatentTermExtensionHistoryData   `json:"patentTermExtensionHistoryDataBag"`
+	ADelayQuantity                    int                              `json:"aDelayQuantity"`
+	BDelayQuantity                    int                              `json:"bDelayQuantity"`
+	CDelayQuantity                    int                              `json:"cDelayQuantity"`
+	ExtensionTotalQuantity            int                              `json:"extensionTotalQuantity"`
+	ApplicantDayDelayQuantity         int                              `json:"applicantDayDelayQuantity"`
+	NonOverlappingDayQuantity         int                              `json:"nonOverlappingDayQuantity"`
+	OverlappingDayQuantity            int                              `json:"overlappingDayQuantity"`
+	IpOfficeExtensionDelayQuantity    int                              `json:"ipOfficeExtensionDelayQuantity"`
+	PatentTermExtensionHistoryDataBag []PatentTermExtensionHistoryData `json:"patentTermExtensionHistoryDataBag"`
 }
 
 // ---------------------------------------------------------------------------
@@ -501,8 +501,8 @@ type PowerOfAttorneyEntry struct {
 	RegistrationNumber             string                     `json:"registrationNumber,omitempty"`
 	ActiveIndicator                string                     `json:"activeIndicator,omitempty"`
 	RegisteredPractitionerCategory string                     `json:"registeredPractitionerCategory,omitempty"`
-	AttorneyAddressBag             []AttorneyAddressEntry      `json:"attorneyAddressBag,omitempty"`
-	TelecommunicationAddressBag    []TelecommunicationAddress  `json:"telecommunicationAddressBag,omitempty"`
+	AttorneyAddressBag             []AttorneyAddressEntry     `json:"attorneyAddressBag,omitempty"`
+	TelecommunicationAddressBag    []TelecommunicationAddress `json:"telecommunicationAddressBag,omitempty"`
 }
 
 // AttorneyEntry describes an individual listed under attorneyBag.
@@ -515,8 +515,8 @@ type AttorneyEntry struct {
 	RegistrationNumber             string                     `json:"registrationNumber,omitempty"`
 	ActiveIndicator                string                     `json:"activeIndicator,omitempty"`
 	RegisteredPractitionerCategory string                     `json:"registeredPractitionerCategory,omitempty"`
-	AttorneyAddressBag             []AttorneyAddressEntry      `json:"attorneyAddressBag,omitempty"`
-	TelecommunicationAddressBag    []TelecommunicationAddress  `json:"telecommunicationAddressBag,omitempty"`
+	AttorneyAddressBag             []AttorneyAddressEntry     `json:"attorneyAddressBag,omitempty"`
+	TelecommunicationAddressBag    []TelecommunicationAddress `json:"telecommunicationAddressBag,omitempty"`
 }
 
 // CustomerNumberCorrespondenceData holds the customer number and its
@@ -524,7 +524,7 @@ type AttorneyEntry struct {
 type CustomerNumberCorrespondenceData struct {
 	PatronIdentifier          int                    `json:"patronIdentifier"`
 	OrganizationStandardName  string                 `json:"organizationStandardName,omitempty"`
-	PowerOfAttorneyAddressBag []AttorneyAddressEntry  `json:"powerOfAttorneyAddressBag,omitempty"`
+	PowerOfAttorneyAddressBag []AttorneyAddressEntry `json:"powerOfAttorneyAddressBag,omitempty"`
 }
 
 // RecordAttorney is the full attorney/agent record for an application,
@@ -593,10 +593,10 @@ type PatentFileWrapper struct {
 // PatentDataResponse is the top-level response for patent search and
 // application data endpoints.
 type PatentDataResponse struct {
-	Count                    int                 `json:"count"`
-	PatentFileWrapperDataBag []PatentFileWrapper `json:"patentFileWrapperDataBag"`
-	Facets                   map[string][]FacetValue        `json:"facets,omitempty"`
-	RequestIdentifier        string              `json:"requestIdentifier,omitempty"`
+	Count                    int                     `json:"count"`
+	PatentFileWrapperDataBag []PatentFileWrapper     `json:"patentFileWrapperDataBag"`
+	Facets                   map[string][]FacetValue `json:"facets,omitempty"`
+	RequestIdentifier        string                  `json:"requestIdentifier,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -625,27 +625,27 @@ type BulkDataFileBag struct {
 // BulkDataProduct describes a single bulk data product.
 type BulkDataProduct struct {
 	ProductIdentifier               string          `json:"productIdentifier"`
-	ProductTitleText                 string          `json:"productTitleText"`
-	ProductDescriptionText           string          `json:"productDescriptionText"`
-	ProductFrequencyText             string          `json:"productFrequencyText"`
-	DaysOfWeekText                   string          `json:"daysOfWeekText"`
-	ProductLabelArrayText            []string        `json:"productLabelArrayText"`
-	ProductDataSetArrayText          []string        `json:"productDataSetArrayText"`
-	ProductDataSetCategoryArrayText  []string        `json:"productDataSetCategoryArrayText"`
-	ProductFromDate                  string          `json:"productFromDate"`
-	ProductToDate                    string          `json:"productToDate"`
-	ProductTotalFileSize             int64           `json:"productTotalFileSize"`
-	ProductFileTotalQuantity         int             `json:"productFileTotalQuantity"`
-	LastModifiedDateTime             string          `json:"lastModifiedDateTime"`
-	MimeTypeIdentifierArrayText      []string        `json:"mimeTypeIdentifierArrayText"`
-	ProductFileBag                   BulkDataFileBag `json:"productFileBag"`
+	ProductTitleText                string          `json:"productTitleText"`
+	ProductDescriptionText          string          `json:"productDescriptionText"`
+	ProductFrequencyText            string          `json:"productFrequencyText"`
+	DaysOfWeekText                  string          `json:"daysOfWeekText"`
+	ProductLabelArrayText           []string        `json:"productLabelArrayText"`
+	ProductDataSetArrayText         []string        `json:"productDataSetArrayText"`
+	ProductDataSetCategoryArrayText []string        `json:"productDataSetCategoryArrayText"`
+	ProductFromDate                 string          `json:"productFromDate"`
+	ProductToDate                   string          `json:"productToDate"`
+	ProductTotalFileSize            int64           `json:"productTotalFileSize"`
+	ProductFileTotalQuantity        int             `json:"productFileTotalQuantity"`
+	LastModifiedDateTime            string          `json:"lastModifiedDateTime"`
+	MimeTypeIdentifierArrayText     []string        `json:"mimeTypeIdentifierArrayText"`
+	ProductFileBag                  BulkDataFileBag `json:"productFileBag"`
 }
 
 // BulkDataResponse is the top-level response for bulk data searches.
 type BulkDataResponse struct {
-	Count              int               `json:"count"`
-	BulkDataProductBag []BulkDataProduct `json:"bulkDataProductBag"`
-	Facets             map[string][]FacetValue      `json:"facets,omitempty"`
+	Count              int                     `json:"count"`
+	BulkDataProductBag []BulkDataProduct       `json:"bulkDataProductBag"`
+	Facets             map[string][]FacetValue `json:"facets,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -724,12 +724,12 @@ type TrialDocumentData struct {
 // DecisionData holds the decision-specific fields for a trial decision document.
 // The statuteAndRuleBag and issueTypeBag are arrays of strings in the API response.
 type DecisionData struct {
-	StatuteAndRuleBag    []string `json:"statuteAndRuleBag"`
-	DecisionIssueDate    string   `json:"decisionIssueDate"`
-	DecisionTypeCategory string   `json:"decisionTypeCategory"`
-	IssueTypeBag         []string `json:"issueTypeBag"`
-	TrialOutcomeCategory string   `json:"trialOutcomeCategory"`
-	AppealOutcomeCategory string  `json:"appealOutcomeCategory,omitempty"`
+	StatuteAndRuleBag     []string `json:"statuteAndRuleBag"`
+	DecisionIssueDate     string   `json:"decisionIssueDate"`
+	DecisionTypeCategory  string   `json:"decisionTypeCategory"`
+	IssueTypeBag          []string `json:"issueTypeBag"`
+	TrialOutcomeCategory  string   `json:"trialOutcomeCategory"`
+	AppealOutcomeCategory string   `json:"appealOutcomeCategory,omitempty"`
 }
 
 // TrialDocument describes a single PTAB trial document or decision.
@@ -752,21 +752,48 @@ type TrialDocument struct {
 // TrialDocumentResponse is the top-level response for PTAB trial
 // document and decision searches.
 type TrialDocumentResponse struct {
-	Count                      int             `json:"count"`
-	Facets                     map[string][]FacetValue    `json:"facets,omitempty"`
-	RequestIdentifier          string          `json:"requestIdentifier,omitempty"`
-	PatentTrialDocumentDataBag []TrialDocument `json:"patentTrialDocumentDataBag,omitempty"`
-	PatentTrialDecisionDataBag []TrialDocument `json:"patentTrialDecisionDataBag,omitempty"`
+	Count                      int                     `json:"count"`
+	Facets                     map[string][]FacetValue `json:"facets,omitempty"`
+	RequestIdentifier          string                  `json:"requestIdentifier,omitempty"`
+	PatentTrialDocumentDataBag []TrialDocument         `json:"patentTrialDocumentDataBag,omitempty"`
+	PatentTrialDecisionDataBag []TrialDocument         `json:"patentTrialDecisionDataBag,omitempty"`
 }
 
-// Decisions returns trial decisions from whichever bag contains them.
+// Decisions returns trial decisions from both bags, de-duplicated.
 // The API inconsistently places decisions in either patentTrialDecisionDataBag
-// or patentTrialDocumentDataBag depending on the endpoint.
+// or patentTrialDocumentDataBag depending on the endpoint, and some endpoints
+// split decision categories across both bags.
 func (r *TrialDocumentResponse) Decisions() []TrialDocument {
-	if len(r.PatentTrialDecisionDataBag) > 0 {
-		return r.PatentTrialDecisionDataBag
+	if len(r.PatentTrialDecisionDataBag) == 0 && len(r.PatentTrialDocumentDataBag) == 0 {
+		if r.PatentTrialDecisionDataBag == nil && r.PatentTrialDocumentDataBag == nil {
+			return nil
+		}
+		return []TrialDocument{}
 	}
-	return r.PatentTrialDocumentDataBag
+
+	out := make([]TrialDocument, 0, len(r.PatentTrialDecisionDataBag)+len(r.PatentTrialDocumentDataBag))
+	seen := map[string]struct{}{}
+
+	appendUnique := func(d TrialDocument) {
+		key := d.DocumentData.DocumentIdentifier
+		if key == "" {
+			key = d.TrialNumber + "|" + d.DocumentData.DocumentName + "|" + d.DocumentData.DocumentFilingDate + "|" + d.TrialDocumentCategory
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, d)
+	}
+
+	for _, d := range r.PatentTrialDecisionDataBag {
+		appendUnique(d)
+	}
+	for _, d := range r.PatentTrialDocumentDataBag {
+		appendUnique(d)
+	}
+
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -775,12 +802,12 @@ func (r *TrialDocumentResponse) Decisions() []TrialDocument {
 
 // AppealMetaData holds metadata for an appeal.
 type AppealMetaData struct {
-	DocketNoticeMailedDate    string `json:"docketNoticeMailedDate"`
-	AppealFilingDate          string `json:"appealFilingDate"`
-	AppealLastModifiedDate    string `json:"appealLastModifiedDate"`
+	DocketNoticeMailedDate     string `json:"docketNoticeMailedDate"`
+	AppealFilingDate           string `json:"appealFilingDate"`
+	AppealLastModifiedDate     string `json:"appealLastModifiedDate"`
 	AppealLastModifiedDateTime string `json:"appealLastModifiedDateTime,omitempty"`
-	ApplicationTypeCategory   string `json:"applicationTypeCategory"`
-	FileDownloadURI           string `json:"fileDownloadURI"`
+	ApplicationTypeCategory    string `json:"applicationTypeCategory"`
+	FileDownloadURI            string `json:"fileDownloadURI"`
 }
 
 // AppellantData holds data about the appellant party.
@@ -826,14 +853,14 @@ type AppealDecisionData struct {
 
 // AppealData describes a single PTAB appeal.
 type AppealData struct {
-	AppealNumber           string                   `json:"appealNumber"`
-	AppealDocumentCategory string                   `json:"appealDocumentCategory"`
-	LastModifiedDateTime   string                   `json:"lastModifiedDateTime"`
-	AppealMetaData         AppealMetaData           `json:"appealMetaData"`
-	AppellantData          AppellantData            `json:"appellantData"`
+	AppealNumber            string                  `json:"appealNumber"`
+	AppealDocumentCategory  string                  `json:"appealDocumentCategory"`
+	LastModifiedDateTime    string                  `json:"lastModifiedDateTime"`
+	AppealMetaData          AppealMetaData          `json:"appealMetaData"`
+	AppellantData           AppellantData           `json:"appellantData"`
 	ThirdPartyRequesterData ThirdPartyRequesterData `json:"thirdPartyRequesterData"`
-	DocumentData           AppealDocumentData       `json:"documentData"`
-	DecisionData           *AppealDecisionData      `json:"decisionData,omitempty"`
+	DocumentData            AppealDocumentData      `json:"documentData"`
+	DecisionData            *AppealDecisionData     `json:"decisionData,omitempty"`
 }
 
 // AppealDecisionResponse is the top-level response for appeal searches.
@@ -884,29 +911,29 @@ type AdditionalPartyData struct {
 // interference proceeding. This combines document metadata with
 // decision-specific fields like outcome and statutes.
 type InterferenceDecisionDocumentData struct {
-	DocumentFilingDate           string   `json:"documentFilingDate"`
-	DocumentIdentifier           string   `json:"documentIdentifier"`
-	DocumentName                 string   `json:"documentName"`
-	DocumentSizeQuantity         int      `json:"documentSizeQuantity"`
-	DocumentOCRText              string   `json:"documentOCRText"`
-	DocumentTitleText            string   `json:"documentTitleText"`
-	FileDownloadURI              string   `json:"fileDownloadURI"`
-	StatuteAndRuleBag            []string `json:"statuteAndRuleBag"`
-	DecisionIssueDate            string   `json:"decisionIssueDate"`
-	DecisionTypeCategory         string   `json:"decisionTypeCategory"`
-	IssueTypeBag                 []string `json:"issueTypeBag"`
-	InterferenceOutcomeCategory  string   `json:"interferenceOutcomeCategory"`
+	DocumentFilingDate          string   `json:"documentFilingDate"`
+	DocumentIdentifier          string   `json:"documentIdentifier"`
+	DocumentName                string   `json:"documentName"`
+	DocumentSizeQuantity        int      `json:"documentSizeQuantity"`
+	DocumentOCRText             string   `json:"documentOCRText"`
+	DocumentTitleText           string   `json:"documentTitleText"`
+	FileDownloadURI             string   `json:"fileDownloadURI"`
+	StatuteAndRuleBag           []string `json:"statuteAndRuleBag"`
+	DecisionIssueDate           string   `json:"decisionIssueDate"`
+	DecisionTypeCategory        string   `json:"decisionTypeCategory"`
+	IssueTypeBag                []string `json:"issueTypeBag"`
+	InterferenceOutcomeCategory string   `json:"interferenceOutcomeCategory"`
 }
 
 // InterferenceData describes a single interference proceeding.
 type InterferenceData struct {
-	InterferenceNumber       string                            `json:"interferenceNumber"`
-	LastModifiedDateTime     string                            `json:"lastModifiedDateTime"`
-	InterferenceMetaData     InterferenceMetaData              `json:"interferenceMetaData"`
-	SeniorPartyData          InterferencePartyData             `json:"seniorPartyData"`
-	JuniorPartyData          InterferencePartyData             `json:"juniorPartyData"`
-	AdditionalPartyDataBag   []AdditionalPartyData             `json:"additionalPartyDataBag"`
-	DecisionDocumentData     *InterferenceDecisionDocumentData `json:"decisionDocumentData"`
+	InterferenceNumber     string                            `json:"interferenceNumber"`
+	LastModifiedDateTime   string                            `json:"lastModifiedDateTime"`
+	InterferenceMetaData   InterferenceMetaData              `json:"interferenceMetaData"`
+	SeniorPartyData        InterferencePartyData             `json:"seniorPartyData"`
+	JuniorPartyData        InterferencePartyData             `json:"juniorPartyData"`
+	AdditionalPartyDataBag []AdditionalPartyData             `json:"additionalPartyDataBag"`
+	DecisionDocumentData   *InterferenceDecisionDocumentData `json:"decisionDocumentData"`
 }
 
 // InterferenceDecisionResponse is the top-level response for
@@ -924,33 +951,33 @@ type InterferenceDecisionResponse struct {
 // PetitionDecision describes a single petition decision record from
 // the Commissioner for Patents final petition decisions (EFOIA) API.
 type PetitionDecision struct {
-	PetitionDecisionRecordIdentifier        string   `json:"petitionDecisionRecordIdentifier"`
-	ApplicationNumberText                   string   `json:"applicationNumberText"`
-	PatentNumber                            string   `json:"patentNumber"`
-	BusinessEntityStatusCategory            string   `json:"businessEntityStatusCategory"`
-	CustomerNumber                          int      `json:"customerNumber"`
-	DecisionDate                            string   `json:"decisionDate"`
-	DecisionPetitionTypeCode                int      `json:"decisionPetitionTypeCode"`
-	DecisionPetitionTypeCodeDescriptionText string   `json:"decisionPetitionTypeCodeDescriptionText"`
-	DecisionTypeCode                        string   `json:"decisionTypeCode"`
-	DecisionTypeCodeDescriptionText         string   `json:"decisionTypeCodeDescriptionText"`
-	FinalDecidingOfficeName                 string   `json:"finalDecidingOfficeName"`
-	FirstApplicantName                      string   `json:"firstApplicantName"`
-	FirstInventorToFileIndicator            bool     `json:"firstInventorToFileIndicator"`
-	GroupArtUnitNumber                      string   `json:"groupArtUnitNumber"`
-	TechnologyCenter                        string   `json:"technologyCenter"`
-	InventionTitle                          string   `json:"inventionTitle"`
-	InventorBag                             []string `json:"inventorBag"`
-	CourtActionIndicator                    bool     `json:"courtActionIndicator"`
-	ActionTakenByCourtName                  string   `json:"actionTakenByCourtName"`
-	PetitionMailDate                        string   `json:"petitionMailDate"`
-	ProsecutionStatusCode                   json.Number `json:"prosecutionStatusCode,omitempty"`
-	ProsecutionStatusCodeDescriptionText    string   `json:"prosecutionStatusCodeDescriptionText"`
-	PetitionIssueConsideredTextBag          []string `json:"petitionIssueConsideredTextBag"`
-	RuleBag                                 []string `json:"ruleBag"`
-	StatuteBag                              []string `json:"statuteBag"`
+	PetitionDecisionRecordIdentifier        string             `json:"petitionDecisionRecordIdentifier"`
+	ApplicationNumberText                   string             `json:"applicationNumberText"`
+	PatentNumber                            string             `json:"patentNumber"`
+	BusinessEntityStatusCategory            string             `json:"businessEntityStatusCategory"`
+	CustomerNumber                          int                `json:"customerNumber"`
+	DecisionDate                            string             `json:"decisionDate"`
+	DecisionPetitionTypeCode                int                `json:"decisionPetitionTypeCode"`
+	DecisionPetitionTypeCodeDescriptionText string             `json:"decisionPetitionTypeCodeDescriptionText"`
+	DecisionTypeCode                        string             `json:"decisionTypeCode"`
+	DecisionTypeCodeDescriptionText         string             `json:"decisionTypeCodeDescriptionText"`
+	FinalDecidingOfficeName                 string             `json:"finalDecidingOfficeName"`
+	FirstApplicantName                      string             `json:"firstApplicantName"`
+	FirstInventorToFileIndicator            bool               `json:"firstInventorToFileIndicator"`
+	GroupArtUnitNumber                      string             `json:"groupArtUnitNumber"`
+	TechnologyCenter                        string             `json:"technologyCenter"`
+	InventionTitle                          string             `json:"inventionTitle"`
+	InventorBag                             []string           `json:"inventorBag"`
+	CourtActionIndicator                    bool               `json:"courtActionIndicator"`
+	ActionTakenByCourtName                  string             `json:"actionTakenByCourtName"`
+	PetitionMailDate                        string             `json:"petitionMailDate"`
+	ProsecutionStatusCode                   json.Number        `json:"prosecutionStatusCode,omitempty"`
+	ProsecutionStatusCodeDescriptionText    string             `json:"prosecutionStatusCodeDescriptionText"`
+	PetitionIssueConsideredTextBag          []string           `json:"petitionIssueConsideredTextBag"`
+	RuleBag                                 []string           `json:"ruleBag"`
+	StatuteBag                              []string           `json:"statuteBag"`
 	DocumentBag                             []PetitionDocument `json:"documentBag,omitempty"`
-	LastIngestionDateTime                   string   `json:"lastIngestionDateTime"`
+	LastIngestionDateTime                   string             `json:"lastIngestionDateTime"`
 }
 
 // PetitionDocument describes a petition-associated file-wrapper document.
@@ -967,10 +994,10 @@ type PetitionDocument struct {
 // PetitionDecisionResponse is the top-level response for petition
 // decision searches.
 type PetitionDecisionResponse struct {
-	Count                   int                `json:"count"`
-	RequestIdentifier       string             `json:"requestIdentifier,omitempty"`
-	PetitionDecisionDataBag []PetitionDecision `json:"petitionDecisionDataBag"`
-	Facets                  map[string][]FacetValue       `json:"facets,omitempty"`
+	Count                   int                     `json:"count"`
+	RequestIdentifier       string                  `json:"requestIdentifier,omitempty"`
+	PetitionDecisionDataBag []PetitionDecision      `json:"petitionDecisionDataBag"`
+	Facets                  map[string][]FacetValue `json:"facets,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -989,22 +1016,37 @@ type PatentGrantXML struct {
 
 // BibliographicData holds citation, classification, parties, and related data.
 type BibliographicData struct {
-	PublicationRef       XMLPublicationRef      `xml:"publication-reference" json:"-"`
-	ApplicationRef       XMLApplicationRef      `xml:"application-reference" json:"-"`
-	PriorityClaims       XMLPriorityClaims      `xml:"priority-claims" json:"-"`
-	TermOfGrant          XMLTermOfGrant         `xml:"us-term-of-grant" json:"-"`
-	ClassificationsCPC   XMLClassificationsCPC  `xml:"classifications-cpc" json:"-"`
-	ClassificationsIPCR  XMLClassificationsIPCR `xml:"classifications-ipcr" json:"-"`
-	FieldOfSearch        XMLFieldOfSearch       `xml:"us-field-of-classification-search" json:"-"`
-	Figures              XMLFigures             `xml:"figures" json:"-"`
-	ReferencesCited      XMLReferencesCited     `xml:"us-references-cited" json:"referencesCited"`
-	NumberOfClaims       string                 `xml:"number-of-claims" json:"numberOfClaims,omitempty"`
-	ExemplaryClaim       string                 `xml:"us-exemplary-claim" json:"-"`
-	Parties              XMLParties             `xml:"us-parties" json:"-"`
-	Examiners            XMLExaminers           `xml:"examiners" json:"-"`
-	Assignees            XMLAssignees           `xml:"assignees" json:"-"`
-	InventionTitle       string                 `xml:"invention-title" json:"-"`
-	RelatedDocuments     XMLRelatedDocuments    `xml:"us-related-documents" json:"-"`
+	PublicationRef        XMLPublicationRef      `xml:"publication-reference" json:"-"`
+	ApplicationRef        XMLApplicationRef      `xml:"application-reference" json:"-"`
+	PriorityClaims        XMLPriorityClaims      `xml:"priority-claims" json:"-"`
+	TermOfGrant           XMLTermOfGrant         `xml:"us-term-of-grant" json:"-"`
+	ClassificationsCPC    XMLClassificationsCPC  `xml:"classifications-cpc" json:"-"`
+	ClassificationsIPCR   XMLClassificationsIPCR `xml:"classifications-ipcr" json:"-"`
+	FieldOfSearch         XMLFieldOfSearch       `xml:"us-field-of-classification-search" json:"-"`
+	Figures               XMLFigures             `xml:"figures" json:"-"`
+	ReferencesCited       XMLReferencesCited     `xml:"us-references-cited" json:"referencesCited"`
+	LegacyReferencesCited XMLReferencesCited     `xml:"references-cited" json:"-"`
+	NumberOfClaims        string                 `xml:"number-of-claims" json:"numberOfClaims,omitempty"`
+	ExemplaryClaim        string                 `xml:"us-exemplary-claim" json:"-"`
+	Parties               XMLParties             `xml:"us-parties" json:"-"`
+	Examiners             XMLExaminers           `xml:"examiners" json:"-"`
+	Assignees             XMLAssignees           `xml:"assignees" json:"-"`
+	InventionTitle        string                 `xml:"invention-title" json:"-"`
+	RelatedDocuments      XMLRelatedDocuments    `xml:"us-related-documents" json:"-"`
+}
+
+// Citations returns citations from both modern and legacy references containers.
+func (b *BibliographicData) Citations() []XMLCitation {
+	if len(b.LegacyReferencesCited.Citations) == 0 {
+		return b.ReferencesCited.Citations
+	}
+	if len(b.ReferencesCited.Citations) == 0 {
+		return b.LegacyReferencesCited.Citations
+	}
+	out := make([]XMLCitation, 0, len(b.ReferencesCited.Citations)+len(b.LegacyReferencesCited.Citations))
+	out = append(out, b.ReferencesCited.Citations...)
+	out = append(out, b.LegacyReferencesCited.Citations...)
+	return out
 }
 
 // XMLPublicationRef holds the publication document ID.
@@ -1241,14 +1283,28 @@ type XMLDescription struct {
 
 // XMLReferencesCited wraps the list of citations in a grant XML.
 type XMLReferencesCited struct {
-	Citations []XMLCitation `xml:"us-citation" json:"citations"`
+	Citations []XMLCitation `json:"citations"`
+}
+
+// UnmarshalXML supports both modern <us-citation> and legacy <citation> tags.
+func (x *XMLReferencesCited) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type alias struct {
+		USCitations []XMLCitation `xml:"us-citation"`
+		Citations   []XMLCitation `xml:"citation"`
+	}
+	var aux alias
+	if err := d.DecodeElement(&aux, &start); err != nil {
+		return err
+	}
+	x.Citations = append(aux.USCitations, aux.Citations...)
+	return nil
 }
 
 // XMLCitation is a single citation entry in a grant XML.
 type XMLCitation struct {
-	PatentCitation    *XMLPatentCitation    `xml:"patcit" json:"patentCitation,omitempty"`
-	NPLCitation       *XMLNPLCitation       `xml:"nplcit" json:"nplCitation,omitempty"`
-	Category          string                `xml:"category" json:"category"`
+	PatentCitation *XMLPatentCitation `xml:"patcit" json:"patentCitation,omitempty"`
+	NPLCitation    *XMLNPLCitation    `xml:"nplcit" json:"nplCitation,omitempty"`
+	Category       string             `xml:"category" json:"category"`
 }
 
 // XMLPatentCitation is a patent reference cited in a grant.
@@ -1259,8 +1315,8 @@ type XMLPatentCitation struct {
 
 // XMLNPLCitation is a non-patent literature citation.
 type XMLNPLCitation struct {
-	Num      string         `xml:"num,attr" json:"num"`
-	OtherCit []XMLOtherCit  `xml:"othercit" json:"text,omitempty"`
+	Num      string        `xml:"num,attr" json:"num"`
+	OtherCit []XMLOtherCit `xml:"othercit" json:"text,omitempty"`
 }
 
 // XMLOtherCit holds the text of a non-patent literature citation.
@@ -1300,11 +1356,16 @@ type XMLAbstract struct {
 
 // CitationResult is the structured output for the citations command.
 type CitationResult struct {
-	ApplicationNumber string          `json:"applicationNumber"`
-	PatentNumber      string          `json:"patentNumber"`
-	TotalCitations    int             `json:"totalCitations"`
-	PatentCitations   []PatentCitRef  `json:"patentCitations"`
-	NPLCitations      []NPLCitRef     `json:"nplCitations"`
+	ApplicationNumber      string         `json:"applicationNumber"`
+	PatentNumber           string         `json:"patentNumber"`
+	TotalCitations         int            `json:"totalCitations"`
+	PatentCitationCount    int            `json:"patentCitationCount"`
+	NPLCitationCount       int            `json:"nplCitationCount"`
+	ExaminerCitationCount  int            `json:"examinerCitationCount"`
+	ApplicantCitationCount int            `json:"applicantCitationCount"`
+	OtherCitationCount     int            `json:"otherCitationCount"`
+	PatentCitations        []PatentCitRef `json:"patentCitations"`
+	NPLCitations           []NPLCitRef    `json:"nplCitations"`
 }
 
 // PatentCitRef is a flattened patent citation for output.
@@ -1364,33 +1425,33 @@ type DrawingInfo struct {
 
 // FullTextResult is the comprehensive output from the fulltext command.
 type FullTextResult struct {
-	ApplicationNumber  string          `json:"applicationNumber"`
-	PatentNumber       string          `json:"patentNumber"`
-	Title              string          `json:"title"`
-	Abstract           string          `json:"abstract"`
-	GrantDate          string          `json:"grantDate,omitempty"`
-	FilingDate         string          `json:"filingDate,omitempty"`
-	ApplicationType    string          `json:"applicationType,omitempty"`
-	Examiner           string          `json:"examiner,omitempty"`
-	ExaminerDepartment string          `json:"examinerDepartment,omitempty"`
-	Assignee           string          `json:"assignee,omitempty"`
-	Inventors          []string        `json:"inventors"`
-	CPC                []string        `json:"cpc"`
-	IPC                []string        `json:"ipc"`
-	FieldOfSearch      []string        `json:"fieldOfSearch,omitempty"`
-	PriorityDate       string          `json:"priorityDate,omitempty"`
-	PriorityCountry    string          `json:"priorityCountry,omitempty"`
-	TermExtensionDays  string          `json:"termExtensionDays,omitempty"`
-	ExemplaryClaim     int             `json:"exemplaryClaim,omitempty"`
-	TotalClaims        int             `json:"totalClaims"`
-	Claims             []ClaimText     `json:"claims"`
-	TotalCitations     int             `json:"totalCitations"`
-	PatentCitations    []PatentCitRef  `json:"patentCitations"`
-	NPLCitations       []NPLCitRef     `json:"nplCitations"`
-	DrawingSheets      int             `json:"drawingSheets"`
-	FigureCount        int             `json:"figureCount"`
-	Drawings           []DrawingInfo   `json:"drawings,omitempty"`
-	Description        string          `json:"description"`
-	DescriptionWords   int             `json:"descriptionWords"`
-	PublicationNumber  string          `json:"publicationNumber,omitempty"`
+	ApplicationNumber  string         `json:"applicationNumber"`
+	PatentNumber       string         `json:"patentNumber"`
+	Title              string         `json:"title"`
+	Abstract           string         `json:"abstract"`
+	GrantDate          string         `json:"grantDate,omitempty"`
+	FilingDate         string         `json:"filingDate,omitempty"`
+	ApplicationType    string         `json:"applicationType,omitempty"`
+	Examiner           string         `json:"examiner,omitempty"`
+	ExaminerDepartment string         `json:"examinerDepartment,omitempty"`
+	Assignee           string         `json:"assignee,omitempty"`
+	Inventors          []string       `json:"inventors"`
+	CPC                []string       `json:"cpc"`
+	IPC                []string       `json:"ipc"`
+	FieldOfSearch      []string       `json:"fieldOfSearch,omitempty"`
+	PriorityDate       string         `json:"priorityDate,omitempty"`
+	PriorityCountry    string         `json:"priorityCountry,omitempty"`
+	TermExtensionDays  string         `json:"termExtensionDays,omitempty"`
+	ExemplaryClaim     int            `json:"exemplaryClaim,omitempty"`
+	TotalClaims        int            `json:"totalClaims"`
+	Claims             []ClaimText    `json:"claims"`
+	TotalCitations     int            `json:"totalCitations"`
+	PatentCitations    []PatentCitRef `json:"patentCitations"`
+	NPLCitations       []NPLCitRef    `json:"nplCitations"`
+	DrawingSheets      int            `json:"drawingSheets"`
+	FigureCount        int            `json:"figureCount"`
+	Drawings           []DrawingInfo  `json:"drawings,omitempty"`
+	Description        string         `json:"description"`
+	DescriptionWords   int            `json:"descriptionWords"`
+	PublicationNumber  string         `json:"publicationNumber,omitempty"`
 }

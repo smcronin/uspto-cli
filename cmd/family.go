@@ -21,6 +21,7 @@ type FamilyNode struct {
 	PatentNumber      string       `json:"patentNumber,omitempty"`
 	Title             string       `json:"title,omitempty"`
 	Status            string       `json:"status,omitempty"`
+	FilingDate        string       `json:"filingDate,omitempty"`
 	Relationship      string       `json:"relationship,omitempty"`
 	Children          []FamilyNode `json:"children,omitempty"`
 }
@@ -38,7 +39,8 @@ type FamilyResult struct {
 // ---------------------------------------------------------------------------
 
 var (
-	flagFamilyDepth int
+	flagFamilyDepth     int
+	flagFamilyWithDates bool
 )
 
 var familyCmd = &cobra.Command{
@@ -63,6 +65,7 @@ Example:
 
 func init() {
 	familyCmd.Flags().IntVar(&flagFamilyDepth, "depth", 2, "Recursion depth (max 5)")
+	familyCmd.Flags().BoolVar(&flagFamilyWithDates, "with-dates", false, "Include filing dates in tree output")
 	rootCmd.AddCommand(familyCmd)
 }
 
@@ -156,6 +159,7 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 		node.Title = md.InventionTitle
 		node.PatentNumber = md.PatentNumber
 		node.Status = md.ApplicationStatusDescriptionText
+		node.FilingDate = md.FilingDate
 	}
 
 	// Stop recursion if we have reached the depth limit.
@@ -282,6 +286,9 @@ func printTreeNode(node FamilyNode, prefix string, isLast bool) {
 	}
 	if node.PatentNumber != "" {
 		line += fmt.Sprintf(" (Pat. %s)", node.PatentNumber)
+	}
+	if flagFamilyWithDates && node.FilingDate != "" {
+		line += fmt.Sprintf(" [filed %s]", node.FilingDate)
 	}
 
 	if prefix == "" {

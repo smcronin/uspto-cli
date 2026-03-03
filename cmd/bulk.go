@@ -125,6 +125,7 @@ func dryRunBulkSearch(query string, opts types.SearchOptions) error {
 var bulkGetFlags struct {
 	includeFiles bool
 	latest       bool
+	fileType     string
 }
 
 var bulkGetCmd = &cobra.Command{
@@ -139,17 +140,19 @@ func init() {
 	gf := bulkGetCmd.Flags()
 	gf.BoolVar(&bulkGetFlags.includeFiles, "include-files", false, "Include the file listing in the response")
 	gf.BoolVar(&bulkGetFlags.latest, "latest", false, "Only include the latest file")
+	gf.StringVar(&bulkGetFlags.fileType, "type", "", "Filter returned files by fileTypeText (requires --include-files)")
 
 	bulkCmd.AddCommand(bulkGetCmd)
 }
 
 func runBulkGet(cmd *cobra.Command, args []string) error {
 	productID := args[0]
+	includeFiles := bulkGetFlags.includeFiles || strings.TrimSpace(bulkGetFlags.fileType) != ""
 
 	if flagDryRun {
 		fmt.Fprintf(os.Stderr, "GET /api/v1/datasets/products/%s\n", productID)
 		var params []string
-		if bulkGetFlags.includeFiles {
+		if includeFiles {
 			params = append(params, "includeFiles=true")
 		}
 		if bulkGetFlags.latest {
@@ -162,11 +165,21 @@ func runBulkGet(cmd *cobra.Command, args []string) error {
 	}
 
 	product, err := api.DefaultClient.GetBulkDataProduct(context.Background(), productID, types.BulkDataProductOptions{
-		IncludeFiles: bulkGetFlags.includeFiles,
+		IncludeFiles: includeFiles,
 		Latest:       bulkGetFlags.latest,
 	})
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(bulkGetFlags.fileType) != "" {
+		filtered := make([]types.BulkFileData, 0, len(product.ProductFileBag.FileDataBag))
+		for _, f := range product.ProductFileBag.FileDataBag {
+			if strings.EqualFold(strings.TrimSpace(f.FileTypeText), strings.TrimSpace(bulkGetFlags.fileType)) {
+				filtered = append(filtered, f)
+			}
+		}
+		product.ProductFileBag.FileDataBag = filtered
+		product.ProductFileBag.Count = len(filtered)
 	}
 
 	outputResult(cmd, product, nil)
@@ -183,7 +196,10 @@ var bulkFilesCmd = &cobra.Command{
 	RunE:  runBulkFiles,
 }
 
+var bulkFilesLimit int
+
 func init() {
+	bulkFilesCmd.Flags().IntVar(&bulkFilesLimit, "limit", 0, "Limit number of files returned (0 = all)")
 	bulkCmd.AddCommand(bulkFilesCmd)
 }
 
@@ -204,6 +220,9 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 	}
 
 	files := product.ProductFileBag.FileDataBag
+	if bulkFilesLimit > 0 && bulkFilesLimit < len(files) {
+		files = files[:bulkFilesLimit]
+	}
 	if !flagQuiet {
 		fmt.Fprintf(os.Stderr, "%d files available for %s\n", len(files), productID)
 	}

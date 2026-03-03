@@ -23,6 +23,7 @@ var searchFlags struct {
 	inventor  string
 	patent    string
 	cpc       string
+	cpcGroup  string
 	status    string
 	appType   string
 	examiner  string
@@ -115,8 +116,9 @@ func init() {
 	f.StringVar(&searchFlags.inventor, "inventor", "", "Search by inventor name")
 	f.StringVar(&searchFlags.patent, "patent", "", "Search by patent number")
 	f.StringVar(&searchFlags.cpc, "cpc", "", "Search by CPC classification")
+	f.StringVar(&searchFlags.cpcGroup, "cpc-group", "", "Search by CPC group prefix (e.g., H01M)")
 	f.StringVar(&searchFlags.status, "status", "", "Search by status (numeric code or description text)")
-	f.StringVar(&searchFlags.appType, "type", "", "Search by application type code (e.g., UTL, DSN, PLT)")
+	f.StringVar(&searchFlags.appType, "type", "", "Search by application type code (UTL, DES, PLT, PP, RE)")
 	f.StringVar(&searchFlags.examiner, "examiner", "", "Search by examiner name")
 	f.StringVar(&searchFlags.artUnit, "art-unit", "", "Search by group art unit number")
 	f.StringVar(&searchFlags.assignee, "assignee", "", "Search by assignee name")
@@ -124,6 +126,7 @@ func init() {
 	f.StringVar(&searchFlags.reelFrame, "reel-frame", "", "Search by assignment reel/frame number")
 	f.StringVar(&searchFlags.docket, "docket", "", "Search by docket number")
 	f.StringVar(&searchFlags.pubNumber, "pub-number", "", "Search by publication number")
+	f.StringVar(&searchFlags.pubNumber, "publication-number", "", "Alias for --pub-number")
 
 	// Date range filters.
 	f.StringVar(&searchFlags.filedAfter, "filed-after", "", "Filing date range start (YYYY-MM-DD)")
@@ -198,6 +201,29 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	// --download: use the bulk download endpoint instead of paginated search.
 	if dlFmt := downloadFormat(cmd); dlFmt != "" {
+		if needsPost {
+			body := buildPostBody(freeTextQuery, searchFlags.limit, searchFlags.offset)
+			if flagDryRun {
+				printDryRunPOST("/api/v1/patent/applications/search/download", nil, map[string]interface{}{
+					"q":            body.Q,
+					"filters":      body.Filters,
+					"rangeFilters": body.RangeFilters,
+					"sort":         body.Sort,
+					"fields":       body.Fields,
+					"pagination":   body.Pagination,
+					"facets":       body.Facets,
+					"format":       dlFmt,
+				})
+				return nil
+			}
+			data, err := api.DefaultClient.DownloadPatentsPost(ctx, body, dlFmt)
+			if err != nil {
+				return annotateSearch404(err)
+			}
+			writeDownloadResult(data)
+			return nil
+		}
+
 		query := buildGetQuery(freeTextQuery)
 		opts := types.SearchOptions{
 			Limit:  searchFlags.limit,
@@ -212,7 +238,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 		data, err := api.DefaultClient.DownloadPatents(ctx, query, dlFmt, opts)
 		if err != nil {
-			return err
+			return annotateSearch404(err)
 		}
 		writeDownloadResult(data)
 		return nil
@@ -333,7 +359,11 @@ func executeSearch(ctx context.Context, freeTextQuery string, usePost bool, limi
 			return &types.PatentDataResponse{}, nil
 		}
 
-		return client.SearchPatentsPost(ctx, body)
+		resp, err := client.SearchPatentsPost(ctx, body)
+		if err != nil {
+			return nil, annotateSearch404(err)
+		}
+		return resp, nil
 	}
 
 	// GET path: include date ranges and convenience filters in the query string.
@@ -352,7 +382,11 @@ func executeSearch(ctx context.Context, freeTextQuery string, usePost bool, limi
 		return &types.PatentDataResponse{}, nil
 	}
 
-	return client.SearchPatents(ctx, query, opts)
+	resp, err := client.SearchPatents(ctx, query, opts)
+	if err != nil {
+		return nil, annotateSearch404(err)
+	}
+	return resp, nil
 }
 
 // executeSearchCountOnly runs a count-focused search request.
@@ -372,7 +406,11 @@ func executeSearchCountOnly(ctx context.Context, freeTextQuery string, usePost b
 			return &types.PatentDataResponse{}, nil
 		}
 
-		return client.SearchPatentsPost(ctx, body)
+		resp, err := client.SearchPatentsPost(ctx, body)
+		if err != nil {
+			return nil, annotateSearch404(err)
+		}
+		return resp, nil
 	}
 
 	query := buildGetQueryWithDates(freeTextQuery)
@@ -392,7 +430,42 @@ func executeSearchCountOnly(ctx context.Context, freeTextQuery string, usePost b
 		return &types.PatentDataResponse{}, nil
 	}
 
-	return client.SearchPatents(ctx, query, opts)
+	resp, err := client.SearchPatents(ctx, query, opts)
+	if err != nil {
+		return nil, annotateSearch404(err)
+	}
+	return resp, nil
+}
+
+// annotateSearch404 adds targeted guidance for common 404-prone flag combinations.
+func annotateSearch404(err error) error {
+	apiErr, ok := err.(*api.UsptoAPIError)
+	if !ok || apiErr.StatusCode != 404 {
+		return err
+	}
+
+	var hints []string
+	if searchFlags.granted && searchFlags.filedAfter != "" {
+		hints = append(hints, "For granted-only windows, prefer --granted-after/--granted-before over --filed-after/--filed-before.")
+	}
+	if searchFlags.filedWithin != "" {
+		hints = append(hints, "--filed-within maps to filing-date range; if this 404s, retry with explicit --filed-after YYYY-MM-DD (or --granted-after for issued-only queries).")
+	}
+	if len(hints) == 0 {
+		return err
+	}
+
+	msg := strings.TrimSpace(apiErr.Message)
+	if msg != "" && !strings.HasSuffix(msg, ".") {
+		msg += "."
+	}
+	msg += " Hint: " + strings.Join(hints, " ")
+
+	return &api.UsptoAPIError{
+		StatusCode: apiErr.StatusCode,
+		Message:    msg,
+		Body:       apiErr.Body,
+	}
 }
 
 func validateSearchInputs() error {
@@ -603,6 +676,9 @@ func buildGetQuery(freeTextQuery string) string {
 		{searchFlags.docket, "applicationMetaData.docketNumber"},
 		{searchFlags.pubNumber, "applicationMetaData.earliestPublicationNumber"},
 	}
+	if searchFlags.cpcGroup != "" {
+		parts = append(parts, "applicationMetaData.cpcClassificationBag:"+quoteIfNeeded(cpcGroupTerm(searchFlags.cpcGroup)))
+	}
 
 	for _, m := range shorthandMappings {
 		if m.value != "" {
@@ -620,6 +696,17 @@ func buildGetQuery(freeTextQuery string) string {
 	}
 
 	return strings.Join(parts, " AND ")
+}
+
+func cpcGroupTerm(raw string) string {
+	group := strings.ToUpper(strings.TrimSpace(raw))
+	if group == "" {
+		return group
+	}
+	if strings.Contains(group, "*") {
+		return group
+	}
+	return group + "*"
 }
 
 // buildGetQueryWithDates extends buildGetQuery by appending date range clauses

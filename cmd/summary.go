@@ -31,28 +31,37 @@ type EventSummary struct {
 	Description string `json:"description"`
 }
 
+// ForeignPrioritySummary is a flattened foreign priority claim.
+type ForeignPrioritySummary struct {
+	IPOffice          string `json:"ipOffice"`
+	ApplicationNumber string `json:"applicationNumber"`
+	FilingDate        string `json:"filingDate"`
+}
+
 // AppSummary is the flattened, agent-friendly summary of a patent application.
 type AppSummary struct {
-	ApplicationNumber string              `json:"applicationNumber"`
-	PatentNumber      string              `json:"patentNumber,omitempty"`
-	Title             string              `json:"title"`
-	Status            string              `json:"status"`
-	FilingDate        string              `json:"filingDate"`
-	GrantDate         string              `json:"grantDate,omitempty"`
-	Applicant         string              `json:"applicant"`
-	Inventors         []string            `json:"inventors"`
-	Examiner          string              `json:"examiner,omitempty"`
-	ArtUnit           string              `json:"artUnit,omitempty"`
-	CPC               []string            `json:"cpc,omitempty"`
-	EntityStatus      string              `json:"entityStatus,omitempty"`
-	PTADays           int                 `json:"ptaDays"`
-	Parents           []ContinuitySummary `json:"parents,omitempty"`
-	Children          []ContinuitySummary `json:"children,omitempty"`
-	CurrentAssignee   string              `json:"currentAssignee,omitempty"`
-	RecentEvents      []EventSummary      `json:"recentEvents,omitempty"`
-	DocumentCount     int                 `json:"documentCount"`
-	LastDocument      string              `json:"lastDocument,omitempty"`
-	LastUpdated       string              `json:"lastUpdated,omitempty"`
+	ApplicationNumber    string                   `json:"applicationNumber"`
+	PatentNumber         string                   `json:"patentNumber,omitempty"`
+	Title                string                   `json:"title"`
+	Status               string                   `json:"status"`
+	FilingDate           string                   `json:"filingDate"`
+	GrantDate            string                   `json:"grantDate,omitempty"`
+	Applicant            string                   `json:"applicant"`
+	Inventors            []string                 `json:"inventors"`
+	Examiner             string                   `json:"examiner,omitempty"`
+	ArtUnit              string                   `json:"artUnit,omitempty"`
+	CPC                  []string                 `json:"cpc,omitempty"`
+	EntityStatus         string                   `json:"entityStatus,omitempty"`
+	PTADays              int                      `json:"ptaDays"`
+	Parents              []ContinuitySummary      `json:"parents,omitempty"`
+	Children             []ContinuitySummary      `json:"children,omitempty"`
+	CurrentAssignee      string                   `json:"currentAssignee,omitempty"`
+	RecentEvents         []EventSummary           `json:"recentEvents,omitempty"`
+	ForeignPriority      []ForeignPrioritySummary `json:"foreignPriority,omitempty"`
+	ForeignPriorityCount int                      `json:"foreignPriorityCount"`
+	DocumentCount        int                      `json:"documentCount"`
+	LastDocument         string                   `json:"lastDocument,omitempty"`
+	LastUpdated          string                   `json:"lastUpdated,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +74,7 @@ var summaryCmd = &cobra.Command{
 	Long: `Fetches metadata, continuity, assignments, transactions, and documents
 for a patent application and combines them into a single flattened summary.
 
-This compound command makes 5 sequential API calls and returns a unified
+This compound command makes 6 sequential API calls and returns a unified
 view that is much easier for agents to parse than the raw nested API responses.
 
 Example:
@@ -125,6 +134,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/continuity", nil)
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/assignment", nil)
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/transactions", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/foreign-priority", nil)
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/documents", nil)
 		return nil
 	}
@@ -266,6 +276,24 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	}
 
 	// 5. Documents
+	// 5. Foreign priority
+	progress("Fetching foreign priority...")
+	fpResp, err := client.GetForeignPriority(ctx, appNumber)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("foreign priority: %v", err))
+	} else if len(fpResp.PatentFileWrapperDataBag) > 0 {
+		fw := fpResp.PatentFileWrapperDataBag[0]
+		summary.ForeignPriorityCount = len(fw.ForeignPriorityBag)
+		for _, fp := range fw.ForeignPriorityBag {
+			summary.ForeignPriority = append(summary.ForeignPriority, ForeignPrioritySummary{
+				IPOffice:          fp.IpOfficeName,
+				ApplicationNumber: fp.ApplicationNumberText,
+				FilingDate:        fp.FilingDate,
+			})
+		}
+	}
+
+	// 6. Documents
 	progress("Fetching documents...")
 	docResp, err := client.GetDocuments(ctx, appNumber, types.DocumentOptions{})
 	if err != nil {
@@ -341,6 +369,9 @@ func writeKeyValueSummary(s AppSummary) {
 		kv("PTA Days", fmt.Sprintf("%d", s.PTADays))
 	}
 	kv("Current Assignee", s.CurrentAssignee)
+	if s.ForeignPriorityCount > 0 {
+		kv("Foreign Priority", fmt.Sprintf("%d claim(s)", s.ForeignPriorityCount))
+	}
 	kv("Document Count", fmt.Sprintf("%d", s.DocumentCount))
 	kv("Last Document", s.LastDocument)
 	kv("Last Updated", s.LastUpdated)
@@ -380,6 +411,21 @@ func writeKeyValueSummary(s AppSummary) {
 		fmt.Fprintln(os.Stdout, "--- Recent Events (last 10) ---")
 		for _, ev := range s.RecentEvents {
 			fmt.Fprintf(os.Stdout, "  %s  %-8s  %s\n", ev.Date, ev.Code, ev.Description)
+		}
+	}
+
+	if len(s.ForeignPriority) > 0 {
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout, "--- Foreign Priority ---")
+		for _, fp := range s.ForeignPriority {
+			line := fmt.Sprintf("  %s", fp.ApplicationNumber)
+			if fp.IPOffice != "" {
+				line += fmt.Sprintf(" (%s)", fp.IPOffice)
+			}
+			if fp.FilingDate != "" {
+				line += fmt.Sprintf(" filed %s", fp.FilingDate)
+			}
+			fmt.Fprintln(os.Stdout, line)
 		}
 	}
 }

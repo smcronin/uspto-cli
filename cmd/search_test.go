@@ -23,6 +23,7 @@ func resetSearchFlagsForTest() {
 		inventor      string
 		patent        string
 		cpc           string
+		cpcGroup      string
 		status        string
 		appType       string
 		examiner      string
@@ -263,5 +264,158 @@ func TestRunSearchCountOnly_JSONOutput(t *testing.T) {
 	}
 	if got := env.Results["count"]; got != float64(9) {
 		t.Fatalf("results.count = %v, want 9", got)
+	}
+}
+
+func TestSearchTypeHelpText_UsesDESCode(t *testing.T) {
+	usage := searchCmd.Flags().Lookup("type").Usage
+	if !strings.Contains(usage, "DES") {
+		t.Fatalf("type usage = %q, want to contain DES", usage)
+	}
+	if strings.Contains(usage, "DSN") {
+		t.Fatalf("type usage = %q, should not contain DSN", usage)
+	}
+}
+
+func TestRunSearch_DownloadWithFiltersUsesPostEndpoint(t *testing.T) {
+	origFlags := searchFlags
+	origDryRun := flagDryRun
+	origClient := api.DefaultClient
+	defer func() {
+		searchFlags = origFlags
+		flagDryRun = origDryRun
+		api.DefaultClient = origClient
+	}()
+
+	resetSearchFlagsForTest()
+	flagDryRun = false
+
+	searchFlags.filters = []string{"applicationTypeLabelName=Utility"}
+	searchFlags.filedAfter = "2024-01-01"
+	searchFlags.granted = true
+	searchFlags.sort = "filingDate:desc"
+	searchFlags.limit = 10
+
+	var sawPost bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/patent/applications/search/download" {
+			t.Fatalf("path = %s, want /api/v1/patent/applications/search/download", r.URL.Path)
+		}
+		sawPost = true
+
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if got, _ := body["format"].(string); got != "csv" {
+			t.Fatalf("format = %q, want %q", got, "csv")
+		}
+		filters, ok := body["filters"].([]interface{})
+		if !ok || len(filters) == 0 {
+			t.Fatalf("filters missing from POST body: %#v", body["filters"])
+		}
+		ranges, ok := body["rangeFilters"].([]interface{})
+		if !ok || len(ranges) == 0 {
+			t.Fatalf("rangeFilters missing from POST body: %#v", body["rangeFilters"])
+		}
+
+		w.Header().Set("Content-Type", "text/csv")
+		fmt.Fprint(w, "applicationNumberText\n16123456\n")
+	}))
+	defer ts.Close()
+
+	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("download", "", "")
+	if err := cmd.Flags().Set("download", "csv"); err != nil {
+		t.Fatalf("set download flag: %v", err)
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := runSearch(cmd, []string{"battery"})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_, _ = io.ReadAll(r)
+	_ = r.Close()
+
+	if runErr != nil {
+		t.Fatalf("runSearch() error: %v", runErr)
+	}
+	if !sawPost {
+		t.Fatal("expected POST download request, but server was not hit")
+	}
+}
+
+func TestAnnotateSearch404_AddsHintsForFiledAfterGrantedAndFiledWithin(t *testing.T) {
+	orig := searchFlags
+	defer func() {
+		searchFlags = orig
+	}()
+	resetSearchFlagsForTest()
+	searchFlags.granted = true
+	searchFlags.filedAfter = "2024-01-01"
+	searchFlags.filedWithin = "6m"
+
+	err := annotateSearch404(&api.UsptoAPIError{
+		StatusCode: 404,
+		Message:    "Not Found",
+		Body:       "{}",
+	})
+	apiErr, ok := err.(*api.UsptoAPIError)
+	if !ok {
+		t.Fatalf("annotateSearch404 returned %T, want *api.UsptoAPIError", err)
+	}
+	if !strings.Contains(apiErr.Message, "--granted-after") {
+		t.Fatalf("message = %q, want granted-after hint", apiErr.Message)
+	}
+	if !strings.Contains(apiErr.Message, "--filed-within") {
+		t.Fatalf("message = %q, want filed-within hint", apiErr.Message)
+	}
+}
+
+func TestCPCGroupTerm(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "H01M", want: "H01M*"},
+		{in: " h01m ", want: "H01M*"},
+		{in: "H01M*", want: "H01M*"},
+	}
+	for _, tc := range tests {
+		if got := cpcGroupTerm(tc.in); got != tc.want {
+			t.Fatalf("cpcGroupTerm(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestBuildGetQuery_IncludesCPCGroupWildcard(t *testing.T) {
+	orig := searchFlags
+	defer func() {
+		searchFlags = orig
+	}()
+	resetSearchFlagsForTest()
+	searchFlags.cpcGroup = "h01m"
+
+	q := buildGetQuery("")
+	if !strings.Contains(q, "applicationMetaData.cpcClassificationBag:\"H01M*\"") {
+		t.Fatalf("query = %q, want CPC group wildcard clause", q)
+	}
+}
+
+func TestSearchPublicationNumberAliasFlagExists(t *testing.T) {
+	if searchCmd.Flags().Lookup("publication-number") == nil {
+		t.Fatal("expected --publication-number flag to be registered")
 	}
 }

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/smcronin/uspto-cli/internal/types"
@@ -741,7 +743,7 @@ func TestExtractDrawings(t *testing.T) {
 								ID:          "IMG-1",
 								File:        "US11111111-20230101-D00001.TIF",
 								Format:      "TIF",
-								Height:       "902",
+								Height:      "902",
 								Width:       "692",
 								Orientation: "portrait",
 							},
@@ -892,5 +894,30 @@ func makeGrantWithCitations(citations []types.XMLCitation) *types.PatentGrantXML
 				Citations: citations,
 			},
 		},
+	}
+}
+
+func TestCitationCategoryCounts(t *testing.T) {
+	pat := []types.PatentCitRef{
+		{Category: "cited by examiner"},
+		{Category: "cited by applicant"},
+		{Category: "cited by other"},
+	}
+	npl := []types.NPLCitRef{
+		{Category: "cited by examiner"},
+	}
+	examiner, applicant, other := citationCategoryCounts(pat, npl)
+	if examiner != 2 || applicant != 1 || other != 1 {
+		t.Fatalf("counts examiner=%d applicant=%d other=%d, want 2/1/1", examiner, applicant, other)
+	}
+}
+
+func TestGrantXMLUnavailableHint(t *testing.T) {
+	err := grantXMLUnavailableHint(fmt.Errorf("no grant XML available for 123"), "123")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "app docs 123 --codes CLM") {
+		t.Fatalf("hint missing from error: %v", err)
 	}
 }

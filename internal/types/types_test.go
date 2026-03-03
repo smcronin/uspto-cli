@@ -173,12 +173,12 @@ func TestDecisions(t *testing.T) {
 		wantFirst string
 	}{
 		{
-			name: "prefers decision bag when populated",
+			name: "merges decision and document bags when both populated",
 			resp: TrialDocumentResponse{
 				PatentTrialDecisionDataBag: []TrialDocument{decisionDoc},
 				PatentTrialDocumentDataBag: []TrialDocument{documentDoc},
 			},
-			wantLen:   1,
+			wantLen:   2,
 			wantFirst: "IPR2020-00001",
 		},
 		{
@@ -225,6 +225,29 @@ func TestDecisions(t *testing.T) {
 			wantLen:   2,
 			wantFirst: "IPR2020-00001",
 		},
+		{
+			name: "deduplicates records by document identifier",
+			resp: TrialDocumentResponse{
+				PatentTrialDecisionDataBag: []TrialDocument{
+					{
+						TrialNumber: "IPR2020-00001",
+						DocumentData: TrialDocumentData{
+							DocumentIdentifier: "doc-123",
+						},
+					},
+				},
+				PatentTrialDocumentDataBag: []TrialDocument{
+					{
+						TrialNumber: "IPR2020-00001",
+						DocumentData: TrialDocumentData{
+							DocumentIdentifier: "doc-123",
+						},
+					},
+				},
+			},
+			wantLen:   1,
+			wantFirst: "IPR2020-00001",
+		},
 	}
 
 	for _, tt := range tests {
@@ -246,21 +269,21 @@ func TestDecisions(t *testing.T) {
 
 func TestCorrespondenceAddresses(t *testing.T) {
 	tests := []struct {
-		name    string
-		raw     json.RawMessage
-		wantLen int
+		name     string
+		raw      json.RawMessage
+		wantLen  int
 		wantName string
 	}{
 		{
-			name:    "single object",
-			raw:     json.RawMessage(`{"correspondentNameText":"Law Firm LLP"}`),
-			wantLen: 1,
+			name:     "single object",
+			raw:      json.RawMessage(`{"correspondentNameText":"Law Firm LLP"}`),
+			wantLen:  1,
 			wantName: "Law Firm LLP",
 		},
 		{
-			name:    "array of objects",
-			raw:     json.RawMessage(`[{"correspondentNameText":"Firm A"},{"correspondentNameText":"Firm B"}]`),
-			wantLen: 2,
+			name:     "array of objects",
+			raw:      json.RawMessage(`[{"correspondentNameText":"Firm A"},{"correspondentNameText":"Firm B"}]`),
+			wantLen:  2,
 			wantName: "Firm A",
 		},
 		{
@@ -422,6 +445,71 @@ func TestPatentGrantXML_Citations(t *testing.T) {
 	}
 	if cits[1].Category != "cited by applicant" {
 		t.Errorf("citation[1] category = %q, want %q", cits[1].Category, "cited by applicant")
+	}
+}
+
+func TestPatentGrantXML_LegacyCitations(t *testing.T) {
+	xmlData := `<?xml version="1.0" encoding="UTF-8"?>
+<us-patent-grant>
+  <us-bibliographic-data-grant>
+    <references-cited>
+      <citation>
+        <patcit num="00003">
+          <document-id>
+            <country>US</country>
+            <doc-number>5432100</doc-number>
+            <kind>A</kind>
+          </document-id>
+        </patcit>
+        <category>cited by examiner</category>
+      </citation>
+      <citation>
+        <nplcit num="00004">
+          <othercit>Legacy NPL citation text.</othercit>
+        </nplcit>
+        <category>cited by applicant</category>
+      </citation>
+    </references-cited>
+  </us-bibliographic-data-grant>
+</us-patent-grant>`
+
+	var grant PatentGrantXML
+	if err := xml.Unmarshal([]byte(xmlData), &grant); err != nil {
+		t.Fatalf("xml.Unmarshal() error: %v", err)
+	}
+
+	cits := grant.BibData.Citations()
+	if len(cits) != 2 {
+		t.Fatalf("expected 2 legacy citations, got %d", len(cits))
+	}
+	if cits[0].PatentCitation == nil || cits[0].PatentCitation.Document.DocNum != "5432100" {
+		t.Fatalf("legacy patent citation not parsed correctly: %+v", cits[0].PatentCitation)
+	}
+	if cits[1].NPLCitation == nil || cits[1].NPLCitation.Num != "00004" {
+		t.Fatalf("legacy NPL citation not parsed correctly: %+v", cits[1].NPLCitation)
+	}
+}
+
+func TestBibliographicData_CitationsMergesModernAndLegacy(t *testing.T) {
+	bib := BibliographicData{
+		ReferencesCited: XMLReferencesCited{
+			Citations: []XMLCitation{
+				{Category: "modern"},
+			},
+		},
+		LegacyReferencesCited: XMLReferencesCited{
+			Citations: []XMLCitation{
+				{Category: "legacy"},
+			},
+		},
+	}
+
+	got := bib.Citations()
+	if len(got) != 2 {
+		t.Fatalf("Citations() len = %d, want 2", len(got))
+	}
+	if got[0].Category != "modern" || got[1].Category != "legacy" {
+		t.Fatalf("Citations() order/content unexpected: %+v", got)
 	}
 }
 

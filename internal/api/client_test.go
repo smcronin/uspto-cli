@@ -221,6 +221,19 @@ func TestEndpointPaths(t *testing.T) {
 			wantPath: "/api/v1/patent/applications/search",
 		},
 		{
+			name: "DownloadPatentsPost",
+			call: func(c *Client) {
+				_, _ = c.DownloadPatentsPost(context.Background(), types.SearchRequest{
+					Q: "battery",
+					Pagination: &types.Pagination{
+						Limit:  10,
+						Offset: 0,
+					},
+				}, "csv")
+			},
+			wantPath: "/api/v1/patent/applications/search/download",
+		},
+		{
 			name:     "GetApplication",
 			call:     func(c *Client) { c.GetApplication(context.Background(), "16123456") },
 			wantPath: "/api/v1/patent/applications/16123456",
@@ -293,6 +306,19 @@ func TestEndpointPaths(t *testing.T) {
 		{
 			name:     "SearchPetitionDecisions",
 			call:     func(c *Client) { c.SearchPetitionDecisions(context.Background(), "revival", types.SearchOptions{}) },
+			wantPath: "/api/v1/petition/decisions/search",
+		},
+		{
+			name: "SearchPetitionDecisionsPost",
+			call: func(c *Client) {
+				_, _ = c.SearchPetitionDecisionsPost(context.Background(), types.SearchRequest{
+					Q: "revival",
+					Pagination: &types.Pagination{
+						Offset: 0,
+						Limit:  5,
+					},
+				})
+			},
 			wantPath: "/api/v1/petition/decisions/search",
 		},
 	}
@@ -929,6 +955,44 @@ func TestRequest_PostWithBody(t *testing.T) {
 		"/api/v1/patent/applications/search", searchReq, nil)
 	if err != nil {
 		t.Fatalf("request() error: %v", err)
+	}
+}
+
+func TestDownloadPatentsPost_SendsFormatInBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/patent/applications/search/download" {
+			t.Fatalf("path = %s, want /api/v1/patent/applications/search/download", r.URL.Path)
+		}
+
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if got, _ := body["q"].(string); got != "solid state battery" {
+			t.Fatalf("q = %q, want %q", got, "solid state battery")
+		}
+		if got, _ := body["format"].(string); got != "csv" {
+			t.Fatalf("format = %q, want %q", got, "csv")
+		}
+
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = w.Write([]byte("applicationNumberText\n16123456\n"))
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	_, err := c.DownloadPatentsPost(context.Background(), types.SearchRequest{
+		Q: "solid state battery",
+		Pagination: &types.Pagination{
+			Limit:  25,
+			Offset: 0,
+		},
+	}, "csv")
+	if err != nil {
+		t.Fatalf("DownloadPatentsPost() error: %v", err)
 	}
 }
 

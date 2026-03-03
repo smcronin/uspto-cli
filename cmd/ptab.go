@@ -58,6 +58,8 @@ func init() {
 	f := ptabSearchCmd.Flags()
 	f.String("type", "", "Trial type: IPR, PGR, CBM")
 	f.String("patent", "", "Patent number")
+	f.String("app", "", "Application number")
+	f.String("family", "", "Family application number (alias of --app)")
 	f.String("petitioner", "", "Petitioner name")
 	f.String("patent-owner", "", "Patent owner name")
 	f.String("status", "", "Trial status (e.g. Instituted, Terminated, FWD Entered)")
@@ -79,6 +81,12 @@ func runPtabSearch(cmd *cobra.Command, args []string) error {
 	}
 	if v, _ := cmd.Flags().GetString("patent"); v != "" {
 		parts = append(parts, fmt.Sprintf("patentOwnerData.patentNumber:%s", v))
+	}
+	if v, _ := cmd.Flags().GetString("app"); v != "" {
+		parts = append(parts, ptabApplicationQuery(v))
+	}
+	if v, _ := cmd.Flags().GetString("family"); v != "" {
+		parts = append(parts, ptabApplicationQuery(v))
 	}
 	if v, _ := cmd.Flags().GetString("petitioner"); v != "" {
 		parts = append(parts, fmt.Sprintf("regularPetitionerData.realPartyInInterestName:%s", quoteIfSpaces(v)))
@@ -124,6 +132,15 @@ func runPtabSearch(cmd *cobra.Command, args []string) error {
 
 	resp, err := api.DefaultClient.SearchProceedings(context.Background(), query, opts)
 	if err != nil {
+		if isNotFoundAPIError(err) {
+			outputResult(cmd, []types.ProceedingData{}, &types.PaginationMeta{
+				Offset:  offset,
+				Limit:   limit,
+				Total:   0,
+				HasMore: false,
+			})
+			return nil
+		}
 		return err
 	}
 
@@ -238,6 +255,15 @@ func runPtabDecisions(cmd *cobra.Command, args []string) error {
 
 	resp, err := api.DefaultClient.SearchDecisions(context.Background(), query, opts)
 	if err != nil {
+		if isNotFoundAPIError(err) {
+			outputResult(cmd, []types.TrialDocument{}, &types.PaginationMeta{
+				Offset:  offset,
+				Limit:   limit,
+				Total:   0,
+				HasMore: false,
+			})
+			return nil
+		}
 		return err
 	}
 
@@ -379,6 +405,15 @@ func runPtabDocs(cmd *cobra.Command, args []string) error {
 
 	resp, err := api.DefaultClient.SearchTrialDocuments(context.Background(), query, opts)
 	if err != nil {
+		if isNotFoundAPIError(err) {
+			outputResult(cmd, []types.TrialDocument{}, &types.PaginationMeta{
+				Offset:  offset,
+				Limit:   limit,
+				Total:   0,
+				HasMore: false,
+			})
+			return nil
+		}
 		return err
 	}
 
@@ -511,6 +546,15 @@ func runPtabAppeals(cmd *cobra.Command, args []string) error {
 
 	resp, err := api.DefaultClient.SearchAppeals(context.Background(), query, opts)
 	if err != nil {
+		if isNotFoundAPIError(err) {
+			outputResult(cmd, []types.AppealData{}, &types.PaginationMeta{
+				Offset:  offset,
+				Limit:   limit,
+				Total:   0,
+				HasMore: false,
+			})
+			return nil
+		}
 		return err
 	}
 
@@ -643,6 +687,15 @@ func runPtabInterferences(cmd *cobra.Command, args []string) error {
 
 	resp, err := api.DefaultClient.SearchInterferences(context.Background(), query, opts)
 	if err != nil {
+		if isNotFoundAPIError(err) {
+			outputResult(cmd, []types.InterferenceData{}, &types.PaginationMeta{
+				Offset:  offset,
+				Limit:   limit,
+				Total:   0,
+				HasMore: false,
+			})
+			return nil
+		}
 		return err
 	}
 
@@ -753,4 +806,15 @@ func quoteIfSpaces(v string) string {
 		return fmt.Sprintf(`"%s"`, v)
 	}
 	return v
+}
+
+func ptabApplicationQuery(app string) string {
+	app = strings.TrimSpace(app)
+	return fmt.Sprintf("(patentOwnerData.applicationNumberText:%s OR regularPetitionerData.applicationNumberText:%s OR respondentData.applicationNumberText:%s OR derivationPetitionerData.applicationNumberText:%s)",
+		app, app, app, app)
+}
+
+func isNotFoundAPIError(err error) bool {
+	apiErr, ok := err.(*api.UsptoAPIError)
+	return ok && apiErr.StatusCode == 404
 }

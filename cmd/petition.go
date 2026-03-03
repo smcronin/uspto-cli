@@ -25,6 +25,7 @@ var petitionSearchFlags struct {
 	decision string
 	app      string
 	patent   string
+	facets   string
 	limit    int
 	offset   int
 	sort     string
@@ -44,6 +45,7 @@ func init() {
 	sf.StringVar(&petitionSearchFlags.decision, "decision", "", "Filter by decision type: GRANTED, DENIED, DISMISSED")
 	sf.StringVar(&petitionSearchFlags.app, "app", "", "Filter by application number")
 	sf.StringVar(&petitionSearchFlags.patent, "patent", "", "Filter by patent number")
+	sf.StringVar(&petitionSearchFlags.facets, "facets", "", "Comma-separated facet fields")
 	sf.IntVarP(&petitionSearchFlags.limit, "limit", "l", 25, "Maximum number of results")
 	sf.IntVarP(&petitionSearchFlags.offset, "offset", "o", 0, "Starting offset for pagination")
 	sf.StringVarP(&petitionSearchFlags.sort, "sort", "s", "", "Sort field and order (e.g., decisionDate:desc)")
@@ -87,20 +89,58 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	query := strings.TrimSpace(strings.Join(parts, " AND "))
+	// Some petition backends reject --sort when q is omitted. Use wildcard q.
+	if query == "" && strings.TrimSpace(petitionSearchFlags.sort) != "" {
+		query = "*"
+	}
 
 	opts := types.SearchOptions{
 		Limit:  petitionSearchFlags.limit,
 		Offset: petitionSearchFlags.offset,
 		Sort:   petitionSearchFlags.sort,
+		Facets: petitionSearchFlags.facets,
 	}
 
-	if flagDryRun {
-		printDryRunGET("/api/v1/petition/decisions/search", searchOptionsToParams(query, opts))
-		return nil
-	}
+	// The petition GET endpoint is brittle with sort; use POST when --sort is set.
+	usePost := strings.TrimSpace(petitionSearchFlags.sort) != ""
 
-	resp, err := api.DefaultClient.SearchPetitionDecisions(context.Background(), query, opts)
+	var resp *types.PetitionDecisionResponse
+	var err error
+	if usePost {
+		body := types.SearchRequest{
+			Q: query,
+			Pagination: &types.Pagination{
+				Offset: petitionSearchFlags.offset,
+				Limit:  petitionSearchFlags.limit,
+			},
+		}
+		body.Sort = buildPetitionPostSort(petitionSearchFlags.sort)
+		if petitionSearchFlags.facets != "" {
+			parts := strings.Split(petitionSearchFlags.facets, ",")
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					body.Facets = append(body.Facets, p)
+				}
+			}
+		}
+
+		if flagDryRun {
+			printDryRunPOST("/api/v1/petition/decisions/search", nil, body)
+			return nil
+		}
+		resp, err = api.DefaultClient.SearchPetitionDecisionsPost(context.Background(), body)
+	} else {
+		if flagDryRun {
+			printDryRunGET("/api/v1/petition/decisions/search", searchOptionsToParams(query, opts))
+			return nil
+		}
+		resp, err = api.DefaultClient.SearchPetitionDecisions(context.Background(), query, opts)
+	}
 	if err != nil {
+		if annotated, ok := annotatePetitionSearchError(err); ok {
+			return annotated
+		}
 		return err
 	}
 
@@ -118,8 +158,41 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	outputResult(cmd, resp.PetitionDecisionDataBag, pagination)
+	outputResultWithFacets(cmd, resp.PetitionDecisionDataBag, pagination, resp.Facets)
 	return nil
+}
+
+func buildPetitionPostSort(expr string) []types.SortField {
+	if strings.TrimSpace(expr) == "" {
+		return nil
+	}
+	parts := strings.SplitN(expr, ":", 2)
+	field := strings.TrimSpace(parts[0])
+	order := "Desc"
+	if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[1]), "asc") {
+		order = "Asc"
+	}
+	return []types.SortField{
+		{
+			Field: field,
+			Order: order,
+		},
+	}
+}
+
+func annotatePetitionSearchError(err error) (error, bool) {
+	apiErr, ok := err.(*api.UsptoAPIError)
+	if !ok || apiErr.StatusCode != 404 {
+		return nil, false
+	}
+	if !strings.EqualFold(strings.TrimSpace(petitionSearchFlags.decision), "GRANTED") {
+		return nil, false
+	}
+	return &api.UsptoAPIError{
+		StatusCode: apiErr.StatusCode,
+		Message:    strings.TrimSpace(apiErr.Message) + ". Hint: petition decision data is often DENIED-heavy; retry with --decision DENIED or omit --decision and use --facets decisionTypeCodeDescriptionText.",
+		Body:       apiErr.Body,
+	}, true
 }
 
 // ---------- petition get ----------

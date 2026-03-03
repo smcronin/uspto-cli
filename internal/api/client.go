@@ -495,6 +495,19 @@ func (c *Client) DownloadPatents(ctx context.Context, query string, format strin
 	return c.request(ctx, http.MethodGet, "/api/v1/patent/applications/search/download", nil, params)
 }
 
+// DownloadPatentsPost hits the POST search download endpoint and returns raw bytes.
+// The format parameter should be "json" or "csv".
+func (c *Client) DownloadPatentsPost(ctx context.Context, body types.SearchRequest, format string) ([]byte, error) {
+	payload := struct {
+		types.SearchRequest
+		Format string `json:"format"`
+	}{
+		SearchRequest: body,
+		Format:        format,
+	}
+	return c.request(ctx, http.MethodPost, "/api/v1/patent/applications/search/download", payload, nil)
+}
+
 // GetApplication returns the full patent file wrapper for a single
 // application.
 func (c *Client) GetApplication(ctx context.Context, appNumber string) (*types.PatentDataResponse, error) {
@@ -851,6 +864,12 @@ func (c *Client) GetInterferenceDecisionsByNumber(ctx context.Context, interfere
 func (c *Client) SearchPetitionDecisions(ctx context.Context, query string, opts types.SearchOptions) (*types.PetitionDecisionResponse, error) {
 	return requestJSON[types.PetitionDecisionResponse](c, ctx, http.MethodGet,
 		"/api/v1/petition/decisions/search", nil, searchParams(query, opts))
+}
+
+// SearchPetitionDecisionsPost searches petition decisions using POST body syntax.
+func (c *Client) SearchPetitionDecisionsPost(ctx context.Context, body types.SearchRequest) (*types.PetitionDecisionResponse, error) {
+	return requestJSON[types.PetitionDecisionResponse](c, ctx, http.MethodPost,
+		"/api/v1/petition/decisions/search", body, nil)
 }
 
 // GetPetitionDecision retrieves a single petition decision by record ID.

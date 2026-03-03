@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -474,6 +475,107 @@ func filterEmpty(parts ...string) []string {
 	return out
 }
 
+func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Document, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return docs, nil
+	}
+	parts := strings.SplitN(expr, ":", 2)
+	field := strings.ToLower(strings.TrimSpace(parts[0]))
+	if field != "date" && field != "officialdate" {
+		return nil, fmt.Errorf("invalid --sort %q: supported fields are date or officialDate", expr)
+	}
+	desc := false
+	if len(parts) == 2 {
+		switch strings.ToLower(strings.TrimSpace(parts[1])) {
+		case "asc":
+			desc = false
+		case "desc":
+			desc = true
+		default:
+			return nil, fmt.Errorf("invalid --sort %q: order must be asc or desc", expr)
+		}
+	}
+
+	sorted := append([]types.Document(nil), docs...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a := sorted[i].OfficialDate
+		b := sorted[j].OfficialDate
+		if desc {
+			return a > b
+		}
+		return a < b
+	})
+	return sorted, nil
+}
+
+func resolveDocumentSelection(docs []types.Document, selector string) (int, *types.Document, error) {
+	if len(docs) == 0 {
+		return 0, nil, fmt.Errorf("no documents available")
+	}
+
+	if idx, err := strconv.Atoi(selector); err == nil {
+		if idx < 1 || idx > len(docs) {
+			return 0, nil, fmt.Errorf("document index %d out of range (1-%d)", idx, len(docs))
+		}
+		return idx, &docs[idx-1], nil
+	}
+
+	for i := range docs {
+		if strings.EqualFold(strings.TrimSpace(docs[i].DocumentIdentifier), strings.TrimSpace(selector)) {
+			return i + 1, &docs[i], nil
+		}
+	}
+	return 0, nil, fmt.Errorf("document identifier %q not found", selector)
+}
+
+func uniqueOutputPath(path string, seen map[string]int) (string, bool) {
+	if seen[path] == 0 {
+		seen[path] = 1
+		return path, false
+	}
+	base := strings.TrimSuffix(path, filepath.Ext(path))
+	ext := filepath.Ext(path)
+	n := seen[path]
+	seen[path] = n + 1
+	return fmt.Sprintf("%s_%d%s", base, n, ext), true
+}
+
+func selectPrimaryAttorney(pfw *types.PatentFileWrapper) map[string]string {
+	if pfw == nil || pfw.RecordAttorney == nil {
+		return nil
+	}
+	atty := pfw.RecordAttorney
+	for _, a := range atty.AttorneyBag {
+		name := strings.TrimSpace(strings.Join(filterEmpty(a.FirstName, a.MiddleName, a.LastName), " "))
+		if name == "" {
+			continue
+		}
+		return map[string]string{
+			"name":               name,
+			"registrationNumber": a.RegistrationNumber,
+			"type":               "Attorney",
+			"active":             a.ActiveIndicator,
+		}
+	}
+	for _, p := range atty.PowerOfAttorneyBag {
+		name := strings.TrimSpace(strings.Join(filterEmpty(p.FirstName, p.MiddleName, p.LastName), " "))
+		if name == "" {
+			name = p.PreferredName
+		}
+		if name == "" {
+			continue
+		}
+		return map[string]string{
+			"name":               name,
+			"registrationNumber": p.RegistrationNumber,
+			"type":               "POA",
+			"active":             p.ActiveIndicator,
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // App command and subcommands
 // ---------------------------------------------------------------------------
@@ -562,6 +664,7 @@ var (
 	appDocsCodesFlag string
 	appDocsFromFlag  string
 	appDocsToFlag    string
+	appDocsSortFlag  string
 )
 
 var appDocsCmd = &cobra.Command{
@@ -602,17 +705,21 @@ var appDocsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		sortedDocs, err := sortDocumentsByDateExpr(resp.DocumentBag, appDocsSortFlag)
+		if err != nil {
+			return err
+		}
 
 		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "Found %d documents.\n", len(resp.DocumentBag))
+			fmt.Fprintf(os.Stderr, "Found %d documents.\n", len(sortedDocs))
 		}
 
 		if flagFormat == "table" {
-			writeDocumentsTable(resp.DocumentBag)
+			writeDocumentsTable(sortedDocs)
 			return nil
 		}
 
-		outputResult(cmd, resp.DocumentBag, nil)
+		outputResult(cmd, sortedDocs, nil)
 		return nil
 	},
 }
@@ -770,6 +877,30 @@ var appAttorneyCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if appAttorneyPrimaryFlag {
+			primary := selectPrimaryAttorney(pfw)
+			if primary == nil {
+				return fmt.Errorf("no primary attorney/agent found for application %s", appNumber)
+			}
+			if flagFormat == "table" {
+				t := table.NewWriter()
+				t.SetOutputMirror(os.Stdout)
+				t.SetStyle(table.StyleLight)
+				t.AppendHeader(table.Row{"Name", "Reg #", "Type", "Active"})
+				t.AppendRow(table.Row{
+					primary["name"],
+					safeStr(primary["registrationNumber"], "-"),
+					safeStr(primary["type"], "-"),
+					safeStr(primary["active"], "-"),
+				})
+				t.Render()
+				return nil
+			}
+			outputResult(cmd, map[string]interface{}{
+				"primaryAttorney": primary,
+			}, nil)
+			return nil
+		}
 
 		if flagFormat == "table" {
 			writeAttorneyTable(pfw)
@@ -784,6 +915,8 @@ var appAttorneyCmd = &cobra.Command{
 		return nil
 	},
 }
+
+var appAttorneyPrimaryFlag bool
 
 // --- app adjustment ---
 
@@ -915,13 +1048,14 @@ var (
 )
 
 var appDownloadCmd = &cobra.Command{
-	Use:     "download <appNumber> [docIndex]",
+	Use:     "download <appNumber> [docIndex|documentIdentifier]",
 	Aliases: []string{"dl"},
 	Short:   "Download a document PDF from the file wrapper",
 	Long: `Download a specific document PDF from the application's file wrapper.
 
-If docIndex is not specified, lists all documents so you can pick one.
+If docIndex/documentIdentifier is not specified, lists all documents so you can pick one.
 The docIndex is 1-based (matching the output of "app docs").
+You can also pass the exact documentIdentifier value.
 
 Use --codes to filter documents before selecting. Use --output to specify
 the output file path (defaults to a generated filename).`,
@@ -947,22 +1081,16 @@ the output file path (defaults to a generated filename).`,
 
 		// If no docIndex given, show the document list and exit.
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a docIndex (1-%d) to download.\n",
+			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a docIndex (1-%d) or documentIdentifier to download.\n",
 				len(docResp.DocumentBag), len(docResp.DocumentBag))
 			writeDocumentsTable(docResp.DocumentBag)
 			return nil
 		}
 
-		// Parse docIndex.
-		docIndex, parseErr := strconv.Atoi(args[1])
-		if parseErr != nil {
-			return fmt.Errorf("invalid document index %q: must be a number", args[1])
+		docIndex, doc, err := resolveDocumentSelection(docResp.DocumentBag, args[1])
+		if err != nil {
+			return err
 		}
-		if docIndex < 1 || docIndex > len(docResp.DocumentBag) {
-			return fmt.Errorf("document index %d out of range (1-%d)", docIndex, len(docResp.DocumentBag))
-		}
-
-		doc := &docResp.DocumentBag[docIndex-1]
 		pdfURL := findPDFOption(doc)
 		if pdfURL == "" {
 			return fmt.Errorf("no PDF download option for document %d (%s - %s)",
@@ -1083,6 +1211,7 @@ Progress is shown on stderr.`,
 			DocumentCode string `json:"documentCode"`
 			OfficialDate string `json:"officialDate"`
 			Path         string `json:"path,omitempty"`
+			RenamedFrom  string `json:"renamedFrom,omitempty"`
 			Error        string `json:"error,omitempty"`
 		}
 
@@ -1091,6 +1220,8 @@ Progress is shown on stderr.`,
 		downloaded := 0
 		skipped := 0
 		errCount := 0
+		collisionCount := 0
+		seenPaths := map[string]int{}
 
 		for i, doc := range docResp.DocumentBag {
 			pdfURL := findPDFOption(&doc)
@@ -1103,11 +1234,19 @@ Progress is shown on stderr.`,
 				continue
 			}
 
-			outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber))
+			basePath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber))
+			outPath, collided := uniqueOutputPath(basePath, seenPaths)
+			if collided {
+				collisionCount++
+			}
 
 			if !flagQuiet {
-				fmt.Fprintf(os.Stderr, "[%d/%d] Downloading %s (%s) -> %s\n",
+				msg := fmt.Sprintf("[%d/%d] Downloading %s (%s) -> %s",
 					i+1, totalDocs, doc.DocumentCodeDescriptionText, doc.OfficialDate, outPath)
+				if collided {
+					msg += fmt.Sprintf(" (renamed from %s)", basePath)
+				}
+				fmt.Fprintln(os.Stderr, msg)
 			}
 
 			savedPath, dlErr := api.DefaultClient.DownloadDocument(context.Background(), pdfURL, outPath)
@@ -1124,17 +1263,22 @@ Progress is shown on stderr.`,
 			}
 
 			downloaded++
+			renamedFrom := ""
+			if collided {
+				renamedFrom = basePath
+			}
 			results = append(results, downloadResult{
 				Index:        i + 1,
 				DocumentCode: doc.DocumentCode,
 				OfficialDate: doc.OfficialDate,
 				Path:         savedPath,
+				RenamedFrom:  renamedFrom,
 			})
 		}
 
 		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "\nDone: %d downloaded, %d skipped (no PDF), %d errors, %d total.\n",
-				downloaded, skipped, errCount, totalDocs)
+			fmt.Fprintf(os.Stderr, "\nDone: %d downloaded, %d skipped (no PDF), %d errors, %d total. %d unique files, %d filename collisions resolved.\n",
+				downloaded, skipped, errCount, totalDocs, len(seenPaths), collisionCount)
 		}
 
 		if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
@@ -1171,6 +1315,10 @@ func init() {
 	appDocsCmd.Flags().StringVar(&appDocsCodesFlag, "codes", "", "Comma-separated document codes to filter by")
 	appDocsCmd.Flags().StringVar(&appDocsFromFlag, "from", "", "Filter documents from this date (YYYY-MM-DD)")
 	appDocsCmd.Flags().StringVar(&appDocsToFlag, "to", "", "Filter documents to this date (YYYY-MM-DD)")
+	appDocsCmd.Flags().StringVar(&appDocsSortFlag, "sort", "", "Client-side sort for documents (date:asc or date:desc)")
+
+	// attorney flags
+	appAttorneyCmd.Flags().BoolVar(&appAttorneyPrimaryFlag, "primary", false, "Return only the primary attorney/agent")
 
 	// download flags
 	appDownloadCmd.Flags().StringVarP(&appDownloadOutputFlag, "output", "o", "", "Output file path (default: auto-generated)")
