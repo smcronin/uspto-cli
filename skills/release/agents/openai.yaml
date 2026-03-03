@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release"
+  short_description: "Run safe repo releases with tests, tags, and pushes."
+  default_prompt: "Prepare and execute a release: validate, commit, tag, and push."
