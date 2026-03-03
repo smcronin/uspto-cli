@@ -41,6 +41,9 @@ One key per user — no organization-wide keys. Keys must not be shared (USPTO p
 # Set your API key once (global)
 uspto-cli config set-api-key your-key-here
 
+# Update the CLI binary in place
+uspto-cli update
+
 # Search patents
 uspto-cli search --title "machine learning" --limit 5
 
@@ -75,6 +78,19 @@ uspto-cli config set-api-key --from-dotenv .env
 
 # Show config file location and key status (masked)
 uspto-cli config show
+```
+
+### Update
+
+```bash
+# Install latest release for your OS/arch
+uspto-cli update
+
+# Check latest version without installing
+uspto-cli update --check
+
+# Install a specific version
+uspto-cli update --version v0.1.2
 ```
 
 ### Patent Search

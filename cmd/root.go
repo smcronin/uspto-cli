@@ -122,7 +122,7 @@ func isNonAPICommand(cmd *cobra.Command) bool {
 	}
 	for c := cmd; c != nil; c = c.Parent() {
 		switch c.Name() {
-		case "help", "completion", "version", "config":
+		case "help", "completion", "version", "config", "update":
 			return true
 		}
 	}

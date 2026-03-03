@@ -30,6 +30,12 @@ The `uspto-cli` binary must be installed and on PATH. The user needs a USPTO API
 go install github.com/smcronin/uspto-cli@latest
 ```
 
+**Preferred binary refresh (agent + human):**
+```bash
+uspto-cli update
+uspto-cli update --check
+```
+
 If `go install` fails or the binary isn't found, check:
 - Go is installed and `$GOBIN` (or `$GOPATH/bin`) is on PATH
 - On Windows: binary is `uspto-cli.exe`
@@ -250,6 +256,53 @@ uspto-cli app fulltext 16123456 -f json -q
 - Need description text for claim construction? → `app description`
 - Working with a pending (not yet granted) application? → These commands won't work. Use `app docs` to find and download PDF documents instead.
 
+### Patent Bundle (One-Command Full Export)
+
+The most powerful single command. Resolves ANY identifier (app number, publication number, patent number) and exports a complete artifact directory.
+
+```bash
+# Auto-detect identifier type and export everything
+uspto-cli patent bundle US20050021049A1
+uspto-cli patent bundle 10924035
+uspto-cli patent bundle 16123456
+
+# Explicit identifier type (if auto-detect picks wrong)
+uspto-cli patent bundle 11223344 --id-type patent
+uspto-cli patent bundle US20250087686A1 --id-type publication
+
+# Custom output directory
+uspto-cli patent bundle 10924035 --out ./patents/my-patent
+
+# JSON output for programmatic use
+uspto-cli patent bundle 10924035 -f json -q
+
+# Dry-run to see what API calls would be made
+uspto-cli patent bundle 10924035 --dry-run
+```
+
+**Output directory structure:**
+```
+uspto/<id>/
+  00_resolution.json     - ID resolution: what was searched, what matched
+  01_associated-docs.json - Grant/pgpub XML metadata and URIs
+  02_fulltext.json       - Parsed grant XML (claims, citations, abstract, description, CPC, IPC, inventors)
+  03_docs.json           - File wrapper document index
+  04_download-all.json   - Per-document PDF download results
+  APP_NUMBER.txt         - Resolved application number (for scripting)
+  README.md              - Bundle summary with download stats and warnings
+  xml/grant.xml          - Raw grant XML (when available)
+  xml/pgpub.xml          - Raw pre-grant publication XML (when available)
+  pdf/                   - All downloaded file-wrapper PDFs
+```
+
+**When to use `patent bundle` vs individual commands:**
+- User says "download this patent" or "get me everything on patent X" → `patent bundle`
+- User needs to explore/query specific data (just claims, just citations) → individual `app` commands
+- User wants structured data to pipe into analysis → individual commands with `-f json -q`
+- User wants a complete local archive → `patent bundle`
+
+**ID type auto-detection order:** app number → publication number → patent number. Use `--id-type` if it picks wrong.
+
 ### Compound Commands
 
 ```bash
@@ -348,9 +401,21 @@ uspto-cli status "abandoned" -f json -q
 
 ## Workflow Patterns
 
-### Pattern 1: Find and examine a patent
+### Pattern 1: Download everything for a patent (fastest path)
 
-The most common workflow. Start from a patent number, get the app number, then drill in.
+When the user says "get me this patent" or "download patent X":
+
+```bash
+# One command — resolves ID automatically, downloads everything
+uspto-cli patent bundle US20050021049A1
+# or
+uspto-cli patent bundle 10924035
+# → Creates ./uspto/<id>/ with full text, PDFs, XML, metadata
+```
+
+### Pattern 2: Find and examine a patent (interactive analysis)
+
+When you need to explore a patent step-by-step:
 
 ```bash
 # 1. Search by patent number to find the application number
@@ -366,7 +431,7 @@ uspto-cli app cont 16123456 -f json -q         # See parent/child apps
 uspto-cli app assign 16123456 -f json -q       # Ownership history
 ```
 
-### Pattern 2: Landscape / portfolio analysis
+### Pattern 3: Landscape / portfolio analysis
 
 ```bash
 # 1. Search broadly with facets to understand the landscape
@@ -382,7 +447,7 @@ uspto-cli search --assignee "Samsung" --cpc "H01M" --download csv > samsung_batt
 uspto-cli search --assignee "Toyota" --granted --all --fields "applicationNumberText,applicationMetaData.inventionTitle,applicationMetaData.patentNumber,applicationMetaData.filingDate,applicationMetaData.cpcClassificationBag" -f json -q
 ```
 
-### Pattern 3: Prosecution history review
+### Pattern 4: Prosecution history review
 
 ```bash
 # 1. Get summary for quick overview
@@ -399,7 +464,7 @@ uspto-cli app docs 16123456 --codes "CTNF,CTFR,NOA" -f json -q
 uspto-cli app dl 16123456 3 -o ./office-action.pdf
 ```
 
-### Pattern 4: Family mapping
+### Pattern 5: Family mapping
 
 ```bash
 # 1. Build the family tree (follows continuations, divisionals, CIPs)
@@ -410,7 +475,7 @@ uspto-cli family 16123456 --depth 3 -f json -q
 uspto-cli summary 17654321 -f json -q
 ```
 
-### Pattern 5: PTAB investigation
+### Pattern 6: PTAB investigation
 
 ```bash
 # 1. Check if patent is involved in any IPR/PGR
@@ -426,7 +491,7 @@ uspto-cli ptab decisions-for IPR2023-00001 -f json -q
 uspto-cli ptab docs-for IPR2023-00001 -f json -q
 ```
 
-### Pattern 6: Full patent text extraction
+### Pattern 7: Full patent text extraction
 
 ```bash
 # For a granted patent — get everything in one call
@@ -439,7 +504,7 @@ uspto-cli app docs 16123456 --codes "CLM,SPEC,ABST" -f json -q
 uspto-cli app dl 16123456 1 -o ./claims.pdf
 ```
 
-### Pattern 7: Competitive monitoring export
+### Pattern 8: Competitive monitoring export
 
 ```bash
 # Export a competitor's entire portfolio to CSV for spreadsheet analysis

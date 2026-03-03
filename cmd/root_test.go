@@ -91,6 +91,14 @@ func TestIsNonAPICommand(t *testing.T) {
 		t.Fatal("config subcommand should be treated as non-API")
 	}
 
+	updateCmd, _, err := rootCmd.Find([]string{"update"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(update): %v", err)
+	}
+	if !isNonAPICommand(updateCmd) {
+		t.Fatal("update command should be treated as non-API")
+	}
+
 	searchCmd, _, err := rootCmd.Find([]string{"search"})
 	if err != nil {
 		t.Fatalf("rootCmd.Find(search): %v", err)
