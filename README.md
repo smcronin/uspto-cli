@@ -279,6 +279,14 @@ uspto-cli search --title sensor -f json --minify -q
 
 See **[EXAMPLES.md](EXAMPLES.md)** for detailed walkthroughs: competitive monitoring, prior art search, patent family trees, file wrapper downloads, PTAB tracking, bulk data exports, AI agent workflows, and more.
 
+## Agent Skill
+
+This repo ships its core agent skill as a first-class project asset (not under a hidden config directory):
+
+- [skills/uspto-cli/SKILL.md](skills/uspto-cli/SKILL.md)
+
+If your agent runtime loads skills from a user directory (for example `~/.claude/skills/`), keep a copy there as runtime config, but treat `skills/` in this repo as the canonical source.
+
 ## Agent-Friendly Design
 
 Built for AI agents and automation:
