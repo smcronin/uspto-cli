@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/smcronin/uspto-cli/internal/types"
@@ -82,5 +83,15 @@ func TestSelectPrimaryAttorney(t *testing.T) {
 	}
 	if got["name"] != "Jane Doe" {
 		t.Fatalf("primary name = %q, want Jane Doe", got["name"])
+	}
+}
+
+func TestNormalizeDocumentCodes(t *testing.T) {
+	got := normalizeDocumentCodes("rejection,allowance,clm,Spec,office-action,CTFR")
+	wantParts := []string{"CTNF", "CTFR", "NOA", "CLM", "SPEC"}
+	for _, part := range wantParts {
+		if !strings.Contains(got, part) {
+			t.Fatalf("normalizeDocumentCodes() = %q, want to contain %q", got, part)
+		}
 	}
 }

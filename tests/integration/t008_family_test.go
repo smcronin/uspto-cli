@@ -22,6 +22,18 @@ func TestT008a_SimpleFamily(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected allApplicationNumbers to be array, got %T", allApps)
 	}
+	if len(apps) > 0 {
+		first, ok := apps[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected allApplicationNumbers entries to be objects, got %T", apps[0])
+		}
+		if _, ok := first["applicationNumber"]; !ok {
+			t.Fatalf("expected allApplicationNumbers[].applicationNumber")
+		}
+		if _, ok := first["relationship"]; !ok {
+			t.Fatalf("expected allApplicationNumbers[].relationship")
+		}
+	}
 	if len(apps) < 2 {
 		t.Errorf("expected >= 2 family members, got %d", len(apps))
 	}
@@ -51,7 +63,11 @@ func TestT008b_ComplexFamily_BUG006(t *testing.T) {
 	// Verify no duplicates.
 	seen := make(map[string]bool)
 	for _, a := range apps {
-		s, _ := a.(string)
+		obj, ok := a.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected family app entry object, got %T", a)
+		}
+		s, _ := obj["applicationNumber"].(string)
 		if seen[s] {
 			t.Errorf("BUG-006 regression: duplicate family member: %s", s)
 		}

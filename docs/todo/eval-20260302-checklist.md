@@ -35,7 +35,7 @@ Legend:
 
 ### Family Enhancements
 - [x] Include filing dates in family tree output
-- [ ] Distinguish CON/DIV/CIP in `allApplicationNumbers`
+- [x] Distinguish CON/DIV/CIP in `allApplicationNumbers`
 - [x] Add `family --with-dates` or `family --verbose` (filing/grant/applicant)
 
 ### PTAB Enhancements
@@ -53,22 +53,22 @@ Legend:
 - [x] Add `bulk get --latest --type Data` filter
 
 ### Export / Output
-- [ ] Add `search --all -f csv` style client-side concat helper flow for CSV export UX
+- [x] Add `search --all -f csv` style client-side concat helper flow for CSV export UX
 - [x] Fix `search --download csv` to pass POST filters
 
 ### New Commands (Stretch)
-- [ ] Add `prosecution-timeline` command
-- [ ] Document `--codes` aliases (`rejection`, `allowance`, etc.)
-- [ ] Add pgpub XML parsing for pending apps
+- [x] Add `prosecution-timeline` command
+- [x] Document `--codes` aliases (`rejection`, `allowance`, etc.)
+- [x] Add pgpub XML parsing for pending apps
 
 ## Skill Improvements
 - [x] Document `--granted-after` reliability vs `--filed-after + --granted`
 - [x] Document `--download csv` POST-filter behavior
-- [ ] Document petition dataset `DENIED`-only reality
+- [x] Document petition dataset `DENIED`-only reality
 - [x] Update `--type` code reference to `DES` (not `DSN`)
 - [x] Document `ptab decisions-for` institution-decision behavior
-- [ ] Document pre-2010 citation gaps possibility
-- [ ] Document `app assign` null behavior for direct-company filings
+- [x] Document pre-2010 citation gaps possibility
+- [x] Document `app assign` null behavior for direct-company filings
 
 ## Eval Runner Follow-up
-- [ ] Split P10 into 2 prompts or run with `--timeout 900` for complete coverage
+- [x] Split P10 into 2 prompts or run with `--timeout 900` for complete coverage

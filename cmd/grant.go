@@ -17,35 +17,53 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Helper: fetch and parse grant XML
+// Helper: fetch and parse patent XML (grant preferred, pgpub fallback)
 // ---------------------------------------------------------------------------
 
-// fetchGrantXML fetches and parses the patent grant XML for an application.
-func fetchGrantXML(ctx context.Context, client *api.Client, appNumber string) (*types.PatentGrantXML, error) {
-	progress("Fetching grant XML metadata...")
-	xmlBytes, err := client.FetchGrantXML(ctx, appNumber)
+// fetchPatentXML fetches and parses XML for an application. It prefers grant
+// XML and falls back to pgpub XML for pending applications.
+func fetchPatentXML(ctx context.Context, client *api.Client, appNumber string) (*types.PatentGrantXML, string, error) {
+	progress("Fetching associated XML metadata...")
+	xmlBytes, source, err := client.FetchPatentXML(ctx, appNumber)
 	if err != nil {
-		return nil, grantXMLUnavailableHint(err, appNumber)
+		return nil, "", patentXMLUnavailableHint(err, appNumber)
 	}
 
-	progress(fmt.Sprintf("Parsing %d bytes of grant XML...", len(xmlBytes)))
+	if source == "pgpub" {
+		progress("Grant XML unavailable; using pgpub XML for pending application parsing.")
+		xmlBytes = normalizePgpubXMLForGrantParser(xmlBytes)
+	}
+	progress(fmt.Sprintf("Parsing %d bytes of %s XML...", len(xmlBytes), source))
 
 	var grant types.PatentGrantXML
 	if err := xml.Unmarshal(xmlBytes, &grant); err != nil {
-		return nil, fmt.Errorf("parsing grant XML: %w", err)
+		return nil, "", fmt.Errorf("parsing %s XML: %w", source, err)
 	}
 
-	return &grant, nil
+	return &grant, source, nil
 }
 
-func grantXMLUnavailableHint(err error, appNumber string) error {
+func patentXMLUnavailableHint(err error, appNumber string) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "no grant XML available") {
+	msg := err.Error()
+	if strings.Contains(msg, "no grant or pgpub XML available") ||
+		strings.Contains(msg, "no grant XML available") ||
+		strings.Contains(msg, "no pgpub XML available") {
 		return fmt.Errorf("%w. Hint: for pending applications, try `uspto app docs %s --codes CLM`", err, appNumber)
 	}
 	return err
+}
+
+func normalizePgpubXMLForGrantParser(in []byte) []byte {
+	repl := strings.NewReplacer(
+		"<us-patent-application", "<us-patent-grant",
+		"</us-patent-application>", "</us-patent-grant>",
+		"<us-bibliographic-data-application", "<us-bibliographic-data-grant",
+		"</us-bibliographic-data-application>", "</us-bibliographic-data-grant>",
+	)
+	return []byte(repl.Replace(string(in)))
 }
 
 // grantPatentNumber extracts the patent number from the grant XML bib data.
@@ -213,11 +231,11 @@ func extractDrawings(grant *types.PatentGrantXML) []types.DrawingInfo {
 
 var appClaimsCmd = &cobra.Command{
 	Use:   "claims <applicationNumber>",
-	Short: "Extract structured claim text from patent grant XML",
-	Long: `Fetches the patent grant XML and extracts all claims as structured text.
+	Short: "Extract structured claim text from patent XML",
+	Long: `Fetches patent XML and extracts all claims as structured text.
 
-Requires the application to have been granted (has an issued patent).
-The grant XML is fetched from the ODP bulk data split files.
+Uses grant XML when available, and falls back to pgpub XML for pending
+applications. XML is fetched from ODP bulk data split files.
 
 Example:
   uspto app claims 16123456
@@ -230,12 +248,12 @@ Example:
 		}
 		if flagDryRun {
 			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
-			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> or <pgpubDocumentMetaData.fileLocationURI>")
 			return nil
 		}
 
 		ctx := context.Background()
-		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
+		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
@@ -301,12 +319,12 @@ func wordWrap(text string, maxWidth int) []string {
 
 var appCitationsCmd = &cobra.Command{
 	Use:   "citations <applicationNumber>",
-	Short: "Extract prior art citations from patent grant XML",
-	Long: `Fetches the patent grant XML and extracts all prior art citations
+	Short: "Extract prior art citations from patent XML",
+	Long: `Fetches patent XML and extracts all prior art citations
 (both patent and non-patent literature references).
 
 Each citation includes the category (cited by examiner vs applicant).
-Requires the application to have been granted.
+Uses grant XML when available, otherwise pgpub XML.
 
 Example:
   uspto app citations 16123456
@@ -319,12 +337,12 @@ Example:
 		}
 		if flagDryRun {
 			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
-			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> or <pgpubDocumentMetaData.fileLocationURI>")
 			return nil
 		}
 
 		ctx := context.Background()
-		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
+		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
@@ -398,9 +416,9 @@ func writeCitationsTable(r types.CitationResult) {
 
 var appAbstractCmd = &cobra.Command{
 	Use:   "abstract <applicationNumber>",
-	Short: "Extract patent abstract from grant XML",
-	Long: `Fetches the patent grant XML and extracts the abstract text.
-Requires the application to have been granted.
+	Short: "Extract patent abstract from patent XML",
+	Long: `Fetches patent XML and extracts the abstract text.
+Uses grant XML when available, otherwise pgpub XML.
 
 Example:
   uspto app abstract 16123456
@@ -413,12 +431,12 @@ Example:
 		}
 		if flagDryRun {
 			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
-			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> or <pgpubDocumentMetaData.fileLocationURI>")
 			return nil
 		}
 
 		ctx := context.Background()
-		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
+		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
@@ -455,12 +473,12 @@ Example:
 var appDescriptionCmd = &cobra.Command{
 	Use:   "description <applicationNumber>",
 	Short: "Extract full patent description/specification text",
-	Long: `Fetches the patent grant XML and extracts the complete specification
+	Long: `Fetches patent XML and extracts the complete specification
 text including the detailed description, brief summary, and description
 of drawings.
 
 This can be very large (10,000+ words). Use -f json for structured output.
-Requires the application to have been granted.
+Uses grant XML when available, otherwise pgpub XML.
 
 Example:
   uspto app description 16123456
@@ -473,12 +491,12 @@ Example:
 		}
 		if flagDryRun {
 			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
-			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> or <pgpubDocumentMetaData.fileLocationURI>")
 			return nil
 		}
 
 		ctx := context.Background()
-		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
+		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
@@ -519,12 +537,12 @@ Example:
 
 var appFulltextCmd = &cobra.Command{
 	Use:   "fulltext <applicationNumber>",
-	Short: "Extract ALL structured data from patent grant XML",
-	Long: `Fetches the patent grant XML and extracts everything: metadata,
+	Short: "Extract ALL structured data from patent XML",
+	Long: `Fetches patent XML and extracts everything: metadata,
 abstract, full description, claims, citations, classifications,
 inventors, examiner, drawings metadata, and more.
 
-This is the most comprehensive single-command view of a granted patent.
+This is the most comprehensive single-command view of a patent record.
 Only one API call is needed (plus the XML download).
 
 Example:
@@ -538,12 +556,12 @@ Example:
 		}
 		if flagDryRun {
 			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/associated-documents", nil)
-			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> (grant XML)")
+			fmt.Fprintln(os.Stderr, "Then: GET <grantDocumentMetaData.fileLocationURI> or <pgpubDocumentMetaData.fileLocationURI>")
 			return nil
 		}
 
 		ctx := context.Background()
-		grant, err := fetchGrantXML(ctx, api.DefaultClient, appNumber)
+		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}

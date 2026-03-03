@@ -912,12 +912,23 @@ func TestCitationCategoryCounts(t *testing.T) {
 	}
 }
 
-func TestGrantXMLUnavailableHint(t *testing.T) {
-	err := grantXMLUnavailableHint(fmt.Errorf("no grant XML available for 123"), "123")
+func TestPatentXMLUnavailableHint(t *testing.T) {
+	err := patentXMLUnavailableHint(fmt.Errorf("no grant or pgpub XML available for 123"), "123")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), "app docs 123 --codes CLM") {
 		t.Fatalf("hint missing from error: %v", err)
+	}
+}
+
+func TestNormalizePgpubXMLForGrantParser(t *testing.T) {
+	in := `<us-patent-application lang="EN"><us-bibliographic-data-application></us-bibliographic-data-application></us-patent-application>`
+	got := string(normalizePgpubXMLForGrantParser([]byte(in)))
+	if !strings.Contains(got, "<us-patent-grant") {
+		t.Fatalf("normalized XML missing us-patent-grant root: %s", got)
+	}
+	if !strings.Contains(got, "<us-bibliographic-data-grant>") {
+		t.Fatalf("normalized XML missing grant bibliographic tag: %s", got)
 	}
 }

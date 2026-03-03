@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -245,6 +246,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if searchFlags.all {
+		if getOutputOptions().Format == "csv" {
+			return runSearchAllPagesCSV(ctx, freeTextQuery, needsPost)
+		}
 		return runSearchAllPages(ctx, cmd, freeTextQuery, needsPost)
 	}
 
@@ -344,6 +348,74 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 	}
 
 	outputResult(cmd, allResults, pagination)
+	return nil
+}
+
+// runSearchAllPagesCSV fetches all pages and concatenates rows client-side
+// before writing one combined CSV to stdout.
+func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost bool) error {
+	offset := searchFlags.offset
+	pageSize := autoPageSize
+	totalCount := 0
+
+	var rows []map[string]string
+	headerSet := make(map[string]bool)
+
+	if !flagQuiet {
+		fmt.Fprintln(os.Stderr, "Using client-side CSV concat flow (--all + -f csv).")
+	}
+
+	for {
+		resp, err := executeSearch(ctx, freeTextQuery, usePost, pageSize, offset)
+		if err != nil {
+			return err
+		}
+
+		if totalCount == 0 {
+			totalCount = resp.Count
+			if !flagQuiet {
+				fmt.Fprintf(os.Stderr, "%d total results found, fetching all...\n", totalCount)
+			}
+		}
+
+		for _, item := range resp.PatentFileWrapperDataBag {
+			flat := flattenToMap(item)
+			rows = append(rows, flat)
+			for k := range flat {
+				headerSet[k] = true
+			}
+		}
+
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "  fetched %d / %d\n", len(rows), totalCount)
+		}
+
+		offset += pageSize
+		if offset >= totalCount || offset >= autoPageLimit || len(resp.PatentFileWrapperDataBag) == 0 {
+			break
+		}
+	}
+
+	if len(rows) == 0 {
+		return nil
+	}
+
+	headers := make([]string, 0, len(headerSet))
+	for h := range headerSet {
+		headers = append(headers, h)
+	}
+	sortStrings(headers)
+
+	w := csv.NewWriter(os.Stdout)
+	_ = w.Write(headers)
+	for _, row := range rows {
+		record := make([]string, len(headers))
+		for i, h := range headers {
+			record[i] = row[h]
+		}
+		_ = w.Write(record)
+	}
+	w.Flush()
 	return nil
 }
 

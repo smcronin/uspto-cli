@@ -640,6 +640,86 @@ func TestFetchGrantXML_EmptyFileLocationURI(t *testing.T) {
 	}
 }
 
+func TestFetchPgpubXML_Success(t *testing.T) {
+	xmlContent := `<?xml version="1.0"?><us-patent-application><title>Widget App</title></us-patent-application>`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/patent/applications/16123456/associated-documents":
+			resp := types.PatentDataResponse{
+				Count: 1,
+				PatentFileWrapperDataBag: []types.PatentFileWrapper{
+					{
+						ApplicationNumberText: "16123456",
+						PgpubDocumentMetaData: &types.FileMetaData{
+							FileLocationURI: "/pgpub-xml/2024/US20240123456A1.xml",
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/pgpub-xml/2024/US20240123456A1.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			w.Write([]byte(xmlContent))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	got, err := c.FetchPgpubXML(context.Background(), "16123456")
+	if err != nil {
+		t.Fatalf("FetchPgpubXML() unexpected error: %v", err)
+	}
+	if string(got) != xmlContent {
+		t.Errorf("FetchPgpubXML() = %q, want %q", string(got), xmlContent)
+	}
+}
+
+func TestFetchPatentXML_FallbackToPgpub(t *testing.T) {
+	pgpubXML := `<us-patent-application><abstract><p>pending</p></abstract></us-patent-application>`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/patent/applications/16123456/associated-documents":
+			resp := types.PatentDataResponse{
+				Count: 1,
+				PatentFileWrapperDataBag: []types.PatentFileWrapper{
+					{
+						ApplicationNumberText: "16123456",
+						GrantDocumentMetaData: nil,
+						PgpubDocumentMetaData: &types.FileMetaData{
+							FileLocationURI: "/pgpub-xml/pending.xml",
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/pgpub-xml/pending.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			w.Write([]byte(pgpubXML))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	got, source, err := c.FetchPatentXML(context.Background(), "16123456")
+	if err != nil {
+		t.Fatalf("FetchPatentXML() unexpected error: %v", err)
+	}
+	if source != "pgpub" {
+		t.Fatalf("source = %q, want pgpub", source)
+	}
+	if string(got) != pgpubXML {
+		t.Fatalf("FetchPatentXML() = %q, want %q", string(got), pgpubXML)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 6. Rate limit / retry logic — 429 responses trigger retry
 // ---------------------------------------------------------------------------

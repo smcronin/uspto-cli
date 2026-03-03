@@ -586,6 +586,36 @@ func (c *Client) GetAssociatedDocuments(ctx context.Context, appNumber string) (
 // downloads and returns the raw XML bytes. Returns nil if no grant XML exists
 // (e.g. application is not yet granted).
 func (c *Client) FetchGrantXML(ctx context.Context, appNumber string) ([]byte, error) {
+	return c.fetchAssociatedXML(ctx, appNumber, "grant")
+}
+
+// FetchPgpubXML fetches the pre-grant publication XML for an application.
+func (c *Client) FetchPgpubXML(ctx context.Context, appNumber string) ([]byte, error) {
+	return c.fetchAssociatedXML(ctx, appNumber, "pgpub")
+}
+
+// FetchPatentXML fetches the best available XML for an application:
+// grant XML if available, otherwise pgpub XML.
+func (c *Client) FetchPatentXML(ctx context.Context, appNumber string) ([]byte, string, error) {
+	grantXML, err := c.FetchGrantXML(ctx, appNumber)
+	if err == nil {
+		return grantXML, "grant", nil
+	}
+	if !strings.Contains(err.Error(), "no grant XML available") {
+		return nil, "", err
+	}
+
+	pgpubXML, pgErr := c.FetchPgpubXML(ctx, appNumber)
+	if pgErr == nil {
+		return pgpubXML, "pgpub", nil
+	}
+	if strings.Contains(pgErr.Error(), "no pgpub XML available") {
+		return nil, "", fmt.Errorf("no grant or pgpub XML available for %s", appNumber)
+	}
+	return nil, "", pgErr
+}
+
+func (c *Client) fetchAssociatedXML(ctx context.Context, appNumber, kind string) ([]byte, error) {
 	resp, err := c.GetAssociatedDocuments(ctx, appNumber)
 	if err != nil {
 		return nil, fmt.Errorf("fetching associated documents: %w", err)
@@ -596,17 +626,31 @@ func (c *Client) FetchGrantXML(ctx context.Context, appNumber string) ([]byte, e
 	}
 
 	fw := resp.PatentFileWrapperDataBag[0]
-	grantXML := fw.GrantDocumentMetaData
-	if grantXML == nil || grantXML.FileLocationURI == "" {
-		return nil, fmt.Errorf("no grant XML available for %s (application may not be granted)", appNumber)
+	var fileMeta *types.FileMetaData
+	switch kind {
+	case "grant":
+		fileMeta = fw.GrantDocumentMetaData
+	case "pgpub":
+		fileMeta = fw.PgpubDocumentMetaData
+	default:
+		return nil, fmt.Errorf("unsupported XML kind %q", kind)
 	}
+	if fileMeta == nil || fileMeta.FileLocationURI == "" {
+		if kind == "grant" {
+			return nil, fmt.Errorf("no grant XML available for %s (application may not be granted)", appNumber)
+		}
+		return nil, fmt.Errorf("no pgpub XML available for %s (publication XML not present)", appNumber)
+	}
+	return c.fetchXMLByURI(ctx, fileMeta.FileLocationURI, kind)
+}
 
+func (c *Client) fetchXMLByURI(ctx context.Context, fileLocationURI, kind string) ([]byte, error) {
 	// The file location URI points to the bulk data file endpoint which
 	// returns a redirect to a signed S3 URL. Use the standard request
 	// flow to follow redirects.
-	c.debugf("Fetching grant XML from %s", grantXML.FileLocationURI)
+	c.debugf("Fetching %s XML from %s", kind, fileLocationURI)
 
-	xmlURL := grantXML.FileLocationURI
+	xmlURL := fileLocationURI
 	if !strings.HasPrefix(xmlURL, "http") {
 		xmlURL = c.baseURL + "/" + strings.TrimLeft(xmlURL, "/")
 	}
@@ -629,7 +673,7 @@ func (c *Client) FetchGrantXML(ctx context.Context, appNumber string) ([]byte, e
 	xmlResp, err := c.followRedirectsWithClient(dlClient, req)
 	c.rl.markRequestComplete()
 	if err != nil {
-		return nil, fmt.Errorf("fetching grant XML: %w", err)
+		return nil, fmt.Errorf("fetching %s XML: %w", kind, err)
 	}
 	defer xmlResp.Body.Close()
 
@@ -637,7 +681,7 @@ func (c *Client) FetchGrantXML(ctx context.Context, appNumber string) ([]byte, e
 		body, _ := io.ReadAll(xmlResp.Body)
 		return nil, &UsptoAPIError{
 			StatusCode: xmlResp.StatusCode,
-			Message:    fmt.Sprintf("grant XML download failed: HTTP %d", xmlResp.StatusCode),
+			Message:    fmt.Sprintf("%s XML download failed: HTTP %d", kind, xmlResp.StatusCode),
 			Body:       string(body),
 		}
 	}

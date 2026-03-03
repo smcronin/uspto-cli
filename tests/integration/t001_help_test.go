@@ -13,6 +13,7 @@ func TestT001a_RootHelp(t *testing.T) {
 	assertContains(t, r.Stdout, "status")
 	assertContains(t, r.Stdout, "summary")
 	assertContains(t, r.Stdout, "family")
+	assertContains(t, r.Stdout, "prosecution-timeline")
 	assertContains(t, r.Stdout, "config")
 	assertContains(t, r.Stdout, "patent")
 	assertContains(t, r.Stdout, "update")

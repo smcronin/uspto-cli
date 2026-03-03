@@ -475,6 +475,58 @@ func filterEmpty(parts ...string) []string {
 	return out
 }
 
+var documentCodeAliases = map[string][]string{
+	"rejection":           {"CTNF", "CTFR"},
+	"office-action":       {"CTNF", "CTFR"},
+	"non-final-rejection": {"CTNF"},
+	"final-rejection":     {"CTFR"},
+	"allowance":           {"NOA"},
+	"notice-of-allowance": {"NOA"},
+	"claims":              {"CLM"},
+	"specification":       {"SPEC"},
+	"spec":                {"SPEC"},
+	"abstract":            {"ABST"},
+	"drawings":            {"DRWR"},
+	"ids":                 {"IDS"},
+}
+
+func normalizeDocumentCodes(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	var out []string
+	seen := make(map[string]bool)
+
+	tokens := strings.Split(raw, ",")
+	for _, tok := range tokens {
+		t := strings.TrimSpace(tok)
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(t, "_", "-"), " ", "-"))
+		if expanded, ok := documentCodeAliases[key]; ok {
+			for _, code := range expanded {
+				c := strings.ToUpper(strings.TrimSpace(code))
+				if c != "" && !seen[c] {
+					seen[c] = true
+					out = append(out, c)
+				}
+			}
+			continue
+		}
+
+		c := strings.ToUpper(t)
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+
+	return strings.Join(out, ",")
+}
+
 func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Document, error) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
@@ -682,7 +734,7 @@ var appDocsCmd = &cobra.Command{
 		}
 
 		opts := types.DocumentOptions{
-			DocumentCodes:    appDocsCodesFlag,
+			DocumentCodes:    normalizeDocumentCodes(appDocsCodesFlag),
 			OfficialDateFrom: appDocsFromFlag,
 			OfficialDateTo:   appDocsToFlag,
 		}
@@ -1068,7 +1120,7 @@ the output file path (defaults to a generated filename).`,
 
 		// List documents to find the target.
 		docOpts := types.DocumentOptions{
-			DocumentCodes: appDownloadCodesFlag,
+			DocumentCodes: normalizeDocumentCodes(appDownloadCodesFlag),
 		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
@@ -1167,7 +1219,7 @@ Progress is shown on stderr.`,
 
 		// List all documents.
 		docOpts := types.DocumentOptions{
-			DocumentCodes:    appDownloadAllCodesFlag,
+			DocumentCodes:    normalizeDocumentCodes(appDownloadAllCodesFlag),
 			OfficialDateFrom: appDownloadAllFromFlag,
 			OfficialDateTo:   appDownloadAllToFlag,
 		}
@@ -1312,7 +1364,7 @@ func init() {
 	appCmd.AddCommand(appDownloadAllCmd)
 
 	// docs flags
-	appDocsCmd.Flags().StringVar(&appDocsCodesFlag, "codes", "", "Comma-separated document codes to filter by")
+	appDocsCmd.Flags().StringVar(&appDocsCodesFlag, "codes", "", "Comma-separated document codes/aliases to filter by (e.g., CTNF,NOA or rejection,allowance)")
 	appDocsCmd.Flags().StringVar(&appDocsFromFlag, "from", "", "Filter documents from this date (YYYY-MM-DD)")
 	appDocsCmd.Flags().StringVar(&appDocsToFlag, "to", "", "Filter documents to this date (YYYY-MM-DD)")
 	appDocsCmd.Flags().StringVar(&appDocsSortFlag, "sort", "", "Client-side sort for documents (date:asc or date:desc)")
@@ -1322,11 +1374,11 @@ func init() {
 
 	// download flags
 	appDownloadCmd.Flags().StringVarP(&appDownloadOutputFlag, "output", "o", "", "Output file path (default: auto-generated)")
-	appDownloadCmd.Flags().StringVar(&appDownloadCodesFlag, "codes", "", "Filter documents by codes before selecting")
+	appDownloadCmd.Flags().StringVar(&appDownloadCodesFlag, "codes", "", "Filter documents by codes/aliases before selecting")
 
 	// download-all flags
 	appDownloadAllCmd.Flags().StringVarP(&appDownloadAllOutputFlag, "output", "o", "", "Output directory (default: current directory)")
-	appDownloadAllCmd.Flags().StringVar(&appDownloadAllCodesFlag, "codes", "", "Comma-separated document codes to filter by")
+	appDownloadAllCmd.Flags().StringVar(&appDownloadAllCodesFlag, "codes", "", "Comma-separated document codes/aliases to filter by")
 	appDownloadAllCmd.Flags().StringVar(&appDownloadAllFromFlag, "from", "", "Filter documents from this date (YYYY-MM-DD)")
 	appDownloadAllCmd.Flags().StringVar(&appDownloadAllToFlag, "to", "", "Filter documents to this date (YYYY-MM-DD)")
 }

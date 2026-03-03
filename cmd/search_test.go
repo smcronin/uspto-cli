@@ -419,3 +419,77 @@ func TestSearchPublicationNumberAliasFlagExists(t *testing.T) {
 		t.Fatal("expected --publication-number flag to be registered")
 	}
 }
+
+func TestRunSearchAllPagesCSV_ClientSideConcat(t *testing.T) {
+	origFlags := searchFlags
+	origDryRun := flagDryRun
+	origClient := api.DefaultClient
+	origFormat := flagFormat
+	origQuiet := flagQuiet
+	defer func() {
+		searchFlags = origFlags
+		flagDryRun = origDryRun
+		api.DefaultClient = origClient
+		flagFormat = origFormat
+		flagQuiet = origQuiet
+	}()
+
+	resetSearchFlagsForTest()
+	searchFlags.all = true
+	flagDryRun = false
+	flagFormat = "csv"
+	flagQuiet = true
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		offset := r.URL.Query().Get("offset")
+		resp := types.PatentDataResponse{Count: 101}
+		switch offset {
+		case "":
+			for i := 1; i <= 100; i++ {
+				resp.PatentFileWrapperDataBag = append(resp.PatentFileWrapperDataBag, types.PatentFileWrapper{
+					ApplicationNumberText: fmt.Sprintf("A%03d", i),
+				})
+			}
+		case "100":
+			resp.PatentFileWrapperDataBag = append(resp.PatentFileWrapperDataBag, types.PatentFileWrapper{
+				ApplicationNumberText: "A101",
+			})
+		default:
+			t.Fatalf("unexpected offset query: %q", offset)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
+
+	oldStdout := os.Stdout
+	tmpFile, err := os.CreateTemp("", "search-all-csv-*.csv")
+	if err != nil {
+		t.Fatalf("os.CreateTemp: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	os.Stdout = tmpFile
+
+	runErr := runSearch(searchCmd, []string{"sensor"})
+	_ = tmpFile.Close()
+	os.Stdout = oldStdout
+	if runErr != nil {
+		t.Fatalf("runSearch() error: %v", runErr)
+	}
+
+	out, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("os.ReadFile(stdout temp): %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "applicationNumberText") {
+		t.Fatalf("csv output missing header, got:\n%s", s)
+	}
+	if !strings.Contains(s, "A101") {
+		t.Fatalf("csv output missing concatenated second-page row A101, got:\n%s", s)
+	}
+}

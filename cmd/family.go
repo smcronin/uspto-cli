@@ -26,12 +26,18 @@ type FamilyNode struct {
 	Children          []FamilyNode `json:"children,omitempty"`
 }
 
+// FamilyApplicationRef is a deduplicated family member with relationship label.
+type FamilyApplicationRef struct {
+	ApplicationNumber string `json:"applicationNumber"`
+	Relationship      string `json:"relationship"`
+}
+
 // FamilyResult is the top-level output for the family command.
 type FamilyResult struct {
-	Root                  string     `json:"root"`
-	Tree                  FamilyNode `json:"tree"`
-	AllApplicationNumbers []string   `json:"allApplicationNumbers"`
-	TotalMembers          int        `json:"totalMembers"`
+	Root                  string                 `json:"root"`
+	Tree                  FamilyNode             `json:"tree"`
+	AllApplicationNumbers []FamilyApplicationRef `json:"allApplicationNumbers"`
+	TotalMembers          int                    `json:"totalMembers"`
 }
 
 // ---------------------------------------------------------------------------
@@ -98,18 +104,25 @@ func runFamily(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 	client := api.DefaultClient
-	visited := make(map[string]bool)
+	visited := make(map[string]string)
 
 	progress(fmt.Sprintf("Building family tree for %s (depth %d)...", appNumber, flagFamilyDepth))
 
 	tree := buildFamilyNode(ctx, client, appNumber, "", flagFamilyDepth, visited)
 
-	// Collect all unique application numbers.
-	allApps := make([]string, 0, len(visited))
+	// Collect all unique application numbers and their relationship labels.
+	allAppNums := make([]string, 0, len(visited))
 	for app := range visited {
-		allApps = append(allApps, app)
+		allAppNums = append(allAppNums, app)
 	}
-	sortStrings(allApps)
+	sortStrings(allAppNums)
+	allApps := make([]FamilyApplicationRef, 0, len(allAppNums))
+	for _, app := range allAppNums {
+		allApps = append(allApps, FamilyApplicationRef{
+			ApplicationNumber: app,
+			Relationship:      visited[app],
+		})
+	}
 
 	result := FamilyResult{
 		Root:                  appNumber,
@@ -138,14 +151,21 @@ func runFamily(cmd *cobra.Command, args []string) error {
 // buildFamilyNode recursively builds a FamilyNode by fetching continuity
 // and metadata for the given application number. It uses the visited set
 // to avoid cycles and redundant API calls.
-func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relationship string, depth int, visited map[string]bool) FamilyNode {
+func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relationship string, depth int, visited map[string]string) FamilyNode {
 	node := FamilyNode{
 		ApplicationNumber: appNumber,
 		Relationship:      relationship,
 	}
 
-	// Mark as visited immediately to prevent cycles.
-	visited[appNumber] = true
+	// Mark as visited immediately to prevent cycles. Keep the first discovered
+	// relationship label for deduplicated allApplicationNumbers output.
+	if _, exists := visited[appNumber]; !exists {
+		rel := strings.TrimSpace(strings.ToUpper(relationship))
+		if rel == "" {
+			rel = "ROOT"
+		}
+		visited[appNumber] = rel
+	}
 
 	// Fetch metadata for this application.
 	progress(fmt.Sprintf("  Fetching metadata for %s...", appNumber))
@@ -192,7 +212,7 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 	var related []relatedApp
 
 	for _, p := range fw.ParentContinuityBag {
-		if p.ParentApplicationNumberText != "" && !visited[p.ParentApplicationNumberText] {
+		if p.ParentApplicationNumberText != "" && visited[p.ParentApplicationNumberText] == "" {
 			related = append(related, relatedApp{
 				appNumber:    p.ParentApplicationNumberText,
 				relationship: parentRelationship(p.ClaimParentageTypeCode),
@@ -201,7 +221,7 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 	}
 
 	for _, c := range fw.ChildContinuityBag {
-		if c.ChildApplicationNumberText != "" && !visited[c.ChildApplicationNumberText] {
+		if c.ChildApplicationNumberText != "" && visited[c.ChildApplicationNumberText] == "" {
 			related = append(related, relatedApp{
 				appNumber:    c.ChildApplicationNumberText,
 				relationship: childRelationship(c.ClaimParentageTypeCode),
@@ -217,7 +237,7 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 	// because an earlier sibling's subtree may have already visited an app
 	// that was in our related list.
 	for _, rel := range related {
-		if visited[rel.appNumber] {
+		if visited[rel.appNumber] != "" {
 			continue
 		}
 		childNode := buildFamilyNode(ctx, client, rel.appNumber, rel.relationship, depth-1, visited)
@@ -267,7 +287,7 @@ func writeFamilyTree(result FamilyResult) {
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "All application numbers:")
 	for _, app := range result.AllApplicationNumbers {
-		fmt.Fprintf(os.Stdout, "  %s\n", app)
+		fmt.Fprintf(os.Stdout, "  %s (%s)\n", app.ApplicationNumber, app.Relationship)
 	}
 }
 
@@ -359,6 +379,6 @@ func writeKeyValueFamily(result FamilyResult) {
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "Applications:")
 	for _, app := range result.AllApplicationNumbers {
-		fmt.Fprintf(os.Stdout, "  %s\n", app)
+		fmt.Fprintf(os.Stdout, "  %s (%s)\n", app.ApplicationNumber, app.Relationship)
 	}
 }

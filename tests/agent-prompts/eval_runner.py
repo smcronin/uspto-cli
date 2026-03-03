@@ -8,7 +8,7 @@ structured eval results to JSON files.
 Usage:
     python tests/agent-prompts/eval_runner.py                    # Run all 10 prompts
     python tests/agent-prompts/eval_runner.py --prompts 1,3,5    # Run specific prompts
-    python tests/agent-prompts/eval_runner.py --timeout 600      # Custom timeout (default: 300s)
+    python tests/agent-prompts/eval_runner.py --timeout 600      # Custom base timeout (P10 auto-bumped to >=900s)
     python tests/agent-prompts/eval_runner.py --dry-run           # Print prompts without running
 
 Output:
@@ -33,6 +33,7 @@ FRIX_ROOT = Path(r"C:\Users\sethc\dev\frix-agent")
 FRIX_HEADLESS = FRIX_ROOT / "frix_headless.py"
 RESULTS_DIR = SCRIPT_DIR / "results"
 WORKSPACE_BASE = SCRIPT_DIR / "workspaces"
+P10_MIN_TIMEOUT = 900
 
 # Template for the structured output instruction (eval_file placeholder filled per-prompt)
 OUTPUT_INSTRUCTION_TEMPLATE = """\
@@ -278,8 +279,8 @@ def main():
         help="Comma-separated prompt numbers to run (e.g., 1,3,5). Default: all."
     )
     parser.add_argument(
-        "--timeout", type=int, default=300,
-        help="Timeout per prompt in seconds (default: 300)"
+        "--timeout", type=int, default=600,
+        help="Base timeout per prompt in seconds (default: 600; prompt 10 uses at least 900)"
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true",
@@ -330,7 +331,7 @@ def main():
     print("USPTO CLI SKILL EVALUATION")
     print(f"{'='*70}")
     print(f"Prompts:   {len(prompts)}")
-    print(f"Timeout:   {args.timeout}s per prompt")
+    print(f"Timeout:   {args.timeout}s base per prompt (P10 min {P10_MIN_TIMEOUT}s)")
     print(f"Results:   {RESULTS_DIR}")
     print(f"Workspace: {WORKSPACE_BASE}")
     print(f"{'='*70}\n")
@@ -339,7 +340,10 @@ def main():
     total_start = time.time()
 
     for num, text, full, fname, eval_file in prompts:
-        result = run_prompt(num, text, full, eval_file, args.timeout, args.verbose)
+        timeout = args.timeout
+        if num == 10 and timeout < P10_MIN_TIMEOUT:
+            timeout = P10_MIN_TIMEOUT
+        result = run_prompt(num, text, full, eval_file, timeout, args.verbose)
         all_results.append(result)
 
         # Save individual result JSON (without raw stdout/stderr for cleanliness)

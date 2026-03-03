@@ -109,6 +109,7 @@ uspto search --reel-frame "012345/0001"
 
 # Auto-paginate all results (up to 10,000)
 uspto search --examiner "RILEY" --all -f ndjson
+uspto search --assignee "Tesla" --granted --all -f csv > tesla_all.csv
 
 # Count matches only (lightweight sizing call for agents)
 uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
@@ -127,6 +128,7 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - Uses `POST /search` when `--filter`, `--facets`, date ranges, or `--granted/--pending` are present.
 - Uses `GET /search` for simple query-only cases.
 - For `--download`, it uses `POST /search/download` when those advanced parameters are present; otherwise `GET /search/download`.
+- `--all -f csv` performs client-side page concatenation for CSV export UX (useful when you need paged search semantics instead of `--download csv`).
 
 **All search flags:**
 `--title`, `--inventor`, `--assignee`, `--examiner`, `--applicant`, `--assignor`,
@@ -186,7 +188,7 @@ uspto app associated-docs <appNumber>  # Associated XML document metadata
 uspto app download <appNumber> [index|documentIdentifier] # Download a specific document PDF
 uspto app download-all <appNumber>     # Download all document PDFs
 
-# Grant XML extraction (for granted patents)
+# Patent XML extraction (grant + pgpub fallback)
 uspto app abstract <appNumber>         # Patent abstract
 uspto app claims <appNumber>           # Structured claims text
 uspto app citations <appNumber>        # Prior art citations
@@ -194,7 +196,21 @@ uspto app description <appNumber>      # Full specification text
 uspto app fulltext <appNumber>         # Everything: meta + abstract + claims + citations + description
 ```
 
-The grant XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse the official patent grant XML to extract structured data. `fulltext` is the most comprehensive single-command view of a granted patent.
+The XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse official patent XML to extract structured data. They prefer grant XML and fall back to pgpub XML for pending applications when available. `fulltext` is the most comprehensive single-command view.
+For pending applications, these commands automatically fall back to pgpub XML when available.
+For older patents (especially pre-2010), citation completeness can vary depending on legacy XML structure and source data availability.
+
+Document code filters (`app docs --codes`, `app dl --codes`, `app dl-all --codes`) support aliases:
+- `rejection` -> `CTNF,CTFR`
+- `allowance` -> `NOA`
+- `claims` -> `CLM`
+- `specification` / `spec` -> `SPEC`
+- `abstract` -> `ABST`
+- `drawings` -> `DRWR`
+- `ids` -> `IDS`
+
+Assignment note:
+- `app assign` can legitimately return `[]` for direct-company filings where no post-filing assignment recordation exists in the assignment dataset.
 
 ### Compound Commands
 
@@ -206,7 +222,13 @@ uspto summary 16123456
 # Recursive family tree (follows parent/child continuity chains)
 uspto family 16123456 --depth 3
 uspto family 16123456 --depth 3 --with-dates
+
+# Prosecution timeline (metadata + transactions + key docs in one view)
+uspto prosecution-timeline 16123456
+uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
+
+`family` JSON includes relationship-aware `allApplicationNumbers` entries so CON/DIV/CIP links are explicit in the flat member list.
 
 ### PTAB (Patent Trial and Appeal Board)
 
@@ -253,6 +275,8 @@ uspto petition search --app 16123456 --patent 10000000
 uspto petition search --facets decisionTypeCodeDescriptionText -f json -q
 uspto petition get <recordId> --include-documents
 ```
+
+Dataset note: decision search data is currently dominated by `DENIED` records; `--decision GRANTED` may return no results depending on dataset coverage.
 
 ### Bulk Data
 

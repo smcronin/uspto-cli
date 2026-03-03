@@ -12,7 +12,7 @@ Use this skill when the user asks to:
 - Look up a specific patent application's metadata, prosecution history, continuity, or assignments
 - Download patent documents (PDFs) from the file wrapper
 - Download a full patent artifact bundle in one command (JSON + XML + PDFs + README)
-- Extract structured patent text (claims, citations, abstract, description) from grant XML
+- Extract structured patent text (claims, citations, abstract, description) from patent XML (grant/pgpub)
 - Search or retrieve PTAB trial proceedings, decisions, appeals, or interferences
 - Search petition decisions
 - Browse or download bulk data products from USPTO
@@ -159,6 +159,7 @@ uspto search --title "AI" --page 3 --limit 25 -f json -q
 
 # Auto-paginate all results (up to 10,000)
 uspto search --assignee "Tesla" --granted --all -f json -q
+uspto search --assignee "Tesla" --granted --all -f csv > tesla_all.csv
 
 # Count only (fast total without full payload)
 uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
@@ -188,6 +189,7 @@ uspto search --title "drone" --fields "applicationNumberText,applicationMetaData
 - `search` uses **POST** when advanced params are present (`--filter`, `--facets`, date ranges, `--granted/--pending`).
 - `search` uses **GET** for simple query-only requests.
 - `search --download` uses **POST /search/download** for advanced params; otherwise **GET /search/download**.
+- `search --all -f csv` uses client-side page concatenation for CSV export UX.
 
 **Sortable fields** (use with `--sort "field:asc"` or `--sort "field:desc"`):
 `filingDate`, `applicationStatusDate`, `patentNumber`, `grantDate`, `effectiveFilingDate`, `earliestPublicationDate`, `firstApplicantName`, `firstInventorName`, `examinerNameText`, `groupArtUnitNumber`, `applicationStatusCode`, `applicationTypeCode`, `inventionTitle`, `firstInventorToFileIndicator`
@@ -206,6 +208,7 @@ uspto app meta 16123456 -f json -q
 # File wrapper documents
 uspto app docs 16123456 -f json -q
 uspto app docs 16123456 --codes "CLM,SPEC" --from 2020-01-01 -f json -q
+uspto app docs 16123456 --codes "rejection,allowance" -f json -q
 uspto app docs 16123456 --sort date:asc -f json -q
 
 # Prosecution history (transaction events)
@@ -239,9 +242,21 @@ uspto app dl-all 16123456 -o ./downloads/
 uspto app dl-all 16123456 --codes "CLM" --from 2023-01-01 -o ./claims/
 ```
 
+`--codes` alias support:
+- `rejection` -> `CTNF,CTFR`
+- `allowance` -> `NOA`
+- `claims` -> `CLM`
+- `specification` / `spec` -> `SPEC`
+- `abstract` -> `ABST`
+- `drawings` -> `DRWR`
+- `ids` -> `IDS`
+
+Assignment caveat:
+- `app assign` may return `[]` for direct-company filings that have no separate assignment recordation event.
+
 ### Grant XML Extraction (Structured Patent Text)
 
-These commands parse official grant XML to extract structured text. **Only works for granted patents** — pending applications without a grant will return an error.
+These commands parse official patent XML to extract structured text. They use grant XML first and automatically fall back to pgpub XML for pending applications when available.
 
 ```bash
 # Structured claim text (individual claims with references)
@@ -268,7 +283,9 @@ uspto app fulltext 16123456 -f json -q
 - Need citations for prior art mapping? → `app citations`
 - Need the full picture for deep analysis? → `app fulltext` (but output can be large)
 - Need description text for claim construction? → `app description`
-- Working with a pending (not yet granted) application? → These commands won't work. Use `app docs` to find and download PDF documents instead.
+- Working with a pending (not yet granted) application? → These commands may still work via pgpub XML fallback. If XML is missing, use `app docs` PDF workflow.
+
+Citation caveat: for older patents (especially pre-2010), citation completeness can vary due to legacy XML/data differences.
 
 ### Patent Bundle (One-Command Full Export)
 
@@ -327,10 +344,14 @@ uspto summary 16123456 -f json -q
 
 # Recursive patent family tree
 # Follows parent/child continuity chains, fetches metadata for each member
-# Returns: tree structure + allApplicationNumbers (deduplicated flat list)
+# Returns: tree structure + allApplicationNumbers (deduplicated, relationship-aware list)
 uspto family 16123456 -f json -q
 uspto family 16123456 --depth 3 -f json -q    # Default depth=2, max=5
 uspto family 16123456 --depth 3 --with-dates -f json -q
+
+# One-shot prosecution timeline
+uspto prosecution-timeline 16123456 -f json -q
+uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
 
 ### PTAB (Patent Trial and Appeal Board)
@@ -378,6 +399,8 @@ uspto petition search --facets decisionTypeCodeDescriptionText -f json -q
 uspto petition get <recordId> -f json -q
 uspto petition get <recordId> --include-documents -f json -q
 ```
+
+Dataset caveat: petition search currently skews heavily toward `DENIED` records; `--decision GRANTED` may return no data depending on dataset coverage.
 
 ### Bulk Data
 
@@ -479,6 +502,9 @@ uspto summary 16123456 -f json -q
 # 2. Full transaction history
 uspto app txn 16123456 -f json -q
 
+# 2b. One-shot timeline view (recommended)
+uspto prosecution-timeline 16123456 -f json -q
+
 # 3. Document list — filter for office actions
 # Common document codes: CTNF=Non-Final Rejection, CTFR=Final Rejection, NOA=Notice of Allowance
 uspto app docs 16123456 --codes "CTNF,CTFR,NOA" -f json -q
@@ -493,7 +519,7 @@ uspto app dl 16123456 3 -o ./office-action.pdf
 # 1. Build the family tree (follows continuations, divisionals, CIPs)
 uspto family 16123456 --depth 3 -f json -q
 
-# 2. The response includes allApplicationNumbers — a flat deduplicated list
+# 2. The response includes allApplicationNumbers — deduplicated entries with relationship labels (CON/DIV/CIP/etc.)
 # 3. Get summaries for key family members
 uspto summary 17654321 -f json -q
 ```
@@ -520,11 +546,8 @@ uspto ptab docs-for IPR2023-00001 -f json -q
 # For a granted patent — get everything in one call
 uspto app fulltext 16123456 -f json -q
 
-# For a pending application — no grant XML available
-# Use the file wrapper documents instead
-uspto app docs 16123456 --codes "CLM,SPEC,ABST" -f json -q
-# Then download the PDFs
-uspto app dl 16123456 1 -o ./claims.pdf
+# Pending applications use pgpub XML fallback when available
+uspto app fulltext 16123456 -f json -q
 ```
 
 ### Pattern 8: Competitive monitoring export
@@ -550,7 +573,9 @@ uspto search --filter "applicationMetaData.cpcClassificationBag=H04W*" -f json -
 
 **Never combine --granted and --pending**: Using both together sends conflicting filters that return ALL 5.4M+ applications instead of the expected intersection. Use one or the other.
 
-**Grant XML commands require granted patents**: `app claims`, `app citations`, `app abstract`, `app description`, and `app fulltext` only work if the application has been granted. For pending applications, use `app docs` and download the PDF documents.
+**Patent XML availability varies**: `app claims`, `app citations`, `app abstract`, `app description`, and `app fulltext` use grant XML first and fallback to pgpub XML for pending apps. Some records still have no XML and require `app docs` PDF workflows.
+
+**Older citation coverage can vary**: pre-2010 records may have citation gaps due to legacy XML/data differences.
 
 **6MB response payload limit**: Very broad searches or large applications may hit the 6MB API limit (HTTP 413). Reduce `--limit` or use `--fields` to narrow the response.
 
@@ -596,7 +621,7 @@ This CLI uses the USPTO **Open Data Portal (ODP)** API at `api.uspto.gov`. It do
 
 **If you get HTTP 413** (Payload Too Large): Reduce `--limit` to 10 or use `--fields` to select fewer response fields.
 
-**If grant XML commands fail**: Verify the patent is granted (`app meta` → check status). Pre-grant apps don't have grant XML.
+**If XML extraction commands fail**: check `app xml` for grant/pgpub availability. If no XML metadata exists, use `app docs` + PDF downloads.
 
 **If search returns 0 results unexpectedly**: Try `--dry-run` to inspect the actual API query. Check for CPC format issues or try broader search terms.
 
@@ -605,12 +630,15 @@ This CLI uses the USPTO **Open Data Portal (ODP)** API at `api.uspto.gov`. It do
 - **Start with `summary`**: It's the fastest way to get a comprehensive view of any application (5 API calls combined into one)
 - **Use `--fields` aggressively**: Reduces response size and token usage dramatically for search results
 - **Use `--download csv`** for large exports: Single request, no pagination, server-side processing (filters/ranges are passed via POST when needed)
+- **Use `--all -f csv`** when you want client-side concatenation across paged search calls
 - **Use `--facets`** for landscape analysis: Get aggregated counts by any field alongside results
 - **Application numbers are bare digits**: `16123456`, not `16/123,456`
 - **The `family` command deduplicates**: It follows continuity chains and prevents cycles automatically
+- **`family` member lists are relationship-aware**: `allApplicationNumbers` entries include relationship labels (CON/DIV/CIP/PRO/ROOT)
 - **NDJSON for streaming**: `-f ndjson` outputs one JSON object per line — useful for piping to `jq` or processing line by line
 - **`--dry-run` for debugging**: See the exact API URL that would be called, without executing
-- **`app fulltext` is the nuclear option**: Gets everything from grant XML in one call, but the output can be very large
+- **`app fulltext` is the nuclear option**: Gets everything from patent XML (grant first, pgpub fallback), but output can be very large
 - **Document codes**: When filtering `app docs`, common codes include CLM (claims), SPEC (specification), CTNF (non-final rejection), CTFR (final rejection), NOA (notice of allowance), ABST (abstract), DRWR (drawings), IDS (information disclosure statement)
+- **Document code aliases are supported**: `rejection`, `allowance`, `claims`, `spec`, `abstract`, `drawings`, `ids`
 
 
