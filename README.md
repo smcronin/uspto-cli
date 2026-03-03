@@ -108,6 +108,9 @@ uspto-cli search --reel-frame "012345/0001"
 # Auto-paginate all results (up to 10,000)
 uspto-cli search --examiner "RILEY" --all -f ndjson
 
+# Count matches only (lightweight sizing call for agents)
+uspto-cli search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
+
 # Download all results server-side (single request, supports CSV)
 uspto-cli search --title "battery" --download csv > batteries.csv
 uspto-cli search --assignee "Tesla" --download json > tesla.json
@@ -122,7 +125,7 @@ uspto-cli search --filter "applicationTypeLabelName=Utility" --facets applicatio
 `--status`, `--type`, `--granted`, `--pending`,
 `--filed-after`, `--filed-before`, `--filed-within`,
 `--granted-after`, `--granted-before`,
-`--sort`, `--limit`, `--offset`, `--page`, `--all`,
+`--sort`, `--limit`, `--offset`, `--page`, `--all`, `--count-only`,
 `--filter`, `--facets`, `--fields`, `--download`
 
 ### Patent Bundle
@@ -269,7 +272,7 @@ All commands support four output formats via `-f`:
 
 ```bash
 # JSON envelope structure
-# {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.2.0"}
+# {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.2.1"}
 
 # Minified JSON for piping
 uspto-cli search --title sensor -f json --minify -q
@@ -296,6 +299,7 @@ Built for AI agents and automation:
 - **`--dry-run`** shows the API request without executing (all commands)
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
 - **`--all`** auto-paginates up to 10,000 results
+- **`--count-only`** returns just total matches for fast landscape sizing
 - **`--download`** server-side bulk export (json or csv) in a single request
 - **`--facets`** returns aggregated counts alongside results
 - **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command

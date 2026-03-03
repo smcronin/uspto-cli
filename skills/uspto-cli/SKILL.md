@@ -158,6 +158,9 @@ uspto-cli search --title "AI" --page 3 --limit 25 -f json -q
 # Auto-paginate all results (up to 10,000)
 uspto-cli search --assignee "Tesla" --granted --all -f json -q
 
+# Count only (fast total without full payload)
+uspto-cli search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
+
 # Server-side bulk download (single request, entire result set)
 uspto-cli search --assignee "Tesla" --download csv > tesla.csv
 uspto-cli search --title "battery" --download json > batteries.json
@@ -175,7 +178,7 @@ uspto-cli search --title "drone" --fields "applicationNumberText,applicationMeta
 `--status`, `--type`, `--granted`, `--pending`,
 `--filed-after`, `--filed-before`, `--filed-within`,
 `--granted-after`, `--granted-before`,
-`--sort`, `--limit`, `--offset`, `--page`, `--all`,
+`--sort`, `--limit`, `--offset`, `--page`, `--all`, `--count-only`,
 `--filter`, `--facets`, `--fields`, `--download`
 
 **Sortable fields** (use with `--sort "field:asc"` or `--sort "field:desc"`):
@@ -437,13 +440,16 @@ uspto-cli app assign 16123456 -f json -q       # Ownership history
 # 1. Search broadly with facets to understand the landscape
 uspto-cli search --title "solid state battery" --granted --filed-within 5y --facets "applicationMetaData.firstApplicantName" -f json -q
 
-# 2. Use --all to get the full result set (up to 10,000)
+# 2. Use --count-only first for a fast sizing call
+uspto-cli search --title "solid state battery" --granted --filed-within 5y --count-only -f json -q
+
+# 3. Use --all to get the full result set (up to 10,000)
 uspto-cli search --title "solid state battery" --granted --filed-within 5y --all -f json -q
 
-# 3. Or use --download for server-side export (no pagination needed)
+# 4. Or use --download for server-side export (no pagination needed)
 uspto-cli search --assignee "Samsung" --cpc "H01M" --download csv > samsung_battery.csv
 
-# 4. Use --fields to reduce response size for large datasets
+# 5. Use --fields to reduce response size for large datasets
 uspto-cli search --assignee "Toyota" --granted --all --fields "applicationNumberText,applicationMetaData.inventionTitle,applicationMetaData.patentNumber,applicationMetaData.filingDate,applicationMetaData.cpcClassificationBag" -f json -q
 ```
 

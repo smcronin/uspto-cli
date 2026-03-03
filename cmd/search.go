@@ -49,6 +49,8 @@ var searchFlags struct {
 	offset int
 	all    bool
 	page   int
+	// Count-only mode (returns only total count).
+	countOnly bool
 
 	// Sort.
 	sort string
@@ -91,6 +93,9 @@ Examples:
 
   # Auto-paginate all results
   uspto search --examiner "RILEY" --all -f ndjson
+
+  # Count only (total matches, no full result payload)
+  uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
 
   # Structured filters via POST
   uspto search --filter "applicationTypeLabelName=Utility" --facets "applicationTypeCategory"
@@ -136,6 +141,7 @@ func init() {
 	f.IntVar(&searchFlags.offset, "offset", 0, "Result offset for pagination")
 	f.BoolVar(&searchFlags.all, "all", false, "Auto-paginate to fetch all results (up to 10,000)")
 	f.IntVar(&searchFlags.page, "page", 0, "Page number (1-based, alternative to --offset)")
+	f.BoolVar(&searchFlags.countOnly, "count-only", false, "Return only total count (no result records)")
 
 	// Sort.
 	f.StringVar(&searchFlags.sort, "sort", "", "Sort field and order (e.g., filingDate:desc)")
@@ -177,11 +183,18 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if err := validateSearchInputs(); err != nil {
 		return err
 	}
+	if err := validateSearchMode(cmd); err != nil {
+		return err
+	}
 
 	// Decide whether we need the POST endpoint.
 	needsPost := needsPostEndpoint()
 
 	ctx := context.Background()
+
+	if searchFlags.countOnly {
+		return runSearchCountOnly(ctx, cmd, freeTextQuery, needsPost)
+	}
 
 	// --download: use the bulk download endpoint instead of paginated search.
 	if dlFmt := downloadFormat(cmd); dlFmt != "" {
@@ -210,6 +223,28 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	return runSearchSinglePage(ctx, cmd, freeTextQuery, needsPost)
+}
+
+// runSearchCountOnly performs a lightweight search and returns only the total count.
+func runSearchCountOnly(ctx context.Context, cmd *cobra.Command, freeTextQuery string, usePost bool) error {
+	resp, err := executeSearchCountOnly(ctx, freeTextQuery, usePost)
+	if err != nil {
+		return err
+	}
+
+	if !flagQuiet {
+		fmt.Fprintf(os.Stderr, "%d total results\n", resp.Count)
+	}
+
+	pagination := &types.PaginationMeta{
+		Offset:  0,
+		Limit:   0,
+		Total:   resp.Count,
+		HasMore: false,
+	}
+
+	outputResultWithFacets(cmd, map[string]int{"count": resp.Count}, pagination, resp.Facets)
+	return nil
 }
 
 // runSearchSinglePage performs a single search request and outputs results.
@@ -320,6 +355,46 @@ func executeSearch(ctx context.Context, freeTextQuery string, usePost bool, limi
 	return client.SearchPatents(ctx, query, opts)
 }
 
+// executeSearchCountOnly runs a count-focused search request.
+// It always fetches a single lightweight record to minimize payload.
+func executeSearchCountOnly(ctx context.Context, freeTextQuery string, usePost bool) (*types.PatentDataResponse, error) {
+	client := api.DefaultClient
+
+	if usePost {
+		body := buildPostBody(freeTextQuery, 1, 0)
+		body.Sort = nil // Sort is irrelevant for count-only mode.
+		if len(body.Fields) == 0 {
+			body.Fields = []string{"applicationNumberText"}
+		}
+
+		if flagDryRun {
+			printDryRunPOST("/api/v1/patent/applications/search", nil, body)
+			return &types.PatentDataResponse{}, nil
+		}
+
+		return client.SearchPatentsPost(ctx, body)
+	}
+
+	query := buildGetQueryWithDates(freeTextQuery)
+	fields := searchFlags.fields
+	if fields == "" {
+		fields = "applicationNumberText"
+	}
+
+	opts := types.SearchOptions{
+		Limit:  1,
+		Fields: fields,
+		Facets: searchFlags.facets,
+	}
+
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/applications/search", searchOptionsToParams(query, opts))
+		return &types.PatentDataResponse{}, nil
+	}
+
+	return client.SearchPatents(ctx, query, opts)
+}
+
 func validateSearchInputs() error {
 	if searchFlags.limit <= 0 {
 		return fmt.Errorf("invalid --limit %d: must be > 0", searchFlags.limit)
@@ -346,6 +421,13 @@ func validateSearchInputs() error {
 		if !strings.Contains(expr, "=") {
 			return fmt.Errorf("invalid --filter %q: expected field=value", expr)
 		}
+	}
+	return nil
+}
+
+func validateSearchMode(cmd *cobra.Command) error {
+	if searchFlags.countOnly && downloadFormat(cmd) != "" {
+		return fmt.Errorf("cannot combine --count-only and --download")
 	}
 	return nil
 }
