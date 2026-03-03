@@ -1061,3 +1061,4 @@ For AI agent consumption, the following improvements would help:
 | `/{app}/attorney` | YES | YES | NO | NO | 30% |
 | `/status-codes` GET | YES | YES | YES | YES | 90% |
 | `/status-codes` POST | NO | NO | N/A | N/A | 0% |
+

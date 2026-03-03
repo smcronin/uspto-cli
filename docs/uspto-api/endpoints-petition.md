@@ -110,3 +110,4 @@ Available facets for petition decisions:
 - `actionTakenByCourtName`
 - `courtActionIndicator`
 - `businessEntityStatusCategory`
+

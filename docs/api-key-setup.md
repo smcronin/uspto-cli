@@ -26,12 +26,12 @@ displayed on the dashboard.
 Recommended: store your key once in global CLI config:
 
 ```bash
-uspto-cli config set-api-key your-api-key-here
+uspto config set-api-key your-api-key-here
 ```
 
 This writes your key to your user config directory (for example:
-`%AppData%\uspto-cli\config.env` on Windows, `~/.config/uspto-cli/config.env`
-on Linux/macOS), so `uspto-cli` works from any directory.
+`%AppData%\uspto\config.env` on Windows, `~/.config/uspto/config.env`
+on Linux/macOS), so `uspto` works from any directory.
 
 This is runtime configuration only. Your API key is not embedded into
 the binary when you build/package the CLI.
@@ -43,7 +43,7 @@ Alternative options:
 export USPTO_API_KEY=your-api-key-here
 
 # Pass directly on each command
-uspto-cli search --api-key your-api-key-here --title "machine learning"
+uspto search --api-key your-api-key-here --title "machine learning"
 ```
 
 ## Key policies
@@ -62,3 +62,5 @@ uspto-cli search --api-key your-api-key-here --title "machine learning"
 - [MyODP Dashboard](https://data.uspto.gov/myodp) — View your API key
 - [API Documentation](https://data.uspto.gov/apis) — Full endpoint reference
 - [FAQ](https://data.uspto.gov/support/faq) — Common questions about API keys, rate limits, and data access
+
+

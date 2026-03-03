@@ -996,3 +996,4 @@ Add table formatters for all subcommands. At minimum:
 25. Validate `--type` choices (Gap #19)
 26. Fix query value quoting (Gap #18)
 27. Handle download redirects with re-applied headers (Gap #16)
+

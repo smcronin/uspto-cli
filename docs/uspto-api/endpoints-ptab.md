@@ -151,3 +151,4 @@ Example query: `q=trialMetaData.trialTypeCode:IPR`
 - `juniorPartyData`: same structure
 - `additionalPartyDataBag[]`: additionalPartyName, applicationNumberText, inventorName, patentNumber
 - `decisionDocumentData`: decisionIssueDate, decisionTypeCategory, interferenceOutcomeCategory, issueTypeBag, statuteAndRuleBag, downloadURI
+

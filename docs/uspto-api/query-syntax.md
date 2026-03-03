@@ -124,3 +124,4 @@ For POST requests, use structured filters:
 | Publication number | `20250087686` |
 | Full publication | `US20250087686A1` |
 | PCT application | `PCTUS0719317` |
+

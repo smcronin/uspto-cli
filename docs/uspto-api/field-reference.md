@@ -113,3 +113,4 @@ All searchable, filterable, and sortable fields across the API.
 | `productDataSetArrayText` | string[] | Dataset names |
 | `productDataSetCategoryArrayText` | string[] | Categories |
 | `mimeTypeIdentifierArrayText` | string[] | File types |
+

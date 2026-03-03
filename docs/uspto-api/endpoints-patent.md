@@ -214,3 +214,4 @@ Returns:
 Returns `statusCodeBag[]`:
 - `applicationStatusCode` (integer)
 - `applicationStatusDescriptionText` (string)
+

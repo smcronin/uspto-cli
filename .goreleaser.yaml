@@ -12,7 +12,7 @@ builds:
       - arm64
     ldflags:
       - -s -w -X github.com/smcronin/uspto-cli/cmd.version={{.Version}}
-    binary: uspto-cli
+    binary: uspto
 
 archives:
   - formats:
@@ -21,7 +21,7 @@ archives:
       - goos: windows
         formats:
           - zip
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "uspto_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"

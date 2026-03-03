@@ -53,3 +53,4 @@ The CLI implements automatic rate limiting:
 - 100ms minimum gap between requests
 - Automatic 5-second backoff on 429 responses
 - All requests (metadata + downloads) go through the same rate limiter
+

@@ -32,7 +32,7 @@ const (
 
 func TestMain(m *testing.M) {
 	// Determine binary name based on OS.
-	binName := "uspto-cli-test"
+	binName := "uspto-test"
 	if runtime.GOOS == "windows" {
 		binName += ".exe"
 	}

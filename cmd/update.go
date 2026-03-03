@@ -25,6 +25,10 @@ import (
 const (
 	githubOwner = "smcronin"
 	githubRepo  = "uspto-cli"
+
+	archivePrefix       = "uspto"
+	legacyArchivePrefix = "uspto-cli"
+	updateUserAgent     = "uspto-update"
 )
 
 var (
@@ -47,8 +51,8 @@ type githubReleaseAsset struct {
 var updateCmd = &cobra.Command{
 	Use:     "update",
 	Aliases: []string{"self-update"},
-	Short:   "Update uspto-cli from GitHub Releases",
-	Long: `Update uspto-cli from GitHub Releases.
+	Short:   "Update uspto from GitHub Releases",
+	Long: `Update uspto from GitHub Releases.
 
 By default, this fetches the latest release for your OS/arch, verifies the
 checksum, and replaces the current executable.
@@ -77,14 +81,25 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	targetVersion := normalizeVersion(release.TagName)
 	upToDate := currentVersion != "" && currentVersion == targetVersion
 
-	assetName := expectedArchiveName(release.TagName, runtime.GOOS, runtime.GOARCH)
-	archiveAsset, ok := findReleaseAssetByName(release.Assets, assetName)
+	assetNames := expectedArchiveNames(release.TagName, runtime.GOOS, runtime.GOARCH)
+	archiveAsset, assetName, ok := findReleaseAssetByNames(release.Assets, assetNames)
 	if !ok {
-		return fmt.Errorf("release %s does not include asset %q for %s/%s", release.TagName, assetName, runtime.GOOS, runtime.GOARCH)
+		return fmt.Errorf(
+			"release %s does not include expected assets (%s) for %s/%s",
+			release.TagName,
+			strings.Join(assetNames, ", "),
+			runtime.GOOS,
+			runtime.GOARCH,
+		)
 	}
 
 	checksumAsset, hasChecksums := findReleaseAssetByName(release.Assets, "checksums.txt")
 	execPath, _ := currentExecutablePath()
+	installPath := targetExecutablePath(execPath)
+	migratedFrom := ""
+	if execPath != "" && installPath != execPath {
+		migratedFrom = execPath
+	}
 
 	if updateCheckFlag || (upToDate && !updateForceFlag) {
 		result := map[string]interface{}{
@@ -95,6 +110,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			"arch":           runtime.GOARCH,
 			"asset":          assetName,
 			"executable":     execPath,
+			"installPath":    installPath,
 		}
 		if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
 			outputResult(cmd, result, nil)
@@ -116,7 +132,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("could not determine executable path")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "uspto-cli-update-*")
+	tmpDir, err := os.MkdirTemp("", "uspto-update-*")
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
@@ -152,27 +168,41 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 				"targetVersion":   targetVersion,
 				"asset":           assetName,
 				"executable":      execPath,
+				"installPath":     installPath,
 				"downloadedTo":    archivePath,
 				"extractedBinary": newBinPath,
+				"migratedFrom":    migratedFrom,
 				"dryRun":          true,
 			}, nil)
 			return nil
 		}
-		fmt.Fprintf(os.Stdout, "Dry run: would replace %s with %s\n", execPath, newBinPath)
+		fmt.Fprintf(os.Stdout, "Dry run: would install %s to %s\n", newBinPath, installPath)
+		if migratedFrom != "" {
+			fmt.Fprintf(os.Stdout, "Dry run: would remove legacy binary %s\n", migratedFrom)
+		}
 		return nil
 	}
 
 	scheduled := false
+	legacyRemoved := false
+	legacyRemoveWarning := ""
 	if runtime.GOOS == "windows" {
-		progress("Scheduling Windows binary swap...")
-		if err := scheduleWindowsBinarySwap(newBinPath, execPath); err != nil {
+		progress("Scheduling Windows binary install...")
+		if err := scheduleWindowsBinarySwap(newBinPath, installPath, migratedFrom); err != nil {
 			return err
 		}
 		scheduled = true
 	} else {
 		progress("Replacing executable...")
-		if err := replaceExecutableNow(newBinPath, execPath); err != nil {
+		if err := replaceExecutableNow(newBinPath, installPath); err != nil {
 			return err
+		}
+		if migratedFrom != "" {
+			if err := os.Remove(migratedFrom); err == nil || os.IsNotExist(err) {
+				legacyRemoved = true
+			} else {
+				legacyRemoveWarning = err.Error()
+			}
 		}
 	}
 
@@ -181,10 +211,20 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		"targetVersion":  targetVersion,
 		"asset":          assetName,
 		"executable":     execPath,
+		"installPath":    installPath,
 		"updated":        !scheduled,
 		"scheduled":      scheduled,
 		"os":             runtime.GOOS,
 		"arch":           runtime.GOARCH,
+	}
+	if migratedFrom != "" {
+		result["migratedFrom"] = migratedFrom
+	}
+	if legacyRemoved {
+		result["legacyRemoved"] = true
+	}
+	if legacyRemoveWarning != "" {
+		result["legacyRemoveWarning"] = legacyRemoveWarning
 	}
 
 	if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
@@ -197,6 +237,13 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stdout, "Exit and run `uspto --version` again in a new shell to confirm.")
 	} else {
 		fmt.Fprintf(os.Stdout, "Updated to %s.\n", targetVersion)
+		if migratedFrom != "" {
+			if legacyRemoved {
+				fmt.Fprintf(os.Stdout, "Removed legacy binary: %s\n", migratedFrom)
+			} else if legacyRemoveWarning != "" {
+				fmt.Fprintf(os.Stdout, "Warning: could not remove legacy binary %s: %s\n", migratedFrom, legacyRemoveWarning)
+			}
+		}
 	}
 
 	return nil
@@ -242,7 +289,7 @@ func httpGet(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "uspto-cli-update")
+	req.Header.Set("User-Agent", updateUserAgent)
 	if tok := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
@@ -271,9 +318,26 @@ func httpGet(ctx context.Context, rawURL string) ([]byte, error) {
 func expectedArchiveName(tag, goos, goarch string) string {
 	ver := normalizeVersion(tag)
 	if goos == "windows" {
-		return fmt.Sprintf("uspto-cli_%s_%s_%s.zip", ver, goos, goarch)
+		return fmt.Sprintf("%s_%s_%s_%s.zip", archivePrefix, ver, goos, goarch)
 	}
-	return fmt.Sprintf("uspto-cli_%s_%s_%s.tar.gz", ver, goos, goarch)
+	return fmt.Sprintf("%s_%s_%s_%s.tar.gz", archivePrefix, ver, goos, goarch)
+}
+
+func legacyArchiveName(tag, goos, goarch string) string {
+	ver := normalizeVersion(tag)
+	if goos == "windows" {
+		return fmt.Sprintf("%s_%s_%s_%s.zip", legacyArchivePrefix, ver, goos, goarch)
+	}
+	return fmt.Sprintf("%s_%s_%s_%s.tar.gz", legacyArchivePrefix, ver, goos, goarch)
+}
+
+func expectedArchiveNames(tag, goos, goarch string) []string {
+	primary := expectedArchiveName(tag, goos, goarch)
+	legacy := legacyArchiveName(tag, goos, goarch)
+	if primary == legacy {
+		return []string{primary}
+	}
+	return []string{primary, legacy}
 }
 
 func findReleaseAssetByName(assets []githubReleaseAsset, name string) (githubReleaseAsset, bool) {
@@ -285,12 +349,21 @@ func findReleaseAssetByName(assets []githubReleaseAsset, name string) (githubRel
 	return githubReleaseAsset{}, false
 }
 
+func findReleaseAssetByNames(assets []githubReleaseAsset, names []string) (githubReleaseAsset, string, bool) {
+	for _, name := range names {
+		if asset, ok := findReleaseAssetByName(assets, name); ok {
+			return asset, name, true
+		}
+	}
+	return githubReleaseAsset{}, "", false
+}
+
 func downloadToFile(ctx context.Context, rawURL, outPath string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating download request: %w", err)
 	}
-	req.Header.Set("User-Agent", "uspto-cli-update")
+	req.Header.Set("User-Agent", updateUserAgent)
 	if tok := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
@@ -390,9 +463,9 @@ func extractBinaryFromZip(archivePath, outDir string) (string, error) {
 	}
 	defer r.Close()
 
-	binName := binaryNameForRuntime()
+	binNames := candidateBinaryNamesForRuntime()
 	for _, f := range r.File {
-		if filepath.Base(f.Name) != binName {
+		if !containsString(binNames, filepath.Base(f.Name)) {
 			continue
 		}
 		in, err := f.Open()
@@ -401,7 +474,7 @@ func extractBinaryFromZip(archivePath, outDir string) (string, error) {
 		}
 		defer in.Close()
 
-		outPath := filepath.Join(outDir, "uspto-cli.update.bin")
+		outPath := filepath.Join(outDir, binaryNameForRuntime()+".update.bin")
 		out, err := os.Create(outPath)
 		if err != nil {
 			return "", fmt.Errorf("creating extracted binary: %w", err)
@@ -417,7 +490,7 @@ func extractBinaryFromZip(archivePath, outDir string) (string, error) {
 		return outPath, nil
 	}
 
-	return "", fmt.Errorf("binary %q not found in %s", binName, archivePath)
+	return "", fmt.Errorf("binary (%s) not found in %s", strings.Join(binNames, ", "), archivePath)
 }
 
 func extractBinaryFromTarGz(archivePath, outDir string) (string, error) {
@@ -434,7 +507,7 @@ func extractBinaryFromTarGz(archivePath, outDir string) (string, error) {
 	defer gz.Close()
 
 	tr := tar.NewReader(gz)
-	binName := binaryNameForRuntime()
+	binNames := candidateBinaryNamesForRuntime()
 
 	for {
 		hdr, err := tr.Next()
@@ -447,11 +520,11 @@ func extractBinaryFromTarGz(archivePath, outDir string) (string, error) {
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		if filepath.Base(hdr.Name) != binName {
+		if !containsString(binNames, filepath.Base(hdr.Name)) {
 			continue
 		}
 
-		outPath := filepath.Join(outDir, "uspto-cli.update.bin")
+		outPath := filepath.Join(outDir, binaryNameForRuntime()+".update.bin")
 		out, err := os.Create(outPath)
 		if err != nil {
 			return "", fmt.Errorf("creating extracted binary: %w", err)
@@ -467,14 +540,40 @@ func extractBinaryFromTarGz(archivePath, outDir string) (string, error) {
 		return outPath, nil
 	}
 
-	return "", fmt.Errorf("binary %q not found in %s", binName, archivePath)
+	return "", fmt.Errorf("binary (%s) not found in %s", strings.Join(binNames, ", "), archivePath)
 }
 
 func binaryNameForRuntime() string {
 	if runtime.GOOS == "windows" {
+		return "uspto.exe"
+	}
+	return "uspto"
+}
+
+func legacyBinaryNameForRuntime() string {
+	if runtime.GOOS == "windows" {
 		return "uspto-cli.exe"
 	}
 	return "uspto-cli"
+}
+
+func candidateBinaryNamesForRuntime() []string {
+	primary := binaryNameForRuntime()
+	legacy := legacyBinaryNameForRuntime()
+	if primary == legacy {
+		return []string{primary}
+	}
+	return []string{primary, legacy}
+}
+
+func targetExecutablePath(execPath string) string {
+	if execPath == "" {
+		return execPath
+	}
+	if strings.EqualFold(filepath.Base(execPath), legacyBinaryNameForRuntime()) {
+		return filepath.Join(filepath.Dir(execPath), binaryNameForRuntime())
+	}
+	return execPath
 }
 
 func replaceExecutableNow(newBinPath, execPath string) error {
@@ -489,14 +588,14 @@ func replaceExecutableNow(newBinPath, execPath string) error {
 	return nil
 }
 
-func scheduleWindowsBinarySwap(newBinPath, execPath string) error {
-	targetNew := execPath + ".new"
+func scheduleWindowsBinarySwap(newBinPath, installPath, cleanupPath string) error {
+	targetNew := installPath + ".new"
 	if err := copyFile(newBinPath, targetNew, 0755); err != nil {
 		return err
 	}
 
-	scriptPath := filepath.Join(os.TempDir(), fmt.Sprintf("uspto-cli-update-%d.ps1", time.Now().UnixNano()))
-	script := windowsSwapScript(scriptPath, targetNew, execPath, os.Getpid())
+	scriptPath := filepath.Join(os.TempDir(), fmt.Sprintf("uspto-update-%d.ps1", time.Now().UnixNano()))
+	script := windowsSwapScript(scriptPath, targetNew, installPath, cleanupPath, os.Getpid())
 	if err := os.WriteFile(scriptPath, []byte(script), 0600); err != nil {
 		return fmt.Errorf("writing update script: %w", err)
 	}
@@ -512,14 +611,27 @@ func scheduleWindowsBinarySwap(newBinPath, execPath string) error {
 	return nil
 }
 
-func windowsSwapScript(scriptPath, src, dst string, pid int) string {
+func windowsSwapScript(scriptPath, src, dst, cleanup string, pid int) string {
 	quote := func(s string) string {
 		return strings.ReplaceAll(s, `'`, `''`)
 	}
+	cleanupLine := ""
+	if strings.TrimSpace(cleanup) != "" {
+		cleanupLine = fmt.Sprintf("if ($cleanup -ne $dst) { Remove-Item -Path $cleanup -Force -ErrorAction SilentlyContinue }\n")
+	}
 	return fmt.Sprintf(
-		"$pidToWait = %d\n$src = '%s'\n$dst = '%s'\n$self = '%s'\nfor ($i = 0; $i -lt 300; $i++) {\n  if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) { break }\n  Start-Sleep -Milliseconds 200\n}\nfor ($i = 0; $i -lt 50; $i++) {\n  try {\n    Copy-Item -Path $src -Destination $dst -Force\n    break\n  } catch {\n    Start-Sleep -Milliseconds 200\n  }\n}\nRemove-Item -Path $src -Force -ErrorAction SilentlyContinue\nRemove-Item -Path $self -Force -ErrorAction SilentlyContinue\n",
-		pid, quote(src), quote(dst), quote(scriptPath),
+		"$pidToWait = %d\n$src = '%s'\n$dst = '%s'\n$cleanup = '%s'\n$self = '%s'\nfor ($i = 0; $i -lt 300; $i++) {\n  if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) { break }\n  Start-Sleep -Milliseconds 200\n}\nfor ($i = 0; $i -lt 50; $i++) {\n  try {\n    Copy-Item -Path $src -Destination $dst -Force\n    break\n  } catch {\n    Start-Sleep -Milliseconds 200\n  }\n}\nRemove-Item -Path $src -Force -ErrorAction SilentlyContinue\n%sRemove-Item -Path $self -Force -ErrorAction SilentlyContinue\n",
+		pid, quote(src), quote(dst), quote(cleanup), quote(scriptPath), cleanupLine,
 	)
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

@@ -14,8 +14,9 @@ const (
 	// ConfigDirOverrideEnvVar lets tests override the OS config directory.
 	ConfigDirOverrideEnvVar = "USPTO_CLI_CONFIG_DIR"
 
-	configDirName  = "uspto-cli"
-	configFileName = "config.env"
+	configDirName       = "uspto"
+	legacyConfigDirName = "uspto-cli"
+	configFileName      = "config.env"
 )
 
 // ConfigFilePath returns the absolute path of the global config file.
@@ -38,7 +39,29 @@ func LoadAPIKey() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return loadAPIKeyFromFile(path)
+	key, err := loadAPIKeyFromFile(path)
+	if err != nil {
+		return "", err
+	}
+	if key != "" {
+		return key, nil
+	}
+
+	legacyPath, err := legacyConfigFilePath()
+	if err != nil {
+		return "", err
+	}
+	legacyKey, err := loadAPIKeyFromFile(legacyPath)
+	if err != nil {
+		return "", err
+	}
+	if legacyKey == "" {
+		return "", nil
+	}
+
+	// Best-effort migration to new path; return key even if write fails.
+	_ = saveAPIKeyToPath(path, legacyKey)
+	return legacyKey, nil
 }
 
 // LoadAPIKeyFromDotEnv reads USPTO_API_KEY from a dotenv file path.
@@ -57,14 +80,8 @@ func SaveAPIKey(apiKey string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return "", fmt.Errorf("creating config directory: %w", err)
-	}
-
-	content := "# uspto-cli global config\n" + APIKeyEnvVar + "=" + quoteEnvValue(apiKey) + "\n"
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		return "", fmt.Errorf("writing config file: %w", err)
+	if err := saveAPIKeyToPath(path, apiKey); err != nil {
+		return "", err
 	}
 
 	return path, nil
@@ -113,6 +130,30 @@ func loadAPIKeyFromFile(path string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func saveAPIKeyToPath(path, apiKey string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	content := "# uspto global config\n" + APIKeyEnvVar + "=" + quoteEnvValue(apiKey) + "\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		return fmt.Errorf("writing config file: %w", err)
+	}
+	return nil
+}
+
+func legacyConfigFilePath() (string, error) {
+	base := strings.TrimSpace(os.Getenv(ConfigDirOverrideEnvVar))
+	if base == "" {
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("resolving user config directory: %w", err)
+		}
+	}
+	return filepath.Join(base, legacyConfigDirName, configFileName), nil
 }
 
 func quoteEnvValue(v string) string {

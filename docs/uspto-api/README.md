@@ -28,3 +28,4 @@ Complete reference for the USPTO Open Data Portal REST API at `api.uspto.gov`.
 - **Data Coverage**: Applications filed on or after 2001-01-01
 - **Max Response**: 6 MB payload limit
 - **Pagination**: offset/limit, default limit=25
+

@@ -152,3 +152,4 @@ Covered with live execution:
 
 The CLI already enables broad end-to-end USPTO workflows for agents, including real document download and deep application/PTAB traversal. The biggest blockers for reliable autonomous use are: dry-run contract violations, schema mismatch on search facets, and weak recovery hints on common failures.
 
+

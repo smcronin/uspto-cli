@@ -85,7 +85,7 @@ func runCLINoKey(args ...string) cmdResult {
 			filtered = append(filtered, e)
 		}
 	}
-	cfgDir, _ := os.MkdirTemp("", "uspto-cli-no-key-config-*")
+	cfgDir, _ := os.MkdirTemp("", "uspto-no-key-config-*")
 	if cfgDir != "" {
 		defer os.RemoveAll(cfgDir)
 		filtered = append(filtered, "USPTO_CLI_CONFIG_DIR="+cfgDir)

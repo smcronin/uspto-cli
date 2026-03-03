@@ -40,8 +40,8 @@ tests/
 
 ## Building
 ```bash
-go build -o uspto-cli .    # Build binary
-go install .               # Install to $GOBIN
+go build -o uspto .    # Build binary
+go install ./cmd/uspto     # Install `uspto` to $GOBIN
 go vet ./...               # Static analysis
 ```
 
@@ -64,5 +64,7 @@ All endpoints under /api/v1/
 
 ## Distribution
 ```bash
-go install github.com/smcronin/uspto-cli@latest
+go install github.com/smcronin/uspto-cli/cmd/uspto@latest
 ```
+
+

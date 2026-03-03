@@ -1,4 +1,4 @@
-# uspto-cli
+# uspto
 
 Agent-ready CLI for the [USPTO Open Data Portal](https://data.uspto.gov) API. Search patents, pull file wrappers, extract grant XML, browse PTAB proceedings, download bulk data — all from the terminal.
 
@@ -8,7 +8,7 @@ Agent-ready CLI for the [USPTO Open Data Portal](https://data.uspto.gov) API. Se
 
 ```bash
 # With Go
-go install github.com/smcronin/uspto-cli@latest
+go install github.com/smcronin/uspto-cli/cmd/uspto@latest
 
 # Or download a binary from GitHub Releases
 # https://github.com/smcronin/uspto-cli/releases
@@ -23,14 +23,14 @@ An API key is required. See the [setup guide](docs/api-key-setup.md) for full in
 3. Copy your key from the [MyODP dashboard](https://data.uspto.gov/myodp)
 
 ```bash
-# Recommended: store key in global uspto-cli config
-uspto-cli config set-api-key your-key-here
+# Recommended: store key in global uspto config
+uspto config set-api-key your-key-here
 
 # Or set in your shell environment
 export USPTO_API_KEY=your-key-here
 
 # Or pass directly per command
-uspto-cli search --api-key your-key-here --title "machine learning"
+uspto search --api-key your-key-here --title "machine learning"
 ```
 
 One key per user — no organization-wide keys. Keys must not be shared (USPTO policy). Keys don't expire if used at least once per year. See the [USPTO FAQ](https://data.uspto.gov/support/faq) for more details.
@@ -39,28 +39,28 @@ One key per user — no organization-wide keys. Keys must not be shared (USPTO p
 
 ```bash
 # Set your API key once (global)
-uspto-cli config set-api-key your-key-here
+uspto config set-api-key your-key-here
 
 # Update the CLI binary in place
-uspto-cli update
+uspto update
 
 # Search patents
-uspto-cli search --title "machine learning" --limit 5
+uspto search --title "machine learning" --limit 5
 
 # Get application details
-uspto-cli app get 16123456
+uspto app get 16123456
 
 # One-shot summary (5 API calls combined)
-uspto-cli summary 16123456
+uspto summary 16123456
 
 # Extract claims from a granted patent
-uspto-cli app claims 16123456
+uspto app claims 16123456
 
 # One-liner full artifact bundle by publication/patent/app ID
-uspto-cli patent bundle US20050021049A1
+uspto patent bundle US20050021049A1
 
 # JSON output for agents/piping
-uspto-cli search --assignee "Google" --granted -f json
+uspto search --assignee "Google" --granted -f json
 ```
 
 ## Commands
@@ -71,52 +71,52 @@ API keys are written at runtime to your user config file and are never baked int
 
 ```bash
 # Save key to global config (works from any directory)
-uspto-cli config set-api-key your-key-here
+uspto config set-api-key your-key-here
 
 # Import key from a dotenv file
-uspto-cli config set-api-key --from-dotenv .env
+uspto config set-api-key --from-dotenv .env
 
 # Show config file location and key status (masked)
-uspto-cli config show
+uspto config show
 ```
 
 ### Update
 
 ```bash
 # Install latest release for your OS/arch
-uspto-cli update
+uspto update
 
 # Check latest version without installing
-uspto-cli update --check
+uspto update --check
 
 # Install a specific version
-uspto-cli update --version v0.1.2
+uspto update --version v0.1.2
 ```
 
 ### Patent Search
 
 ```bash
 # Field search with shorthand flags
-uspto-cli search --title "neural network" --inventor "Smith" --limit 10
-uspto-cli search --cpc H04L --status "Patented Case" --filed-within 2y
-uspto-cli search --assignee "Apple" --granted --sort filingDate:desc
+uspto search --title "neural network" --inventor "Smith" --limit 10
+uspto search --cpc H04L --status "Patented Case" --filed-within 2y
+uspto search --assignee "Apple" --granted --sort filingDate:desc
 
 # Assignor / reel-frame (assignment records)
-uspto-cli search --assignor "Samsung" --limit 20
-uspto-cli search --reel-frame "012345/0001"
+uspto search --assignor "Samsung" --limit 20
+uspto search --reel-frame "012345/0001"
 
 # Auto-paginate all results (up to 10,000)
-uspto-cli search --examiner "RILEY" --all -f ndjson
+uspto search --examiner "RILEY" --all -f ndjson
 
 # Count matches only (lightweight sizing call for agents)
-uspto-cli search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
+uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
 
 # Download all results server-side (single request, supports CSV)
-uspto-cli search --title "battery" --download csv > batteries.csv
-uspto-cli search --assignee "Tesla" --download json > tesla.json
+uspto search --title "battery" --download csv > batteries.csv
+uspto search --assignee "Tesla" --download json > tesla.json
 
 # Structured filters via POST
-uspto-cli search --filter "applicationTypeLabelName=Utility" --facets applicationTypeCategory
+uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTypeCategory
 ```
 
 **All search flags:**
@@ -134,15 +134,15 @@ One-command export for the full patent artifact set (not metadata-only). Works w
 
 ```bash
 # Auto-resolve ID and export everything into ./uspto/<id>/
-uspto-cli patent bundle US20050021049A1
+uspto patent bundle US20050021049A1
 
 # Explicit output folder
-uspto-cli patent bundle US20050021049A1 --out ./uspto/single/US20050021049A1
+uspto patent bundle US20050021049A1 --out ./uspto/single/US20050021049A1
 
 # Force identifier type if needed
-uspto-cli patent bundle 10924035 --id-type app
-uspto-cli patent bundle US20050021049A1 --id-type publication
-uspto-cli patent bundle 7284931 --id-type patent
+uspto patent bundle 10924035 --id-type app
+uspto patent bundle US20050021049A1 --id-type publication
+uspto patent bundle 7284931 --id-type patent
 ```
 
 Bundle contents:
@@ -161,27 +161,27 @@ Bundle contents:
 
 ```bash
 # Core data
-uspto-cli app get <appNumber>              # Full application data
-uspto-cli app meta <appNumber>             # Metadata only
-uspto-cli app docs <appNumber>             # File wrapper documents
-uspto-cli app transactions <appNumber>     # Prosecution history
-uspto-cli app continuity <appNumber>       # Parent/child continuity
-uspto-cli app assignments <appNumber>      # Assignment/ownership records
-uspto-cli app attorney <appNumber>         # Attorney/agent info
-uspto-cli app adjustment <appNumber>       # Patent term adjustment
-uspto-cli app foreign-priority <appNumber> # Foreign priority claims
-uspto-cli app associated-docs <appNumber>  # Associated XML document metadata
+uspto app get <appNumber>              # Full application data
+uspto app meta <appNumber>             # Metadata only
+uspto app docs <appNumber>             # File wrapper documents
+uspto app transactions <appNumber>     # Prosecution history
+uspto app continuity <appNumber>       # Parent/child continuity
+uspto app assignments <appNumber>      # Assignment/ownership records
+uspto app attorney <appNumber>         # Attorney/agent info
+uspto app adjustment <appNumber>       # Patent term adjustment
+uspto app foreign-priority <appNumber> # Foreign priority claims
+uspto app associated-docs <appNumber>  # Associated XML document metadata
 
 # Document downloads
-uspto-cli app download <appNumber> [index] # Download a specific document PDF
-uspto-cli app download-all <appNumber>     # Download all document PDFs
+uspto app download <appNumber> [index] # Download a specific document PDF
+uspto app download-all <appNumber>     # Download all document PDFs
 
 # Grant XML extraction (for granted patents)
-uspto-cli app abstract <appNumber>         # Patent abstract
-uspto-cli app claims <appNumber>           # Structured claims text
-uspto-cli app citations <appNumber>        # Prior art citations
-uspto-cli app description <appNumber>      # Full specification text
-uspto-cli app fulltext <appNumber>         # Everything: meta + abstract + claims + citations + description
+uspto app abstract <appNumber>         # Patent abstract
+uspto app claims <appNumber>           # Structured claims text
+uspto app citations <appNumber>        # Prior art citations
+uspto app description <appNumber>      # Full specification text
+uspto app fulltext <appNumber>         # Everything: meta + abstract + claims + citations + description
 ```
 
 The grant XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse the official patent grant XML to extract structured data. `fulltext` is the most comprehensive single-command view of a granted patent.
@@ -191,10 +191,10 @@ The grant XML commands (`abstract`, `claims`, `citations`, `description`, `fullt
 ```bash
 # One-shot summary: metadata + continuity + assignments + transactions + documents
 # Makes 5 API calls and returns a unified view
-uspto-cli summary 16123456
+uspto summary 16123456
 
 # Recursive family tree (follows parent/child continuity chains)
-uspto-cli family 16123456 --depth 3
+uspto family 16123456 --depth 3
 ```
 
 ### PTAB (Patent Trial and Appeal Board)
@@ -203,60 +203,60 @@ uspto-cli family 16123456 --depth 3
 
 ```bash
 # Trial proceedings
-uspto-cli ptab search --type IPR --patent 9876543
-uspto-cli ptab get IPR2023-00001
+uspto ptab search --type IPR --patent 9876543
+uspto ptab get IPR2023-00001
 
 # Trial decisions
-uspto-cli ptab decisions --trial IPR2020-00388
-uspto-cli ptab decision <documentId>
-uspto-cli ptab decisions-for <trialNumber>        # All decisions for a trial
+uspto ptab decisions --trial IPR2020-00388
+uspto ptab decision <documentId>
+uspto ptab decisions-for <trialNumber>        # All decisions for a trial
 
 # Trial documents
-uspto-cli ptab docs --trial IPR2025-01319
-uspto-cli ptab doc <documentId>
-uspto-cli ptab docs-for <trialNumber>             # All documents for a trial
+uspto ptab docs --trial IPR2025-01319
+uspto ptab doc <documentId>
+uspto ptab docs-for <trialNumber>             # All documents for a trial
 
 # Appeals
-uspto-cli ptab appeals [query]
-uspto-cli ptab appeal <documentId>
-uspto-cli ptab appeals-for <appealNumber>         # All decisions for an appeal
+uspto ptab appeals [query]
+uspto ptab appeal <documentId>
+uspto ptab appeals-for <appealNumber>         # All decisions for an appeal
 
 # Interferences
-uspto-cli ptab interferences [query]
-uspto-cli ptab interference <documentId>
-uspto-cli ptab interferences-for <interferenceId> # All decisions for an interference
+uspto ptab interferences [query]
+uspto ptab interference <documentId>
+uspto ptab interferences-for <interferenceId> # All decisions for an interference
 
 # Bulk download of search results (single request)
-uspto-cli ptab search --type IPR --download csv > ipr_proceedings.csv
-uspto-cli ptab decisions --download json > decisions.json
+uspto ptab search --type IPR --download csv > ipr_proceedings.csv
+uspto ptab decisions --download json > decisions.json
 ```
 
 ### Petition Decisions
 
 ```bash
-uspto-cli petition search "revival"
-uspto-cli petition search --office "OFFICE OF PETITIONS" --decision GRANTED
-uspto-cli petition search --app 16123456 --patent 10000000
-uspto-cli petition get <recordId> --include-documents
+uspto petition search "revival"
+uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED
+uspto petition search --app 16123456 --patent 10000000
+uspto petition get <recordId> --include-documents
 ```
 
 ### Bulk Data
 
 ```bash
 # Discover products (weekly patent grants, file wrappers, etc.)
-uspto-cli bulk search "patent grant"
-uspto-cli bulk get PTGRXML --include-files
+uspto bulk search "patent grant"
+uspto bulk get PTGRXML --include-files
 
 # List and download files
-uspto-cli bulk files PTFWPRE
-uspto-cli bulk download PTGRXML ipg240102.zip -o ./data/
+uspto bulk files PTFWPRE
+uspto bulk download PTGRXML ipg240102.zip -o ./data/
 ```
 
 ### Status Codes
 
 ```bash
-uspto-cli status 150              # Look up code 150 -> "Patented Case"
-uspto-cli status "abandoned"      # Search by description
+uspto status 150              # Look up code 150 -> "Patented Case"
+uspto status "abandoned"      # Search by description
 ```
 
 ## Output Formats
@@ -275,7 +275,7 @@ All commands support four output formats via `-f`:
 # {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.2.1"}
 
 # Minified JSON for piping
-uspto-cli search --title sensor -f json --minify -q
+uspto search --title sensor -f json --minify -q
 ```
 
 ## Examples & Use Cases
@@ -286,7 +286,7 @@ See **[EXAMPLES.md](EXAMPLES.md)** for detailed walkthroughs: competitive monito
 
 This repo ships its core agent skill as a first-class project asset (not under a hidden config directory):
 
-- [skills/uspto-cli/SKILL.md](skills/uspto-cli/SKILL.md)
+- [skills/uspto/SKILL.md](skills/uspto/SKILL.md)
 
 If your agent runtime loads skills from a user directory (for example `~/.claude/skills/`), keep a copy there as runtime config, but treat `skills/` in this repo as the canonical source.
 
@@ -322,3 +322,5 @@ This project is not affiliated with, endorsed by, or sponsored by the United Sta
 ## License
 
 MIT
+
+

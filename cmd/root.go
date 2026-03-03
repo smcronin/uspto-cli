@@ -103,7 +103,7 @@ func initConfig(cmd *cobra.Command) error {
 // resolveAPIKey resolves API key precedence:
 // 1) --api-key flag
 // 2) USPTO_API_KEY environment variable
-// 3) global uspto-cli config file
+// 3) global uspto config file
 func resolveAPIKey() (string, error) {
 	if flagAPIKey != "" {
 		return strings.TrimSpace(flagAPIKey), nil

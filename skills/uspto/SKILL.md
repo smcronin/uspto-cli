@@ -1,6 +1,6 @@
 ---
-name: uspto-cli
-description: "Search patents, get application data, browse PTAB proceedings, download documents, and analyze patent families using the uspto-cli tool (USPTO Open Data Portal API)."
+name: uspto
+description: "Search patents, get application data, browse PTAB proceedings, download documents, and analyze patent families using the uspto tool (USPTO Open Data Portal API)."
 ---
 
 # USPTO CLI
@@ -23,34 +23,34 @@ Use this skill when the user asks to:
 
 ## Prerequisites
 
-The `uspto-cli` binary must be installed and on PATH. The user needs a USPTO API key from the **ODP** (Open Data Portal) at `api.uspto.gov`.
+The `uspto` binary must be installed and on PATH. The user needs a USPTO API key from the **ODP** (Open Data Portal) at `api.uspto.gov`.
 
 **Install:**
 ```bash
-go install github.com/smcronin/uspto-cli@latest
+go install github.com/smcronin/uspto-cli/cmd/uspto@latest
 ```
 
 **Preferred binary refresh (agent + human):**
 ```bash
-uspto-cli update
-uspto-cli update --check
+uspto update
+uspto update --check
 ```
 
 If `go install` fails or the binary isn't found, check:
 - Go is installed and `$GOBIN` (or `$GOPATH/bin`) is on PATH
-- On Windows: binary is `uspto-cli.exe`
+- On Windows: binary is `uspto.exe`
 - Alternative: download pre-built binary from https://github.com/smcronin/uspto-cli/releases
 
 **API Key Setup:**
 ```bash
 # Recommended: save key to global config (works from any directory)
-uspto-cli config set-api-key your-key-here
+uspto config set-api-key your-key-here
 
 # Import from a .env file
-uspto-cli config set-api-key --from-dotenv .env
+uspto config set-api-key --from-dotenv .env
 
 # Show config location and key status (masked)
-uspto-cli config show
+uspto config show
 ```
 
 If the user doesn't have a key:
@@ -88,7 +88,7 @@ Exit codes: 0=OK, 1=general, 2=usage/validation, 3=auth-failure, 4=not-found, 5=
 
 **Patent number to app number**: This is the most common agent workflow. Search by patent number, then extract `applicationNumberText` from the result:
 ```bash
-uspto-cli search --patent 10902286 -f json -q
+uspto search --patent 10902286 -f json -q
 # → results[0].applicationNumberText = "16123456"
 # Now use that app number for all app/summary/family commands
 ```
@@ -101,15 +101,15 @@ Use this first when the user asks to "download a patent" and expects more than m
 
 ```bash
 # Auto-resolve application/publication/patent identifiers
-uspto-cli patent bundle US20050021049A1
+uspto patent bundle US20050021049A1
 
 # Explicit output directory
-uspto-cli patent bundle US20050021049A1 --out ./uspto/single/US20050021049A1
+uspto patent bundle US20050021049A1 --out ./uspto/single/US20050021049A1
 
 # Force identifier type when needed
-uspto-cli patent bundle 10924035 --id-type app
-uspto-cli patent bundle US20050021049A1 --id-type publication
-uspto-cli patent bundle 7153280 --id-type patent
+uspto patent bundle 10924035 --id-type app
+uspto patent bundle US20050021049A1 --id-type publication
+uspto patent bundle 7153280 --id-type patent
 ```
 
 Expected output:
@@ -126,50 +126,50 @@ Expected output:
 
 ```bash
 # Free-text search
-uspto-cli search "wireless sensor network" -f json -q
+uspto search "wireless sensor network" -f json -q
 
 # Shorthand field filters
-uspto-cli search --title "neural network" --inventor "Smith" --limit 10 -f json -q
-uspto-cli search --assignee "Apple" --cpc "G06N" --granted -f json -q
-uspto-cli search --examiner "RILEY" --art-unit "2617" -f json -q
-uspto-cli search --patent 10902286 -f json -q
-uspto-cli search --pub-number "US20190095759A1" -f json -q
-uspto-cli search --docket "1982-1042PUS1" -f json -q
-uspto-cli search --assignor "GOOGLE" -f json -q
-uspto-cli search --reel-frame "060620/769" -f json -q
+uspto search --title "neural network" --inventor "Smith" --limit 10 -f json -q
+uspto search --assignee "Apple" --cpc "G06N" --granted -f json -q
+uspto search --examiner "RILEY" --art-unit "2617" -f json -q
+uspto search --patent 10902286 -f json -q
+uspto search --pub-number "US20190095759A1" -f json -q
+uspto search --docket "1982-1042PUS1" -f json -q
+uspto search --assignor "GOOGLE" -f json -q
+uspto search --reel-frame "060620/769" -f json -q
 
 # Date ranges
-uspto-cli search --title "battery" --filed-after 2023-01-01 --filed-before 2024-12-31 -f json -q
-uspto-cli search --title "battery" --filed-within 2y -f json -q
-uspto-cli search --granted-after 2024-01-01 -f json -q
+uspto search --title "battery" --filed-after 2023-01-01 --filed-before 2024-12-31 -f json -q
+uspto search --title "battery" --filed-within 2y -f json -q
+uspto search --granted-after 2024-01-01 -f json -q
 
 # Convenience filters
-uspto-cli search --title "sensor" --granted -f json -q      # Only granted patents
-uspto-cli search --title "sensor" --pending -f json -q      # Only pre-grant pubs
+uspto search --title "sensor" --granted -f json -q      # Only granted patents
+uspto search --title "sensor" --pending -f json -q      # Only pre-grant pubs
 
 # Status (numeric code or text)
-uspto-cli search --status 150 -f json -q                    # Patented Case
-uspto-cli search --status "Abandoned" -f json -q
+uspto search --status 150 -f json -q                    # Patented Case
+uspto search --status "Abandoned" -f json -q
 
 # Sorting and pagination
-uspto-cli search --title "AI" --sort "filingDate:desc" --limit 50 -f json -q
-uspto-cli search --title "AI" --page 3 --limit 25 -f json -q
+uspto search --title "AI" --sort "filingDate:desc" --limit 50 -f json -q
+uspto search --title "AI" --page 3 --limit 25 -f json -q
 
 # Auto-paginate all results (up to 10,000)
-uspto-cli search --assignee "Tesla" --granted --all -f json -q
+uspto search --assignee "Tesla" --granted --all -f json -q
 
 # Count only (fast total without full payload)
-uspto-cli search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
+uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
 
 # Server-side bulk download (single request, entire result set)
-uspto-cli search --assignee "Tesla" --download csv > tesla.csv
-uspto-cli search --title "battery" --download json > batteries.json
+uspto search --assignee "Tesla" --download csv > tesla.csv
+uspto search --title "battery" --download json > batteries.json
 
 # Advanced: structured filters and facets (uses POST endpoint)
-uspto-cli search --filter "applicationTypeLabelName=Utility" --facets "applicationTypeCategory" -f json -q
+uspto search --filter "applicationTypeLabelName=Utility" --facets "applicationTypeCategory" -f json -q
 
 # Field projection (reduce response size and token usage)
-uspto-cli search --title "drone" --fields "applicationNumberText,applicationMetaData.inventionTitle,applicationMetaData.patentNumber" -f json -q
+uspto search --title "drone" --fields "applicationNumberText,applicationMetaData.inventionTitle,applicationMetaData.patentNumber" -f json -q
 ```
 
 **All search flags:**
@@ -190,42 +190,42 @@ All `app` subcommands take an application number (6-12 bare digits, no dashes/sl
 
 ```bash
 # Full application record
-uspto-cli app get 16123456 -f json -q
+uspto app get 16123456 -f json -q
 
 # Metadata only (lighter response — use this when you just need title/status/dates)
-uspto-cli app meta 16123456 -f json -q
+uspto app meta 16123456 -f json -q
 
 # File wrapper documents
-uspto-cli app docs 16123456 -f json -q
-uspto-cli app docs 16123456 --codes "CLM,SPEC" --from 2020-01-01 -f json -q
+uspto app docs 16123456 -f json -q
+uspto app docs 16123456 --codes "CLM,SPEC" --from 2020-01-01 -f json -q
 
 # Prosecution history (transaction events)
-uspto-cli app txn 16123456 -f json -q
+uspto app txn 16123456 -f json -q
 
 # Continuity (parent/child applications)
-uspto-cli app cont 16123456 -f json -q
+uspto app cont 16123456 -f json -q
 
 # Assignments/ownership
-uspto-cli app assign 16123456 -f json -q
+uspto app assign 16123456 -f json -q
 
 # Attorney/agent info
-uspto-cli app attorney 16123456 -f json -q
+uspto app attorney 16123456 -f json -q
 
 # Patent term adjustment (PTA)
-uspto-cli app pta 16123456 -f json -q
+uspto app pta 16123456 -f json -q
 
 # Foreign priority claims
-uspto-cli app fp 16123456 -f json -q
+uspto app fp 16123456 -f json -q
 
 # Associated XML documents (grant/pgpub metadata)
-uspto-cli app xml 16123456 -f json -q
+uspto app xml 16123456 -f json -q
 
 # Download a document PDF (by 1-based index from app docs list)
-uspto-cli app dl 16123456 1 -o ./output.pdf
+uspto app dl 16123456 1 -o ./output.pdf
 
 # Download all PDFs from file wrapper
-uspto-cli app dl-all 16123456 -o ./downloads/
-uspto-cli app dl-all 16123456 --codes "CLM" --from 2023-01-01 -o ./claims/
+uspto app dl-all 16123456 -o ./downloads/
+uspto app dl-all 16123456 --codes "CLM" --from 2023-01-01 -o ./claims/
 ```
 
 ### Grant XML Extraction (Structured Patent Text)
@@ -234,22 +234,22 @@ These commands parse official grant XML to extract structured text. **Only works
 
 ```bash
 # Structured claim text (individual claims with references)
-uspto-cli app claims 16123456 -f json -q
+uspto app claims 16123456 -f json -q
 
 # Prior art citations (patent + non-patent literature, with examiner/applicant categories)
-uspto-cli app citations 16123456 -f json -q
+uspto app citations 16123456 -f json -q
 
 # Patent abstract text
-uspto-cli app abstract 16123456 -f json -q
+uspto app abstract 16123456 -f json -q
 
 # Full patent description/specification text (can be very large)
-uspto-cli app description 16123456 -f json -q
+uspto app description 16123456 -f json -q
 
 # ALL structured data in one shot — the most comprehensive single command
 # Returns: title, abstract, examiner, assignee, inventors, CPC, IPC,
 # field of search, priority, term extension, claims, citations,
 # drawings metadata, and full description text
-uspto-cli app fulltext 16123456 -f json -q
+uspto app fulltext 16123456 -f json -q
 ```
 
 **When to use which:**
@@ -265,22 +265,22 @@ The most powerful single command. Resolves ANY identifier (app number, publicati
 
 ```bash
 # Auto-detect identifier type and export everything
-uspto-cli patent bundle US20050021049A1
-uspto-cli patent bundle 10924035
-uspto-cli patent bundle 16123456
+uspto patent bundle US20050021049A1
+uspto patent bundle 10924035
+uspto patent bundle 16123456
 
 # Explicit identifier type (if auto-detect picks wrong)
-uspto-cli patent bundle 11223344 --id-type patent
-uspto-cli patent bundle US20250087686A1 --id-type publication
+uspto patent bundle 11223344 --id-type patent
+uspto patent bundle US20250087686A1 --id-type publication
 
 # Custom output directory
-uspto-cli patent bundle 10924035 --out ./patents/my-patent
+uspto patent bundle 10924035 --out ./patents/my-patent
 
 # JSON output for programmatic use
-uspto-cli patent bundle 10924035 -f json -q
+uspto patent bundle 10924035 -f json -q
 
 # Dry-run to see what API calls would be made
-uspto-cli patent bundle 10924035 --dry-run
+uspto patent bundle 10924035 --dry-run
 ```
 
 **Output directory structure:**
@@ -312,84 +312,84 @@ uspto/<id>/
 # One-shot summary: combines metadata + continuity + assignments + events + documents
 # Makes 5 API calls, returns a unified flat struct
 # Best "first look" command — start here for any application
-uspto-cli summary 16123456 -f json -q
+uspto summary 16123456 -f json -q
 
 # Recursive patent family tree
 # Follows parent/child continuity chains, fetches metadata for each member
 # Returns: tree structure + allApplicationNumbers (deduplicated flat list)
-uspto-cli family 16123456 -f json -q
-uspto-cli family 16123456 --depth 3 -f json -q    # Default depth=2, max=5
+uspto family 16123456 -f json -q
+uspto family 16123456 --depth 3 -f json -q    # Default depth=2, max=5
 ```
 
 ### PTAB (Patent Trial and Appeal Board)
 
 ```bash
 # Trial proceedings
-uspto-cli ptab search --type IPR --patent 9876543 -f json -q
-uspto-cli ptab search --petitioner "Samsung" --status "Instituted" -f json -q
-uspto-cli ptab get IPR2023-00001 -f json -q
+uspto ptab search --type IPR --patent 9876543 -f json -q
+uspto ptab search --petitioner "Samsung" --status "Instituted" -f json -q
+uspto ptab get IPR2023-00001 -f json -q
 
 # Trial decisions
-uspto-cli ptab decisions "final written decision" --limit 10 -f json -q
-uspto-cli ptab decisions-for IPR2020-00388 -f json -q
-uspto-cli ptab decision <documentId> -f json -q
+uspto ptab decisions "final written decision" --limit 10 -f json -q
+uspto ptab decisions-for IPR2020-00388 -f json -q
+uspto ptab decision <documentId> -f json -q
 
 # Trial documents
-uspto-cli ptab docs --trial IPR2025-01319 -f json -q
-uspto-cli ptab docs-for IPR2025-01319 -f json -q
-uspto-cli ptab doc <documentId> -f json -q
+uspto ptab docs --trial IPR2025-01319 -f json -q
+uspto ptab docs-for IPR2025-01319 -f json -q
+uspto ptab doc <documentId> -f json -q
 
 # Appeal decisions
-uspto-cli ptab appeals "obviousness" --limit 10 -f json -q
-uspto-cli ptab appeals-for <appealNumber> -f json -q
-uspto-cli ptab appeal <documentId> -f json -q
+uspto ptab appeals "obviousness" --limit 10 -f json -q
+uspto ptab appeals-for <appealNumber> -f json -q
+uspto ptab appeal <documentId> -f json -q
 
 # Interference decisions
-uspto-cli ptab interferences --limit 10 -f json -q
-uspto-cli ptab interferences-for <interferenceNumber> -f json -q
+uspto ptab interferences --limit 10 -f json -q
+uspto ptab interferences-for <interferenceNumber> -f json -q
 
 # Server-side bulk download of PTAB results
-uspto-cli ptab search --type IPR --download csv > ipr_proceedings.csv
-uspto-cli ptab decisions --download json > decisions.json
+uspto ptab search --type IPR --download csv > ipr_proceedings.csv
+uspto ptab decisions --download json > decisions.json
 ```
 
 ### Petition Decisions
 
 ```bash
-uspto-cli petition search "revival" -f json -q
-uspto-cli petition search --office "OFFICE OF PETITIONS" --decision GRANTED -f json -q
-uspto-cli petition search --app 16123456 -f json -q
-uspto-cli petition search --patent 10902286 -f json -q
-uspto-cli petition get <recordId> -f json -q
-uspto-cli petition get <recordId> --include-documents -f json -q
+uspto petition search "revival" -f json -q
+uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED -f json -q
+uspto petition search --app 16123456 -f json -q
+uspto petition search --patent 10902286 -f json -q
+uspto petition get <recordId> -f json -q
+uspto petition get <recordId> --include-documents -f json -q
 ```
 
 ### Bulk Data
 
 ```bash
 # Search bulk data products
-uspto-cli bulk search "patent grant" -f json -q
-uspto-cli bulk search --category "Issued patents" --frequency WEEKLY -f json -q
+uspto bulk search "patent grant" -f json -q
+uspto bulk search --category "Issued patents" --frequency WEEKLY -f json -q
 
 # Get product details
-uspto-cli bulk get PTGRXML -f json -q
-uspto-cli bulk get PTGRXML --include-files --latest -f json -q
+uspto bulk get PTGRXML -f json -q
+uspto bulk get PTGRXML --include-files --latest -f json -q
 
 # List downloadable files for a product
-uspto-cli bulk files PTFWPRE -f json -q
+uspto bulk files PTFWPRE -f json -q
 
 # Download a bulk data file (rate limit: 20 downloads/file/year/key)
-uspto-cli bulk download PTGRXML ipg240102.zip -o ./data/
+uspto bulk download PTGRXML ipg240102.zip -o ./data/
 ```
 
 ### Status Codes
 
 ```bash
 # Look up by code number
-uspto-cli status 150 -f json -q          # "Patented Case"
+uspto status 150 -f json -q          # "Patented Case"
 
 # Search by description text
-uspto-cli status "abandoned" -f json -q
+uspto status "abandoned" -f json -q
 ```
 
 **Common status codes you'll encounter:**
@@ -410,9 +410,9 @@ When the user says "get me this patent" or "download patent X":
 
 ```bash
 # One command — resolves ID automatically, downloads everything
-uspto-cli patent bundle US20050021049A1
+uspto patent bundle US20050021049A1
 # or
-uspto-cli patent bundle 10924035
+uspto patent bundle 10924035
 # → Creates ./uspto/<id>/ with full text, PDFs, XML, metadata
 ```
 
@@ -422,102 +422,102 @@ When you need to explore a patent step-by-step:
 
 ```bash
 # 1. Search by patent number to find the application number
-uspto-cli search --patent 10902286 -f json -q
+uspto search --patent 10902286 -f json -q
 # → Extract applicationNumberText from results[0]
 
 # 2. Get comprehensive overview (title, status, inventors, dates, CPC, events, assignments)
-uspto-cli summary 16123456 -f json -q
+uspto summary 16123456 -f json -q
 
 # 3. Drill into specifics as needed
-uspto-cli app claims 16123456 -f json -q       # Read the claims
-uspto-cli app cont 16123456 -f json -q         # See parent/child apps
-uspto-cli app assign 16123456 -f json -q       # Ownership history
+uspto app claims 16123456 -f json -q       # Read the claims
+uspto app cont 16123456 -f json -q         # See parent/child apps
+uspto app assign 16123456 -f json -q       # Ownership history
 ```
 
 ### Pattern 3: Landscape / portfolio analysis
 
 ```bash
 # 1. Search broadly with facets to understand the landscape
-uspto-cli search --title "solid state battery" --granted --filed-within 5y --facets "applicationMetaData.firstApplicantName" -f json -q
+uspto search --title "solid state battery" --granted --filed-within 5y --facets "applicationMetaData.firstApplicantName" -f json -q
 
 # 2. Use --count-only first for a fast sizing call
-uspto-cli search --title "solid state battery" --granted --filed-within 5y --count-only -f json -q
+uspto search --title "solid state battery" --granted --filed-within 5y --count-only -f json -q
 
 # 3. Use --all to get the full result set (up to 10,000)
-uspto-cli search --title "solid state battery" --granted --filed-within 5y --all -f json -q
+uspto search --title "solid state battery" --granted --filed-within 5y --all -f json -q
 
 # 4. Or use --download for server-side export (no pagination needed)
-uspto-cli search --assignee "Samsung" --cpc "H01M" --download csv > samsung_battery.csv
+uspto search --assignee "Samsung" --cpc "H01M" --download csv > samsung_battery.csv
 
 # 5. Use --fields to reduce response size for large datasets
-uspto-cli search --assignee "Toyota" --granted --all --fields "applicationNumberText,applicationMetaData.inventionTitle,applicationMetaData.patentNumber,applicationMetaData.filingDate,applicationMetaData.cpcClassificationBag" -f json -q
+uspto search --assignee "Toyota" --granted --all --fields "applicationNumberText,applicationMetaData.inventionTitle,applicationMetaData.patentNumber,applicationMetaData.filingDate,applicationMetaData.cpcClassificationBag" -f json -q
 ```
 
 ### Pattern 4: Prosecution history review
 
 ```bash
 # 1. Get summary for quick overview
-uspto-cli summary 16123456 -f json -q
+uspto summary 16123456 -f json -q
 
 # 2. Full transaction history
-uspto-cli app txn 16123456 -f json -q
+uspto app txn 16123456 -f json -q
 
 # 3. Document list — filter for office actions
 # Common document codes: CTNF=Non-Final Rejection, CTFR=Final Rejection, NOA=Notice of Allowance
-uspto-cli app docs 16123456 --codes "CTNF,CTFR,NOA" -f json -q
+uspto app docs 16123456 --codes "CTNF,CTFR,NOA" -f json -q
 
 # 4. Download specific documents by index
-uspto-cli app dl 16123456 3 -o ./office-action.pdf
+uspto app dl 16123456 3 -o ./office-action.pdf
 ```
 
 ### Pattern 5: Family mapping
 
 ```bash
 # 1. Build the family tree (follows continuations, divisionals, CIPs)
-uspto-cli family 16123456 --depth 3 -f json -q
+uspto family 16123456 --depth 3 -f json -q
 
 # 2. The response includes allApplicationNumbers — a flat deduplicated list
 # 3. Get summaries for key family members
-uspto-cli summary 17654321 -f json -q
+uspto summary 17654321 -f json -q
 ```
 
 ### Pattern 6: PTAB investigation
 
 ```bash
 # 1. Check if patent is involved in any IPR/PGR
-uspto-cli ptab search --patent 10902286 -f json -q
+uspto ptab search --patent 10902286 -f json -q
 
 # 2. Get proceeding details
-uspto-cli ptab get IPR2023-00001 -f json -q
+uspto ptab get IPR2023-00001 -f json -q
 
 # 3. Get all decisions for the trial
-uspto-cli ptab decisions-for IPR2023-00001 -f json -q
+uspto ptab decisions-for IPR2023-00001 -f json -q
 
 # 4. Get all filed documents
-uspto-cli ptab docs-for IPR2023-00001 -f json -q
+uspto ptab docs-for IPR2023-00001 -f json -q
 ```
 
 ### Pattern 7: Full patent text extraction
 
 ```bash
 # For a granted patent — get everything in one call
-uspto-cli app fulltext 16123456 -f json -q
+uspto app fulltext 16123456 -f json -q
 
 # For a pending application — no grant XML available
 # Use the file wrapper documents instead
-uspto-cli app docs 16123456 --codes "CLM,SPEC,ABST" -f json -q
+uspto app docs 16123456 --codes "CLM,SPEC,ABST" -f json -q
 # Then download the PDFs
-uspto-cli app dl 16123456 1 -o ./claims.pdf
+uspto app dl 16123456 1 -o ./claims.pdf
 ```
 
 ### Pattern 8: Competitive monitoring export
 
 ```bash
 # Export a competitor's entire portfolio to CSV for spreadsheet analysis
-uspto-cli search --assignee "Google" --filed-within 1y --download csv > google_recent.csv
+uspto search --assignee "Google" --filed-within 1y --download csv > google_recent.csv
 
 # Track granted patents by examiner art unit
-uspto-cli search --art-unit "2617" --granted-after 2025-01-01 --all -f csv > art_unit_2617.csv
+uspto search --art-unit "2617" --granted-after 2025-01-01 --all -f csv > art_unit_2617.csv
 ```
 
 ## Known Limitations and Gotchas
@@ -528,7 +528,7 @@ uspto-cli search --art-unit "2617" --granted-after 2025-01-01 --all -f csv > art
 ```bash
 # Instead of: --cpc "H04W" (may return 404)
 # Use: --filter with the POST endpoint
-uspto-cli search --filter "applicationMetaData.cpcClassificationBag=H04W*" -f json -q
+uspto search --filter "applicationMetaData.cpcClassificationBag=H04W*" -f json -q
 ```
 
 **Never combine --granted and --pending**: Using both together sends conflicting filters that return ALL 5.4M+ applications instead of the expected intersection. Use one or the other.
@@ -542,7 +542,7 @@ uspto-cli search --filter "applicationMetaData.cpcClassificationBag=H04W*" -f js
 **`--type` flag is unreliable via GET**: For filtering by application type (Utility, Design, Plant, Reissue), use the POST filter:
 ```bash
 # More reliable than --type DSN:
-uspto-cli search --filter "applicationTypeLabelName=Design" -f json -q
+uspto search --filter "applicationTypeLabelName=Design" -f json -q
 ```
 
 **Table output for search/PTAB is very wide**: Always use `-f json`, `-f csv`, or `-f ndjson` for search and PTAB results. The default table has 200+ columns.
@@ -570,7 +570,7 @@ This CLI uses the USPTO **Open Data Portal (ODP)** API at `api.uspto.gov`. It do
 |-----------|---------|------------|
 | 0 | Success | Parse `results` from JSON |
 | 2 | Usage/validation error | Check flag names, app number format (bare digits only) |
-| 3 | Auth failure | Run `uspto-cli config show` to verify key. Re-set with `config set-api-key` |
+| 3 | Auth failure | Run `uspto config show` to verify key. Re-set with `config set-api-key` |
 | 4 | Not found | Application/trial may not exist, or data predates 2001 coverage |
 | 5 | Rate limited | CLI auto-retries 3 times with 5s backoff. If still failing, wait 30s and retry |
 | 6 | Server error | USPTO API is down. Retry later. Check https://data.uspto.gov for status |
@@ -593,3 +593,5 @@ This CLI uses the USPTO **Open Data Portal (ODP)** API at `api.uspto.gov`. It do
 - **`--dry-run` for debugging**: See the exact API URL that would be called, without executing
 - **`app fulltext` is the nuclear option**: Gets everything from grant XML in one call, but the output can be very large
 - **Document codes**: When filtering `app docs`, common codes include CLM (claims), SPEC (specification), CTNF (non-final rejection), CTFR (final rejection), NOA (notice of allowance), ABST (abstract), DRWR (drawings), IDS (information disclosure statement)
+
+

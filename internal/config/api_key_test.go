@@ -42,6 +42,36 @@ func TestLoadAPIKey_FileMissing(t *testing.T) {
 	}
 }
 
+func TestLoadAPIKey_LegacyConfigMigrates(t *testing.T) {
+	tempRoot := t.TempDir()
+	t.Setenv(ConfigDirOverrideEnvVar, tempRoot)
+
+	legacyPath := filepath.Join(tempRoot, legacyConfigDirName, configFileName)
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+		t.Fatalf("mkdir legacy config dir: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte("USPTO_API_KEY=legacy-key\n"), 0o600); err != nil {
+		t.Fatalf("write legacy config file: %v", err)
+	}
+
+	got, err := LoadAPIKey()
+	if err != nil {
+		t.Fatalf("LoadAPIKey() error: %v", err)
+	}
+	if got != "legacy-key" {
+		t.Fatalf("LoadAPIKey() = %q, want %q", got, "legacy-key")
+	}
+
+	newPath := filepath.Join(tempRoot, configDirName, configFileName)
+	migrated, err := loadAPIKeyFromFile(newPath)
+	if err != nil {
+		t.Fatalf("load migrated key: %v", err)
+	}
+	if migrated != "legacy-key" {
+		t.Fatalf("migrated key = %q, want %q", migrated, "legacy-key")
+	}
+}
+
 func TestLoadAPIKeyFromDotEnv(t *testing.T) {
 	tempDir := t.TempDir()
 	dotenvPath := filepath.Join(tempDir, ".env")

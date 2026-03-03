@@ -16,7 +16,7 @@ var (
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage global CLI configuration",
-	Long: `Manage global uspto-cli configuration.
+	Long: `Manage global uspto configuration.
 
 The API key is stored in a user-level config file, so commands work from
 any directory without relying on a local .env file.`,

@@ -1,4 +1,4 @@
-# Contributing to uspto-cli
+# Contributing to uspto
 
 Thanks for your interest. This is a small personal project, so contributions follow a different process than most open-source repos.
 
@@ -33,7 +33,7 @@ A diff tells me *what* changed. The prompt tells me *why* and *whether I agree w
 ## Development
 
 ```bash
-go build -o uspto-cli .
+go build -o uspto .
 go vet ./...
 go test ./...
 go test ./tests/integration/ -v -count=1 -timeout 600s  # requires USPTO_API_KEY
@@ -42,3 +42,4 @@ go test ./tests/integration/ -v -count=1 -timeout 600s  # requires USPTO_API_KEY
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
+

@@ -122,3 +122,4 @@
 | 41 | Non Final Action Mailed |
 | 161 | Abandoned -- Failure to Respond to an Office Action |
 | 250 | Patent Coverage Terminated Due to Expiration |
+

@@ -50,7 +50,9 @@ const (
 
 	// rateLimitFile is the name of the file used for cross-process rate
 	// limit state. It is stored in the OS temp directory.
-	rateLimitFile = "uspto-cli-ratelimit"
+	rateLimitFile = "uspto-ratelimit"
+	// legacyRateLimitFile is kept for backwards-compatible reads.
+	legacyRateLimitFile = "uspto-cli-ratelimit"
 )
 
 // ---------------------------------------------------------------------------
@@ -103,24 +105,38 @@ func stateFilePath() string {
 	return filepath.Join(os.TempDir(), rateLimitFile)
 }
 
+func legacyStateFilePath() string {
+	return filepath.Join(os.TempDir(), legacyRateLimitFile)
+}
+
 // loadState reads the last-request timestamp from the temp file.
 func (rl *rateLimiter) loadState() {
-	data, err := os.ReadFile(stateFilePath())
-	if err != nil {
+	if ts, ok := readRateLimitTimestamp(stateFilePath()); ok {
+		rl.lastRequestEnd = ts
 		return
 	}
-	ts := strings.TrimSpace(string(data))
-	nsec, err := strconv.ParseInt(ts, 10, 64)
-	if err != nil {
-		return
+	if ts, ok := readRateLimitTimestamp(legacyStateFilePath()); ok {
+		rl.lastRequestEnd = ts
 	}
-	rl.lastRequestEnd = time.Unix(0, nsec)
 }
 
 // saveState writes the last-request timestamp to the temp file.
 func (rl *rateLimiter) saveState() {
 	data := []byte(strconv.FormatInt(rl.lastRequestEnd.UnixNano(), 10))
 	_ = os.WriteFile(stateFilePath(), data, 0644)
+}
+
+func readRateLimitTimestamp(path string) (time.Time, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	ts := strings.TrimSpace(string(data))
+	nsec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(0, nsec), true
 }
 
 // waitForSlot blocks until a request slot is available. It respects both

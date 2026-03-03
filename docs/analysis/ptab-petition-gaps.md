@@ -1139,3 +1139,4 @@ async searchPetitionDecisionsPost(body: SearchRequest): Promise<PetitionDecision
 22. Capture raw API docs for PTAB Interferences (4 endpoints) -- no docs/raw files exist.
 23. Capture PTAB Trials Documents endpoints (search, download, by-trial, by-doc-id) raw docs.
 24. Capture PTAB Trials Decisions by Document Identifier raw docs.
+

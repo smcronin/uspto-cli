@@ -835,7 +835,7 @@ This would let the agent check remaining budget before attempting a download.
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
-const TRACKER_PATH = join(process.env.HOME || ".", ".uspto-cli", "download-tracker.json");
+const TRACKER_PATH = join(process.env.HOME || ".", ".uspto", "download-tracker.json");
 
 interface DownloadRecord {
   [key: string]: { count: number; lastDownload: string };
@@ -848,7 +848,7 @@ export function getDownloadCount(productId: string, fileName: string): number {
 }
 
 export function recordDownload(productId: string, fileName: string): void {
-  const dir = join(process.env.HOME || ".", ".uspto-cli");
+  const dir = join(process.env.HOME || ".", ".uspto");
   const { mkdirSync } = require("fs");
   mkdirSync(dir, { recursive: true });
 
@@ -997,3 +997,4 @@ this proactively.
 | `productFileBag.fileDataBag[].fileReleaseDate` | Yes | No | No | -- |
 | `productFileBag.fileDataBag[].fileDate` | Yes | No | No | -- |
 | `productFileBag.fileDataBag[].fileLastModifiedDateTime` | Yes | No | No | -- |
+

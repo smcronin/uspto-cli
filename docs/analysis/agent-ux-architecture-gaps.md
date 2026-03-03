@@ -405,9 +405,9 @@ cat query.json | uspto search --query-stdin -f json
 
 ### Recommendations (Priority: MEDIUM)
 
-**R7.1 - File-based rate limiter state.** Write last-request timestamps to a temp file (e.g., `/tmp/uspto-cli-ratelimit`). Read it at startup to maintain rate limiting across invocations. This is critical for agent workflows that spawn many sequential processes.
+**R7.1 - File-based rate limiter state.** Write last-request timestamps to a temp file (e.g., `/tmp/uspto-ratelimit`). Read it at startup to maintain rate limiting across invocations. This is critical for agent workflows that spawn many sequential processes.
 
-**R7.2 - Local response cache.** Cache API responses to a local directory (`~/.cache/uspto-cli/`) keyed by URL + params with a configurable TTL (default: 1 hour for metadata, 24 hours for static data like status codes).
+**R7.2 - Local response cache.** Cache API responses to a local directory (`~/.cache/uspto/`) keyed by URL + params with a configurable TTL (default: 1 hour for metadata, 24 hours for static data like status codes).
 
 ```bash
 # Skip cache
@@ -578,3 +578,4 @@ The client has no request timeout. A hung request will block indefinitely. Add a
 ## Key Takeaway
 
 The CLI has strong API coverage (53 endpoints) and a solid foundation. The single biggest gap for agent usability is the lack of a **standardized output envelope** (R1.1) combined with **auto-pagination** (R2.1) and **JSON-mode error output** (R3.2). These three changes alone would transform the CLI from "agent-usable with workarounds" to "agent-native." The compound commands (`summary`, `family`, `export`) are the next tier -- they eliminate the most common multi-call workflows that force agents to orchestrate complex sequences externally.
+

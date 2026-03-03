@@ -16,16 +16,16 @@ The USPTO publishes full-text patent grant XML files that contain structured cla
 
 ```bash
 # Extract claims
-uspto-cli app claims 16123456 -f json -q
+uspto app claims 16123456 -f json -q
 
 # Extract citations (patent + non-patent literature)
-uspto-cli app citations 16123456 -f json -q
+uspto app citations 16123456 -f json -q
 
 # Extract abstract
-uspto-cli app abstract 16123456 -f json -q
+uspto app abstract 16123456 -f json -q
 
 # Get the raw XML metadata (URLs)
-uspto-cli app xml 16123456 -f json -q
+uspto app xml 16123456 -f json -q
 ```
 
 ## XML Structure
@@ -158,3 +158,4 @@ They do NOT contain citations (since citations are added during examination).
 ## File Size
 
 Grant XML files are typically 50-200KB for a single patent. The split files (one patent per XML) are much smaller than the weekly bulk ZIP files.
+

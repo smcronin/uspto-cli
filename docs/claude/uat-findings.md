@@ -345,3 +345,4 @@ Currently some errors return `"code": 0` with `"type": "GENERAL_ERROR"` for dese
 4. Add `--count` flag
 5. Add `--raw` flag
 6. Add `app from-patent <patentNumber>` convenience command
+
