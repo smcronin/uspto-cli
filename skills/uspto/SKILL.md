@@ -45,7 +45,8 @@ If the user doesn't have a key: create account at https://data.uspto.gov/apis/ge
 Always use `-f json -q` when calling the CLI programmatically:
 - `-f json` gives a structured envelope: `{ ok, command, pagination, results, facets, version, error }`
 - `-q` (quiet) suppresses stderr progress messages
-- Add `--minify` for compact JSON; `--fields` to select specific response fields (saves tokens)
+- Add `--minify` for compact JSON
+- On `uspto search` only, add `--fields` to select specific response fields and save tokens
 
 Other formats: `-f table` (default, wide), `-f csv` (flat), `-f ndjson` (streaming).
 
@@ -73,7 +74,9 @@ uspto patent bundle 10924035 --id-type patent
 uspto patent bundle 16123456 --out ./patents/my-patent
 ```
 
-Output: `00_resolution.json`, `01_associated-docs.json`, `02_fulltext.json`, `03_docs.json`, `04_download-all.json`, `xml/`, `pdf/`, `README.md`.
+Output: `00_resolution.json`, `01_associated-docs.json`, `03_docs.json`, `04_download-all.json`, `xml/`, `pdf/`, `README.md`.
+
+`02_fulltext.json` is created only when grant full text is available. For pending applications or other publication-only cases, the bundle skips that file and records a warning instead.
 
 ID auto-detection order: app number, publication number, patent number. Use `--id-type` to override.
 
