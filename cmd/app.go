@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -60,6 +62,19 @@ func fmtOptFloat(v *float64) string {
 	return strconv.FormatFloat(*v, 'f', 1, 64)
 }
 
+type AppDocumentSummary struct {
+	Index               int      `json:"index"`
+	ApplicationNumber   string   `json:"applicationNumber"`
+	OfficialDate        string   `json:"officialDate"`
+	DocumentIdentifier  string   `json:"documentIdentifier"`
+	DocumentCode        string   `json:"documentCode"`
+	Description         string   `json:"description"`
+	Direction           string   `json:"direction,omitempty"`
+	AvailableFormats    []string `json:"availableFormats"`
+	PreferredTextFormat string   `json:"preferredTextFormat,omitempty"`
+	CanExtractText      bool     `json:"canExtractText"`
+}
+
 // ---------------------------------------------------------------------------
 // Table formatters
 // ---------------------------------------------------------------------------
@@ -99,20 +114,21 @@ func writeDocumentsTable(docs []types.Document) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.SetStyle(table.StyleLight)
-	t.AppendHeader(table.Row{"#", "Date", "Code", "Direction", "Description", "Formats"})
+	t.AppendHeader(table.Row{"#", "Date", "Code", "Direction", "Description", "Formats", "Text"})
 
-	for i, doc := range docs {
-		formats := make([]string, 0, len(doc.DownloadOptionBag))
-		for _, opt := range doc.DownloadOptionBag {
-			formats = append(formats, opt.MimeTypeIdentifier)
+	for _, doc := range summarizeDocuments(docs) {
+		textFormat := "-"
+		if doc.PreferredTextFormat != "" {
+			textFormat = doc.PreferredTextFormat
 		}
 		t.AppendRow(table.Row{
-			i + 1,
+			doc.Index,
 			safeStr(doc.OfficialDate, "-"),
 			safeStr(doc.DocumentCode, "-"),
-			safeStr(doc.DocumentDirectionCategory, "-"),
-			safeStr(doc.DocumentCodeDescriptionText, "-"),
-			strings.Join(formats, ", "),
+			safeStr(doc.Direction, "-"),
+			safeStr(doc.Description, "-"),
+			safeStr(strings.Join(doc.AvailableFormats, ", "), "-"),
+			textFormat,
 		})
 	}
 	t.Render()
@@ -441,21 +457,169 @@ func writeAssociatedDocsTable(pfw *types.PatentFileWrapper) {
 // Download helpers
 // ---------------------------------------------------------------------------
 
-// findPDFOption locates the first PDF download option from a document's
-// download options, returning its URL. Returns empty string if none found.
-func findPDFOption(doc *types.Document) string {
+// downloadFormatAliases maps user-facing format names to API mimeTypeIdentifier values.
+var downloadFormatAliases = map[string]string{
+	"pdf":  "PDF",
+	"docx": "MS_WORD",
+	"xml":  "XML",
+}
+
+// downloadFormatExtensions maps API mimeTypeIdentifier values to default file
+// extensions. Some MS_WORD assets are legacy .doc files, so callers should use
+// downloadOutputExtension with the actual download URL when naming files.
+var downloadFormatExtensions = map[string]string{
+	"PDF":     ".pdf",
+	"MS_WORD": ".docx",
+	"XML":     ".tar",
+}
+
+// findDownloadOption locates the download URL for the given format from a
+// document's download options. The format parameter should be an API
+// mimeTypeIdentifier value (e.g. "PDF", "MS_WORD", "XML"). Matching is
+// case-insensitive and also handles full MIME types (e.g. "application/pdf"
+// matches "PDF").
+func findDownloadOption(doc *types.Document, format string) string {
 	for _, opt := range doc.DownloadOptionBag {
-		if strings.EqualFold(opt.MimeTypeIdentifier, "application/pdf") ||
-			strings.Contains(strings.ToLower(opt.MimeTypeIdentifier), "pdf") {
+		if downloadFormatMatches(opt.MimeTypeIdentifier, format) {
 			return opt.DownloadURL
 		}
 	}
 	return ""
 }
 
+// findPDFOption locates the first PDF download option from a document's
+// download options, returning its URL. Returns empty string if none found.
+func findPDFOption(doc *types.Document) string {
+	return findDownloadOption(doc, "PDF")
+}
+
+func downloadOutputExtension(mimeType, downloadURL string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(mimeType))
+	if normalized != "MS_WORD" {
+		if ext, ok := downloadFormatExtensions[normalized]; ok {
+			return ext
+		}
+		return ""
+	}
+
+	if parsed, err := url.Parse(downloadURL); err == nil {
+		if ext := strings.ToLower(path.Ext(parsed.Path)); ext != "" {
+			return ext
+		}
+	}
+
+	return downloadFormatExtensions["MS_WORD"]
+}
+
+// canonicalFormatLabels maps API mimeTypeIdentifier values to user-facing labels.
+var canonicalFormatLabels = map[string]string{
+	"PDF":     "pdf",
+	"MS_WORD": "docx",
+	"XML":     "xml",
+}
+
+func canonicalFormatLabel(raw string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(raw))
+	label, ok := canonicalFormatLabels[normalized]
+	if ok {
+		return label
+	}
+	switch {
+	case downloadFormatMatches(raw, "PDF"):
+		return "pdf"
+	case downloadFormatMatches(raw, "MS_WORD"):
+		return "docx"
+	case downloadFormatMatches(raw, "XML"):
+		return "xml"
+	}
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func availableFormatList(doc *types.Document) []string {
+	formats := make([]string, 0, len(doc.DownloadOptionBag))
+	seen := make(map[string]bool)
+	for _, opt := range doc.DownloadOptionBag {
+		label := canonicalFormatLabel(opt.MimeTypeIdentifier)
+		if label == "" || seen[label] {
+			continue
+		}
+		seen[label] = true
+		formats = append(formats, label)
+	}
+	return formats
+}
+
+// availableFormats returns a comma-separated list of formats available for a document.
+func availableFormats(doc *types.Document) string {
+	return strings.Join(availableFormatList(doc), ", ")
+}
+
+func preferredTextFormat(doc *types.Document) string {
+	if findDownloadOption(doc, "XML") != "" {
+		return "xml"
+	}
+	if findDownloadOption(doc, "MS_WORD") != "" {
+		return "docx"
+	}
+	return ""
+}
+
+func summarizeDocuments(docs []types.Document) []AppDocumentSummary {
+	out := make([]AppDocumentSummary, 0, len(docs))
+	for i, doc := range docs {
+		pref := preferredTextFormat(&doc)
+		out = append(out, AppDocumentSummary{
+			Index:               i + 1,
+			ApplicationNumber:   doc.ApplicationNumberText,
+			OfficialDate:        doc.OfficialDate,
+			DocumentIdentifier:  doc.DocumentIdentifier,
+			DocumentCode:        doc.DocumentCode,
+			Description:         doc.DocumentCodeDescriptionText,
+			Direction:           doc.DocumentDirectionCategory,
+			AvailableFormats:    availableFormatList(&doc),
+			PreferredTextFormat: pref,
+			CanExtractText:      pref != "",
+		})
+	}
+	return out
+}
+
+func downloadFormatMatches(identifier, format string) bool {
+	id := strings.ToLower(strings.TrimSpace(identifier))
+	switch strings.ToUpper(strings.TrimSpace(format)) {
+	case "PDF":
+		return id == "pdf" || id == "application/pdf" || strings.HasSuffix(id, "/pdf")
+	case "XML":
+		return id == "xml" || strings.HasSuffix(id, "/xml") || strings.Contains(id, "+xml")
+	case "MS_WORD":
+		return id == "ms_word" ||
+			strings.Contains(id, "wordprocessingml") ||
+			strings.Contains(id, "msword") ||
+			strings.Contains(id, "officedocument.wordprocessingml")
+	default:
+		return id == strings.ToLower(strings.TrimSpace(format))
+	}
+}
+
+// resolveDownloadFormat normalizes a user-provided format string and returns
+// the API mimeTypeIdentifier, file extension, and canonical label (pdf/docx/xml).
+// Returns an error if the format is not recognized.
+func resolveDownloadFormat(format string) (mimeType string, ext string, label string, err error) {
+	lower := strings.ToLower(strings.TrimSpace(format))
+	if apiType, ok := downloadFormatAliases[lower]; ok {
+		return apiType, downloadFormatExtensions[apiType], canonicalFormatLabels[apiType], nil
+	}
+	// Also accept the raw API values (PDF, MS_WORD, XML).
+	upper := strings.ToUpper(lower)
+	if ext, ok := downloadFormatExtensions[upper]; ok {
+		return upper, ext, canonicalFormatLabels[upper], nil
+	}
+	return "", "", "", fmt.Errorf("unknown download format %q (valid: pdf, docx, xml)", format)
+}
+
 // defaultOutputPath builds a default filename for a downloaded document.
-func defaultOutputPath(doc *types.Document, appNumber string) string {
-	name := appNumber + "_" + doc.OfficialDate + "_" + doc.DocumentCode + ".pdf"
+func defaultOutputPath(doc *types.Document, appNumber string, ext string) string {
+	name := appNumber + "_" + doc.OfficialDate + "_" + doc.DocumentCode + ext
 	// Sanitize for filesystem safety (colons illegal on Windows, slashes everywhere).
 	name = strings.ReplaceAll(name, ":", "-")
 	name = strings.ReplaceAll(name, "/", "_")
@@ -771,7 +935,7 @@ var appDocsCmd = &cobra.Command{
 			return nil
 		}
 
-		outputResult(cmd, sortedDocs, nil)
+		outputResult(cmd, summarizeDocuments(sortedDocs), nil)
 		return nil
 	},
 }
@@ -1097,17 +1261,23 @@ var appAssociatedDocsCmd = &cobra.Command{
 var (
 	appDownloadOutputFlag string
 	appDownloadCodesFlag  string
+	appDownloadAsFlag     string
 )
 
 var appDownloadCmd = &cobra.Command{
 	Use:     "download <appNumber> [docIndex|documentIdentifier]",
 	Aliases: []string{"dl"},
-	Short:   "Download a document PDF from the file wrapper",
-	Long: `Download a specific document PDF from the application's file wrapper.
+	Short:   "Download a document from the file wrapper",
+	Long: `Download a specific document from the application's file wrapper.
 
 If docIndex/documentIdentifier is not specified, lists all documents so you can pick one.
 The docIndex is 1-based (matching the output of "app docs").
 You can also pass the exact documentIdentifier value.
+
+Use --as to select the download format: pdf (default), docx, or xml.
+Office action PDFs are typically image-based scans with no embedded text.
+Use --as docx to get a Word document with full structured text (available
+for most examiner-generated documents like rejections and allowances).
 
 Use --codes to filter documents before selecting. Use --output to specify
 the output file path (defaults to a generated filename).`,
@@ -1115,6 +1285,12 @@ the output file path (defaults to a generated filename).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
+			return err
+		}
+
+		// Resolve the requested format.
+		mimeType, ext, fmtLabel, err := resolveDownloadFormat(appDownloadAsFlag)
+		if err != nil {
 			return err
 		}
 
@@ -1143,31 +1319,32 @@ the output file path (defaults to a generated filename).`,
 		if err != nil {
 			return err
 		}
-		pdfURL := findPDFOption(doc)
-		if pdfURL == "" {
-			return fmt.Errorf("no PDF download option for document %d (%s - %s)",
-				docIndex, doc.DocumentCode, doc.DocumentCodeDescriptionText)
+		dlURL := findDownloadOption(doc, mimeType)
+		if dlURL == "" {
+			return fmt.Errorf("no %s download option for document %d (%s - %s); available formats: %s",
+				fmtLabel, docIndex, doc.DocumentCode, doc.DocumentCodeDescriptionText, availableFormats(doc))
 		}
+		ext = downloadOutputExtension(mimeType, dlURL)
 
 		// Determine output path.
 		outPath := appDownloadOutputFlag
 		if outPath == "" {
-			outPath = defaultOutputPath(doc, appNumber)
+			outPath = defaultOutputPath(doc, appNumber, ext)
 		}
 
 		if flagDryRun {
-			fmt.Fprintf(os.Stdout, "DOWNLOAD %s (%s) -> %s\n",
-				doc.DocumentCode, doc.OfficialDate, outPath)
-			fmt.Fprintf(os.Stdout, "URL: %s\n", pdfURL)
+			fmt.Fprintf(os.Stdout, "DOWNLOAD %s (%s) [%s] -> %s\n",
+				doc.DocumentCode, doc.OfficialDate, fmtLabel, outPath)
+			fmt.Fprintf(os.Stdout, "URL: %s\n", dlURL)
 			return nil
 		}
 
 		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "Downloading: %s (%s) -> %s\n",
-				doc.DocumentCodeDescriptionText, doc.OfficialDate, outPath)
+			fmt.Fprintf(os.Stderr, "Downloading: %s (%s) [%s] -> %s\n",
+				doc.DocumentCodeDescriptionText, doc.OfficialDate, fmtLabel, outPath)
 		}
 
-		savedPath, err := api.DefaultClient.DownloadDocument(context.Background(), pdfURL, outPath)
+		savedPath, err := api.DefaultClient.DownloadDocument(context.Background(), dlURL, outPath)
 		if err != nil {
 			return fmt.Errorf("download failed: %w", err)
 		}
@@ -1180,6 +1357,7 @@ the output file path (defaults to a generated filename).`,
 		if flagFormat == "json" || flagFormat == "ndjson" {
 			outputResult(cmd, map[string]string{
 				"path":         savedPath,
+				"format":       fmtLabel,
 				"documentCode": doc.DocumentCode,
 				"officialDate": doc.OfficialDate,
 			}, nil)
@@ -1196,16 +1374,18 @@ var (
 	appDownloadAllCodesFlag  string
 	appDownloadAllFromFlag   string
 	appDownloadAllToFlag     string
+	appDownloadAllAsFlag     string
 )
 
 var appDownloadAllCmd = &cobra.Command{
 	Use:     "download-all <appNumber>",
 	Aliases: []string{"dl-all"},
-	Short:   "Download all document PDFs from the file wrapper",
-	Long: `Download all available PDF documents from the application's file wrapper.
+	Short:   "Download all documents from the file wrapper",
+	Long: `Download all available documents from the application's file wrapper.
 
 Use --output to specify a directory (defaults to current directory).
 Use --codes, --from, and --to to filter which documents are downloaded.
+Use --as to select the download format: pdf (default), docx, or xml.
 Progress is shown on stderr.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1214,6 +1394,12 @@ Progress is shown on stderr.`,
 			return err
 		}
 		if err := validateDateRange("--from", appDownloadAllFromFlag, "--to", appDownloadAllToFlag); err != nil {
+			return err
+		}
+
+		// Resolve the requested format.
+		mimeType, ext, fmtLabel, err := resolveDownloadFormat(appDownloadAllAsFlag)
+		if err != nil {
 			return err
 		}
 
@@ -1244,12 +1430,16 @@ Progress is shown on stderr.`,
 		// Dry-run: show what would be downloaded without executing.
 		if flagDryRun {
 			for i, doc := range docResp.DocumentBag {
-				pdfURL := findPDFOption(&doc)
+				dlURL := findDownloadOption(&doc, mimeType)
 				status := "DOWNLOAD"
-				if pdfURL == "" {
-					status = "SKIP (no PDF)"
+				if dlURL == "" {
+					status = fmt.Sprintf("SKIP (no %s)", fmtLabel)
 				}
-				outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber))
+				outExt := ext
+				if dlURL != "" {
+					outExt = downloadOutputExtension(mimeType, dlURL)
+				}
+				outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, outExt))
 				fmt.Fprintf(os.Stdout, "[%d/%d] %s %s (%s) -> %s\n",
 					i+1, len(docResp.DocumentBag), status, doc.DocumentCode, doc.OfficialDate, outPath)
 			}
@@ -1257,11 +1447,12 @@ Progress is shown on stderr.`,
 			return nil
 		}
 
-		// Download each document that has a PDF option.
+		// Download each document that has the requested format.
 		type downloadResult struct {
 			Index        int    `json:"index"`
 			DocumentCode string `json:"documentCode"`
 			OfficialDate string `json:"officialDate"`
+			Format       string `json:"format"`
 			Path         string `json:"path,omitempty"`
 			RenamedFrom  string `json:"renamedFrom,omitempty"`
 			Error        string `json:"error,omitempty"`
@@ -1276,38 +1467,40 @@ Progress is shown on stderr.`,
 		seenPaths := map[string]int{}
 
 		for i, doc := range docResp.DocumentBag {
-			pdfURL := findPDFOption(&doc)
-			if pdfURL == "" {
+			dlURL := findDownloadOption(&doc, mimeType)
+			if dlURL == "" {
 				skipped++
 				if !flagQuiet {
-					fmt.Fprintf(os.Stderr, "[%d/%d] Skipping %s (%s) - no PDF\n",
-						i+1, totalDocs, doc.DocumentCode, doc.OfficialDate)
+					fmt.Fprintf(os.Stderr, "[%d/%d] Skipping %s (%s) - no %s\n",
+						i+1, totalDocs, doc.DocumentCode, doc.OfficialDate, fmtLabel)
 				}
 				continue
 			}
 
-			basePath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber))
+			outExt := downloadOutputExtension(mimeType, dlURL)
+			basePath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, outExt))
 			outPath, collided := uniqueOutputPath(basePath, seenPaths)
 			if collided {
 				collisionCount++
 			}
 
 			if !flagQuiet {
-				msg := fmt.Sprintf("[%d/%d] Downloading %s (%s) -> %s",
-					i+1, totalDocs, doc.DocumentCodeDescriptionText, doc.OfficialDate, outPath)
+				msg := fmt.Sprintf("[%d/%d] Downloading %s (%s) [%s] -> %s",
+					i+1, totalDocs, doc.DocumentCodeDescriptionText, doc.OfficialDate, fmtLabel, outPath)
 				if collided {
 					msg += fmt.Sprintf(" (renamed from %s)", basePath)
 				}
 				fmt.Fprintln(os.Stderr, msg)
 			}
 
-			savedPath, dlErr := api.DefaultClient.DownloadDocument(context.Background(), pdfURL, outPath)
+			savedPath, dlErr := api.DefaultClient.DownloadDocument(context.Background(), dlURL, outPath)
 			if dlErr != nil {
 				errCount++
 				results = append(results, downloadResult{
 					Index:        i + 1,
 					DocumentCode: doc.DocumentCode,
 					OfficialDate: doc.OfficialDate,
+					Format:       fmtLabel,
 					Error:        dlErr.Error(),
 				})
 				fmt.Fprintf(os.Stderr, "  Error: %v\n", dlErr)
@@ -1323,14 +1516,15 @@ Progress is shown on stderr.`,
 				Index:        i + 1,
 				DocumentCode: doc.DocumentCode,
 				OfficialDate: doc.OfficialDate,
+				Format:       fmtLabel,
 				Path:         savedPath,
 				RenamedFrom:  renamedFrom,
 			})
 		}
 
 		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "\nDone: %d downloaded, %d skipped (no PDF), %d errors, %d total. %d unique files, %d filename collisions resolved.\n",
-				downloaded, skipped, errCount, totalDocs, len(seenPaths), collisionCount)
+			fmt.Fprintf(os.Stderr, "\nDone: %d downloaded, %d skipped (no %s), %d errors, %d total. %d unique files, %d filename collisions resolved.\n",
+				downloaded, skipped, fmtLabel, errCount, totalDocs, len(seenPaths), collisionCount)
 		}
 
 		if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
@@ -1375,10 +1569,12 @@ func init() {
 	// download flags
 	appDownloadCmd.Flags().StringVarP(&appDownloadOutputFlag, "output", "o", "", "Output file path (default: auto-generated)")
 	appDownloadCmd.Flags().StringVar(&appDownloadCodesFlag, "codes", "", "Filter documents by codes/aliases before selecting")
+	appDownloadCmd.Flags().StringVar(&appDownloadAsFlag, "as", "pdf", "Download format: pdf, docx, or xml")
 
 	// download-all flags
 	appDownloadAllCmd.Flags().StringVarP(&appDownloadAllOutputFlag, "output", "o", "", "Output directory (default: current directory)")
 	appDownloadAllCmd.Flags().StringVar(&appDownloadAllCodesFlag, "codes", "", "Comma-separated document codes/aliases to filter by")
 	appDownloadAllCmd.Flags().StringVar(&appDownloadAllFromFlag, "from", "", "Filter documents from this date (YYYY-MM-DD)")
 	appDownloadAllCmd.Flags().StringVar(&appDownloadAllToFlag, "to", "", "Filter documents to this date (YYYY-MM-DD)")
+	appDownloadAllCmd.Flags().StringVar(&appDownloadAllAsFlag, "as", "pdf", "Download format: pdf, docx, or xml")
 }

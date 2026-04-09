@@ -52,6 +52,12 @@ uspto app citations 16123456
 Get all the PDFs — office actions, responses, drawings, everything the USPTO has on file:
 
 ```bash
+# Read the latest office action directly in the terminal (prefers XML, then DOCX)
+uspto app text 16123456 --codes office-action --latest
+
+# Read every matching readable document in one pass
+uspto app text-all 16123456 --codes office-action -f json -q
+
 # Download the entire file wrapper (all PDFs)
 uspto app download-all 16123456
 

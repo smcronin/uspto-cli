@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -13,12 +14,13 @@ import (
 )
 
 type ProsecutionTimelineDocument struct {
-	OfficialDate       string `json:"officialDate"`
-	DocumentCode       string `json:"documentCode"`
-	Description        string `json:"description,omitempty"`
-	DocumentIdentifier string `json:"documentIdentifier,omitempty"`
-	Direction          string `json:"direction,omitempty"`
-	HasPDFDownload     bool   `json:"hasPdfDownload"`
+	OfficialDate        string   `json:"officialDate"`
+	DocumentCode        string   `json:"documentCode"`
+	Description         string   `json:"description,omitempty"`
+	DocumentIdentifier  string   `json:"documentIdentifier,omitempty"`
+	Direction           string   `json:"direction,omitempty"`
+	AvailableFormats    []string `json:"availableFormats,omitempty"`
+	PreferredTextFormat string   `json:"preferredTextFormat,omitempty"`
 }
 
 type ProsecutionTimelineResult struct {
@@ -126,12 +128,12 @@ func runProsecutionTimeline(cmd *cobra.Command, args []string) error {
 			Description:        doc.DocumentCodeDescriptionText,
 			DocumentIdentifier: doc.DocumentIdentifier,
 			Direction:          doc.DocumentDirectionCategory,
+			AvailableFormats:   availableFormatList(&doc),
 		}
-		for _, opt := range doc.DownloadOptionBag {
-			if opt.DownloadURL != "" {
-				keyDoc.HasPDFDownload = true
-				break
-			}
+		if url := findDownloadOption(&doc, "XML"); url != "" {
+			keyDoc.PreferredTextFormat = "xml"
+		} else if url := findDownloadOption(&doc, "MS_WORD"); url != "" {
+			keyDoc.PreferredTextFormat = "docx"
 		}
 		result.KeyDocuments = append(result.KeyDocuments, keyDoc)
 	}
@@ -183,18 +185,19 @@ func writeProsecutionTimelineTable(r ProsecutionTimelineResult) {
 	dt := table.NewWriter()
 	dt.SetOutputMirror(os.Stdout)
 	dt.SetStyle(table.StyleLight)
-	dt.AppendHeader(table.Row{"Date", "Code", "Description", "Doc ID", "Has Download"})
+	dt.AppendHeader(table.Row{"Date", "Code", "Description", "Doc ID", "Formats", "Text"})
 	for _, d := range r.KeyDocuments {
-		yesNo := "No"
-		if d.HasPDFDownload {
-			yesNo = "Yes"
+		textFormat := "-"
+		if d.PreferredTextFormat != "" {
+			textFormat = d.PreferredTextFormat
 		}
 		dt.AppendRow(table.Row{
 			safeStr(d.OfficialDate, "-"),
 			safeStr(d.DocumentCode, "-"),
 			safeStr(d.Description, "-"),
 			safeStr(d.DocumentIdentifier, "-"),
-			yesNo,
+			safeStr(strings.Join(d.AvailableFormats, ", "), "-"),
+			textFormat,
 		})
 	}
 	dt.Render()

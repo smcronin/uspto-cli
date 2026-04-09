@@ -511,7 +511,7 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 			continue
 		}
 
-		outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber))
+		outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, ".pdf"))
 		savedPath, dlErr := api.DefaultClient.DownloadDocument(ctx, pdfURL, outPath)
 		if dlErr != nil {
 			failed++

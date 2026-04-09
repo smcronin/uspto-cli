@@ -176,6 +176,8 @@ uspto app get <appNumber>              # Full application data
 uspto app meta <appNumber>             # Metadata only
 uspto app docs <appNumber>             # File wrapper documents
 uspto app docs <appNumber> --sort date:asc
+uspto app text <appNumber> [index|documentIdentifier]     # Extract one document's text from XML/DOCX
+uspto app text-all <appNumber> --codes office-action      # Extract all matching readable document texts
 uspto app transactions <appNumber>     # Prosecution history
 uspto app continuity <appNumber>       # Parent/child continuity
 uspto app assignments <appNumber>      # Assignment/ownership records
@@ -185,8 +187,8 @@ uspto app foreign-priority <appNumber> # Foreign priority claims
 uspto app associated-docs <appNumber>  # Associated XML document metadata
 
 # Document downloads
-uspto app download <appNumber> [index|documentIdentifier] # Download a specific document PDF
-uspto app download-all <appNumber>     # Download all document PDFs
+uspto app download <appNumber> [index|documentIdentifier] # Download a specific document file
+uspto app download-all <appNumber>     # Download all document files for one format
 
 # Patent XML extraction (grant + pgpub fallback)
 uspto app abstract <appNumber>         # Patent abstract
@@ -199,6 +201,10 @@ uspto app fulltext <appNumber>         # Everything: meta + abstract + claims + 
 The XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse official patent XML to extract structured data. They prefer grant XML and fall back to pgpub XML for pending applications when available. `fulltext` is the most comprehensive single-command view.
 For pending applications, these commands automatically fall back to pgpub XML when available.
 For older patents (especially pre-2010), citation completeness can vary depending on legacy XML structure and source data availability.
+
+`app docs` now surfaces both available formats and the CLI's preferred direct-text source (`xml` or `docx`) for each file-wrapper entry.
+For file-wrapper office actions and similar documents, `app text` is the text-first command. It reads the XML archive directly when available, falls back to DOCX, and avoids the separate download-then-open workflow that agents otherwise need.
+Use `app text-all` when you want the CLI to emit every matching readable document in one pass rather than selecting them one at a time.
 
 Document code filters (`app docs --codes`, `app dl --codes`, `app dl-all --codes`) support aliases:
 - `rejection` -> `CTNF,CTFR`

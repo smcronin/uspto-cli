@@ -95,3 +95,109 @@ func TestNormalizeDocumentCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestAvailableFormatList_UsesCanonicalLabels(t *testing.T) {
+	doc := &types.Document{
+		DownloadOptionBag: []types.DownloadOption{
+			{MimeTypeIdentifier: "MS_WORD"},
+			{MimeTypeIdentifier: "XML"},
+			{MimeTypeIdentifier: "PDF"},
+			{MimeTypeIdentifier: "PDF"},
+		},
+	}
+
+	got := availableFormatList(doc)
+	want := []string{"docx", "xml", "pdf"}
+	if len(got) != len(want) {
+		t.Fatalf("availableFormatList length = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("availableFormatList[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestResolveTextFormat_PrefersXMLThenDOCX(t *testing.T) {
+	doc := &types.Document{
+		DownloadOptionBag: []types.DownloadOption{
+			{MimeTypeIdentifier: "MS_WORD", DownloadURL: "https://example/doc.docx"},
+			{MimeTypeIdentifier: "XML", DownloadURL: "https://example/doc.xmlarchive"},
+			{MimeTypeIdentifier: "PDF", DownloadURL: "https://example/doc.pdf"},
+		},
+	}
+
+	mimeType, label, url, err := resolveTextFormat(doc, "auto")
+	if err != nil {
+		t.Fatalf("resolveTextFormat(auto) error: %v", err)
+	}
+	if mimeType != "XML" || label != "xml" || url != "https://example/doc.xmlarchive" {
+		t.Fatalf("resolveTextFormat(auto) = (%q, %q, %q), want XML/xml/xmlarchive", mimeType, label, url)
+	}
+
+	mimeType, label, url, err = resolveTextFormat(doc, "docx")
+	if err != nil {
+		t.Fatalf("resolveTextFormat(docx) error: %v", err)
+	}
+	if mimeType != "MS_WORD" || label != "docx" || url != "https://example/doc.docx" {
+		t.Fatalf("resolveTextFormat(docx) = (%q, %q, %q), want MS_WORD/docx/docxURL", mimeType, label, url)
+	}
+}
+
+func TestResolveTextFormat_RejectsPDFOnly(t *testing.T) {
+	doc := &types.Document{
+		DownloadOptionBag: []types.DownloadOption{
+			{MimeTypeIdentifier: "PDF", DownloadURL: "https://example/doc.pdf"},
+		},
+	}
+
+	_, _, _, err := resolveTextFormat(doc, "auto")
+	if err == nil {
+		t.Fatal("resolveTextFormat(auto) with pdf-only doc = nil error, want error")
+	}
+	if !strings.Contains(err.Error(), "only pdf is available") {
+		t.Fatalf("resolveTextFormat(auto) error = %q, want pdf-only hint", err.Error())
+	}
+}
+
+func TestCanonicalFormatLabel_HandlesMIMETypes(t *testing.T) {
+	tests := map[string]string{
+		"application/pdf": "pdf",
+		"application/xml": "xml",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+	}
+
+	for raw, want := range tests {
+		if got := canonicalFormatLabel(raw); got != want {
+			t.Fatalf("canonicalFormatLabel(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestDownloadOutputExtension_MSWordUsesDownloadURL(t *testing.T) {
+	tests := map[string]string{
+		"https://example.com/Final%20Rejection.DOC":              ".doc",
+		"https://example.com/final-rejection.docx":               ".docx",
+		"https://example.com/download?id=12345":                  ".docx",
+		"https://example.com/files/office-action.DOC?download=1": ".doc",
+	}
+
+	for rawURL, want := range tests {
+		if got := downloadOutputExtension("MS_WORD", rawURL); got != want {
+			t.Fatalf("downloadOutputExtension(MS_WORD, %q) = %q, want %q", rawURL, got, want)
+		}
+	}
+}
+
+func TestDownloadOutputExtension_NonMSWordUsesDefaultMapping(t *testing.T) {
+	tests := map[string]string{
+		"PDF": ".pdf",
+		"XML": ".tar",
+	}
+
+	for mimeType, want := range tests {
+		if got := downloadOutputExtension(mimeType, "https://example.com/ignored.bin"); got != want {
+			t.Fatalf("downloadOutputExtension(%q) = %q, want %q", mimeType, got, want)
+		}
+	}
+}

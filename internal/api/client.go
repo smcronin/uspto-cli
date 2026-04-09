@@ -930,6 +930,69 @@ func (c *Client) GetPetitionDecision(ctx context.Context, recordID string, inclu
 // Document Download
 // ==========================================================================
 
+// FetchDocumentBytes downloads a file from the given URL and returns its bytes
+// in memory. It uses the same timeout, redirect, and retry behavior as
+// DownloadDocument, but does not write the payload to disk.
+func (c *Client) FetchDocumentBytes(ctx context.Context, rawURL string) ([]byte, error) {
+	// Resolve relative URLs.
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		rawURL = c.baseURL + "/" + strings.TrimLeft(rawURL, "/")
+	}
+
+	dlClient := &http.Client{
+		Timeout: downloadTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	var attempt int
+	for {
+		c.rl.waitForSlot()
+
+		c.debugf("FETCH %s", rawURL)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("building fetch request: %w", err)
+		}
+		c.setHeaders(req)
+
+		resp, err := c.followRedirectsWithClient(dlClient, req)
+		c.rl.markRequestComplete()
+		if err != nil {
+			return nil, fmt.Errorf("executing fetch request: %w", err)
+		}
+
+		if resp.StatusCode == 429 && attempt < maxRetries {
+			resp.Body.Close()
+			c.rl.markRateLimited()
+			attempt++
+			c.debugf("429 rate limited during fetch, retry %d/%d", attempt, maxRetries)
+			continue
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, &UsptoAPIError{
+				StatusCode: resp.StatusCode,
+				Message:    fmt.Sprintf("fetch failed: HTTP %d", resp.StatusCode),
+				Body:       string(body),
+			}
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading fetched document: %w", err)
+		}
+
+		c.debugf("Fetch complete: %d bytes", len(body))
+		return body, nil
+	}
+}
+
 // DownloadDocument downloads a file from the given URL (which may be
 // absolute or relative to baseURL) and writes it to outputPath. It uses
 // the download timeout (600 s), follows redirects manually to re-apply
