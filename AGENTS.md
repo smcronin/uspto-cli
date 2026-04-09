@@ -6,7 +6,7 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
 ### Available skills
 - skill-creator: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Codex's capabilities with specialized knowledge, workflows, or tool integrations. (file: C:/Users/sethc/.codex/skills/.system/skill-creator/SKILL.md)
 - skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: C:/Users/sethc/.codex/skills/.system/skill-installer/SKILL.md)
-- release: Prepare and execute safe repository releases for this uspto-cli project. Use when asked to release, cut a version, bump version, tag and push, or publish binaries. (file: C:/Users/sethc/dev/uspto-cli/skills/release/SKILL.md)
+- release: Prepare and execute safe repository releases for this uspto-cli project. Use when asked to release, cut a version, bump version, tag and push, or publish binaries. (file: C:/Users/sethc/dev/uspto-cli/.claude/skills/release/SKILL.md)
 
 ### How to use skills
 - Discovery: The list above is the skills available in this session (name + description + file path). Skill bodies live on disk at the listed paths.
