@@ -88,7 +88,7 @@ func initConfig(cmd *cobra.Command) error {
 
 	// Set up the API client singleton.
 	if flagTimeout <= 0 {
-		return fmt.Errorf("invalid --timeout %d: must be > 0 seconds", flagTimeout)
+		return invalidArgsf("invalid --timeout %d: must be > 0 seconds", flagTimeout)
 	}
 
 	opts := []api.ClientOption{
@@ -122,7 +122,7 @@ func isNonAPICommand(cmd *cobra.Command) bool {
 	}
 	for c := cmd; c != nil; c = c.Parent() {
 		switch c.Name() {
-		case "help", "completion", "version", "config", "update":
+		case "help", "completion", "version", "config", "update", "fields":
 			return true
 		}
 	}
@@ -148,12 +148,15 @@ func handleError(err error) int {
 		Message: err.Error(),
 	}
 
-	if apiErr, ok := err.(*api.UsptoAPIError); ok {
+	if isInvalidArgsError(err) {
+		code = types.ExitInvalidArgs
+		errInfo.Type = "INVALID_ARGS"
+	} else if apiErr, ok := err.(*api.UsptoAPIError); ok {
 		errInfo.Code = apiErr.StatusCode
 		errInfo.Message = apiErr.Message
 
 		switch {
-		case apiErr.StatusCode == 403:
+		case apiErr.StatusCode == 401 || apiErr.StatusCode == 403:
 			code = types.ExitAuthFailure
 			errInfo.Type = "AUTH_FAILURE"
 			errInfo.Hint = "Set USPTO_API_KEY or use --api-key. Get a key at https://data.uspto.gov/apis/getting-started"

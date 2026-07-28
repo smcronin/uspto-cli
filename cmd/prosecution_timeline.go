@@ -33,18 +33,21 @@ type ProsecutionTimelineResult struct {
 }
 
 var prosecutionTimelineCodesFlag string
+var prosecutionTimelineIDTypeFlag = idTypeAuto
 
 var prosecutionTimelineCmd = &cobra.Command{
-	Use:   "prosecution-timeline <appNumber>",
+	Use:   "prosecution-timeline <identifier>",
 	Short: "Build a prosecution timeline for an application",
 	Long: `Builds a prosecution timeline by combining application metadata,
 transaction history, and key file-wrapper documents.
+Accepts an application number, publication number, or patent number.
 
 By default, key documents are filtered to rejection/allowance aliases:
 rejection -> CTNF,CTFR and allowance -> NOA.
 
 Examples:
   uspto prosecution-timeline 16123456
+  uspto prosecution-timeline US20230259568A1
   uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q`,
 	Args: cobra.ExactArgs(1),
 	RunE: runProsecutionTimeline,
@@ -52,12 +55,20 @@ Examples:
 
 func init() {
 	prosecutionTimelineCmd.Flags().StringVar(&prosecutionTimelineCodesFlag, "codes", "rejection,allowance", "Comma-separated document codes/aliases for key docs")
+	prosecutionTimelineCmd.Flags().StringVar(&prosecutionTimelineIDTypeFlag, "id-type", idTypeAuto, "Identifier type: auto, app, publication, patent")
 	rootCmd.AddCommand(prosecutionTimelineCmd)
 }
 
 func runProsecutionTimeline(cmd *cobra.Command, args []string) error {
-	appNumber := args[0]
-	if err := validateAppNumber(appNumber); err != nil {
+	inputID := args[0]
+	var appNumber string
+	var err error
+	if flagDryRun {
+		appNumber, err = planApplicationInputDryRun(inputID, prosecutionTimelineIDTypeFlag)
+	} else {
+		appNumber, err = resolveApplicationInput(context.Background(), inputID, prosecutionTimelineIDTypeFlag)
+	}
+	if err != nil {
 		return err
 	}
 

@@ -916,6 +916,19 @@ func (c *Client) SearchPetitionDecisionsPost(ctx context.Context, body types.Sea
 		"/api/v1/petition/decisions/search", body, nil)
 }
 
+// DownloadPetitionDecisionsPost exports petition decision search results in
+// JSON or CSV using the structured POST search syntax.
+func (c *Client) DownloadPetitionDecisionsPost(ctx context.Context, body types.SearchRequest, format string) ([]byte, error) {
+	payload := struct {
+		types.SearchRequest
+		Format string `json:"format"`
+	}{
+		SearchRequest: body,
+		Format:        format,
+	}
+	return c.request(ctx, http.MethodPost, "/api/v1/petition/decisions/search/download", payload, nil)
+}
+
 // GetPetitionDecision retrieves a single petition decision by record ID.
 func (c *Client) GetPetitionDecision(ctx context.Context, recordID string, includeDocuments bool) (*types.PetitionDecisionResponse, error) {
 	params := make(map[string]string)
