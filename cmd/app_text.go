@@ -90,7 +90,7 @@ Examples:
 			return err
 		}
 		if appTextLatestFlag && len(args) > 1 {
-			return fmt.Errorf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
+			return invalidArgsf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
 		}
 
 		docOpts := types.DocumentOptions{

@@ -28,7 +28,7 @@ var appNumberRegex = regexp.MustCompile(`^\d{6,12}$`)
 // validateAppNumber checks that the application number is valid.
 func validateAppNumber(appNumber string) error {
 	if !appNumberRegex.MatchString(appNumber) {
-		return fmt.Errorf("invalid application number %q: must be 6-12 digits", appNumber)
+		return invalidArgsf("invalid application number %q: must be 6-12 digits", appNumber)
 	}
 	return nil
 }

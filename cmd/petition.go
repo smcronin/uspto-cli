@@ -55,13 +55,13 @@ func init() {
 
 func runPetitionSearch(cmd *cobra.Command, args []string) error {
 	if petitionSearchFlags.limit <= 0 {
-		return fmt.Errorf("invalid --limit %d: must be > 0", petitionSearchFlags.limit)
+		return invalidArgsf("invalid --limit %d: must be > 0", petitionSearchFlags.limit)
 	}
 	if petitionSearchFlags.offset < 0 {
-		return fmt.Errorf("invalid --offset %d: must be >= 0", petitionSearchFlags.offset)
+		return invalidArgsf("invalid --offset %d: must be >= 0", petitionSearchFlags.offset)
 	}
 	if err := validateSortExpr("--sort", petitionSearchFlags.sort); err != nil {
-		return err
+		return invalidArgs(err)
 	}
 
 	// Build the query string from the positional argument and filter flags.
@@ -78,7 +78,7 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 		case "GRANTED", "DENIED", "DISMISSED":
 			parts = append(parts, fmt.Sprintf("decisionTypeCodeDescriptionText:%s", decision))
 		default:
-			return fmt.Errorf("invalid --decision %q: expected GRANTED, DENIED, or DISMISSED", petitionSearchFlags.decision)
+			return invalidArgsf("invalid --decision %q: expected GRANTED, DENIED, or DISMISSED", petitionSearchFlags.decision)
 		}
 	}
 	if petitionSearchFlags.app != "" {

@@ -176,7 +176,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if searchFlags.filedWithin != "" {
 		resolved, err := resolveRelativeDate(searchFlags.filedWithin)
 		if err != nil {
-			return fmt.Errorf("invalid --filed-within value %q: %w", searchFlags.filedWithin, err)
+			return invalidArgsf("invalid --filed-within value %q: %v", searchFlags.filedWithin, err)
 		}
 		// Only override if --filed-after was not explicitly set.
 		if searchFlags.filedAfter == "" {
@@ -185,10 +185,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := validateSearchInputs(); err != nil {
-		return err
+		return invalidArgs(err)
 	}
 	if err := validateSearchMode(cmd); err != nil {
-		return err
+		return invalidArgs(err)
 	}
 
 	// Decide whether we need the POST endpoint.

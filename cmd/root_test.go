@@ -3,8 +3,19 @@ package cmd
 import (
 	"testing"
 
+	"github.com/smcronin/uspto-cli/internal/api"
 	"github.com/smcronin/uspto-cli/internal/config"
+	"github.com/smcronin/uspto-cli/internal/types"
 )
+
+func TestHandleError_ClassifiesAuthAndInputFailures(t *testing.T) {
+	if got := handleError(&api.UsptoAPIError{StatusCode: 401, Message: "Unauthorized"}); got != types.ExitAuthFailure {
+		t.Fatalf("401 exit code = %d, want %d", got, types.ExitAuthFailure)
+	}
+	if got := handleError(invalidArgsf("invalid --limit -1: must be > 0")); got != types.ExitInvalidArgs {
+		t.Fatalf("input error exit code = %d, want %d", got, types.ExitInvalidArgs)
+	}
+}
 
 func TestResolveAPIKey_Precedence(t *testing.T) {
 	origFlag := flagAPIKey
