@@ -222,6 +222,44 @@ func TestAnnotatePetitionSearchError_Granted404AddsHint(t *testing.T) {
 	}
 }
 
+func TestBuildPetitionSearchRequest_UsesStructuredContract(t *testing.T) {
+	orig := petitionSearchFlags
+	defer func() { petitionSearchFlags = orig }()
+
+	petitionSearchFlags.fields = "petitionDecisionRecordIdentifier, patentNumber"
+	petitionSearchFlags.filters = []string{"finalDecidingOfficeName=OFFICE OF PETITIONS", "ruleBag=1.76,1.78"}
+	petitionSearchFlags.ranges = []string{"petitionMailDate=2024-01-01:2024-12-31"}
+	petitionSearchFlags.facets = "decisionTypeCodeDescriptionText, finalDecidingOfficeName"
+	petitionSearchFlags.sort = "decisionDate:desc"
+
+	body, err := buildPetitionSearchRequest("revival", 100, 25)
+	if err != nil {
+		t.Fatalf("buildPetitionSearchRequest() error: %v", err)
+	}
+	if body.Q != "revival" || body.Pagination == nil || body.Pagination.Limit != 100 || body.Pagination.Offset != 25 {
+		t.Fatalf("request basics = %#v, want query and pagination", body)
+	}
+	if len(body.Filters) != 2 || body.Filters[1].Name != "ruleBag" || len(body.Filters[1].Value) != 2 {
+		t.Fatalf("filters = %#v, want two parsed filters", body.Filters)
+	}
+	if len(body.RangeFilters) != 1 || body.RangeFilters[0].Field != "petitionMailDate" || body.RangeFilters[0].ValueTo != "2024-12-31" {
+		t.Fatalf("ranges = %#v, want petitionMailDate range", body.RangeFilters)
+	}
+	if len(body.Fields) != 2 || len(body.Facets) != 2 || len(body.Sort) != 1 {
+		t.Fatalf("fields/facets/sort = %#v/%#v/%#v, want parsed values", body.Fields, body.Facets, body.Sort)
+	}
+}
+
+func TestBuildPetitionSearchRequest_RejectsMalformedRange(t *testing.T) {
+	orig := petitionSearchFlags
+	defer func() { petitionSearchFlags = orig }()
+	petitionSearchFlags.ranges = []string{"petitionMailDate=2024-01-01"}
+
+	if _, err := buildPetitionSearchRequest("", 25, 0); err == nil {
+		t.Fatal("expected malformed range to fail")
+	}
+}
+
 func containsAll(s string, parts []string) bool {
 	for _, p := range parts {
 		if !strings.Contains(s, p) {

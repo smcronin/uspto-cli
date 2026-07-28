@@ -54,13 +54,17 @@ Exit codes: 0=OK, 1=general, 2=usage/validation, 3=auth-failure, 4=not-found, 5=
 
 ## Application Number Format
 
-**Critical**: All `app` subcommands require bare digits -- strip all slashes, commas, country codes.
+`app` subcommands, `summary`, `family`, and `prosecution-timeline` accept an
+application number, patent number, or publication number. Bare application numbers
+are used directly; patent and publication identifiers are resolved through patent
+search first. Use `--id-type app|publication|patent` when a numeric identifier is
+ambiguous.
 
 | User says | You pass to CLI |
 |-----------|-----------------|
 | `16/123,456` | `16123456` |
-| Patent 10,902,286 | Use `search --patent 10902286` first to get the app number |
-| `US20250087686A1` | Use `search --pub-number US20250087686A1` first to get the app number |
+| Patent 10,902,286 | `10902286 --id-type patent` |
+| `US20250087686A1` | `US20250087686A1` |
 
 ## Commands Reference
 
@@ -144,6 +148,7 @@ Parse official patent XML for structured text. Uses grant XML first, falls back 
 
 ```bash
 uspto app claims 16123456 -f json -q       # Individual claims with references
+uspto app claims 10902286 --id-type patent -f json -q
 uspto app citations 16123456 -f json -q    # Patent + NPL citations
 uspto app abstract 16123456 -f json -q     # Abstract text
 uspto app description 16123456 -f json -q  # Full specification (large)
@@ -155,12 +160,15 @@ uspto app fulltext 16123456 -f json -q     # Everything in one shot (largest)
 ```bash
 # Best "first look" command -- 5 API calls combined
 uspto summary 16123456 -f json -q
+uspto summary 10902286 --id-type patent -f json -q
 
 # Recursive patent family tree (follows continuity chains)
 uspto family 16123456 --depth 3 -f json -q
+uspto family US20230259568A1 --depth 3 -f json -q
 
 # One-shot prosecution timeline
 uspto prosecution-timeline 16123456 -f json -q
+uspto prosecution-timeline 10902286 --id-type patent -f json -q
 uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
 
@@ -183,6 +191,10 @@ uspto ptab search --type IPR --download csv > ipr_proceedings.csv
 ```bash
 uspto petition search "revival" -f json -q
 uspto petition search --app 16123456 -f json -q
+uspto petition search revival --filter "finalDecidingOfficeName=OFFICE OF PETITIONS" -f json -q
+uspto petition search --range "petitionMailDate=2024-01-01:2024-12-31" --fields "petitionDecisionRecordIdentifier,patentNumber" -f json -q
+uspto petition search revival --all -f ndjson -q
+uspto petition search revival --download csv > petition_decisions.csv
 uspto petition get <recordId> --include-documents -f json -q
 ```
 

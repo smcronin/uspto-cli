@@ -69,22 +69,27 @@ type AppSummary struct {
 // ---------------------------------------------------------------------------
 
 var summaryCmd = &cobra.Command{
-	Use:   "summary <applicationNumber>",
+	Use:   "summary <identifier>",
 	Short: "One-shot complete application summary",
 	Long: `Fetches metadata, continuity, assignments, transactions, and documents
 for a patent application and combines them into a single flattened summary.
+Accepts an application number, publication number, or patent number.
 
 This compound command makes 6 sequential API calls and returns a unified
 view that is much easier for agents to parse than the raw nested API responses.
 
 Example:
   uspto summary 16123456
+  uspto summary US20230259568A1
   uspto summary 16123456 -f json`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSummary,
 }
 
+var summaryIDTypeFlag = idTypeAuto
+
 func init() {
+	summaryCmd.Flags().StringVar(&summaryIDTypeFlag, "id-type", idTypeAuto, "Identifier type: auto, app, publication, patent")
 	rootCmd.AddCommand(summaryCmd)
 }
 
@@ -125,8 +130,13 @@ func inventorName(inv types.Inventor) string {
 // ---------------------------------------------------------------------------
 
 func runSummary(cmd *cobra.Command, args []string) error {
-	appNumber := args[0]
-	if err := validateAppNumber(appNumber); err != nil {
+	inputID := args[0]
+	if flagDryRun && !appNumberRegex.MatchString(inputID) {
+		fmt.Fprintln(os.Stderr, "Resolve publication/patent identifier to an application number, then:")
+		return nil
+	}
+	appNumber, err := resolveApplicationInput(context.Background(), inputID, summaryIDTypeFlag)
+	if err != nil {
 		return err
 	}
 	if flagDryRun {

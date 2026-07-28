@@ -47,14 +47,16 @@ type FamilyResult struct {
 var (
 	flagFamilyDepth     int
 	flagFamilyWithDates bool
+	familyIDTypeFlag    = idTypeAuto
 )
 
 var familyCmd = &cobra.Command{
-	Use:   "family <applicationNumber>",
+	Use:   "family <identifier>",
 	Short: "Recursive patent family tree",
 	Long: `Builds a complete patent family tree by recursively following parent
 and child continuity chains. For each discovered application, fetches
 metadata (title, patent number, status) and builds a tree structure.
+Accepts an application number, publication number, or patent number.
 
 All API calls are made sequentially to respect rate limiting. A visited
 set prevents re-fetching applications discovered from multiple paths.
@@ -64,6 +66,7 @@ Flags:
 
 Example:
   uspto family 16123456
+  uspto family US20230259568A1
   uspto family 16123456 --depth 3 -f json`,
 	Args: cobra.ExactArgs(1),
 	RunE: runFamily,
@@ -72,6 +75,7 @@ Example:
 func init() {
 	familyCmd.Flags().IntVar(&flagFamilyDepth, "depth", 2, "Recursion depth (max 5)")
 	familyCmd.Flags().BoolVar(&flagFamilyWithDates, "with-dates", false, "Include filing dates in tree output")
+	familyCmd.Flags().StringVar(&familyIDTypeFlag, "id-type", idTypeAuto, "Identifier type: auto, app, publication, patent")
 	rootCmd.AddCommand(familyCmd)
 }
 
@@ -80,8 +84,13 @@ func init() {
 // ---------------------------------------------------------------------------
 
 func runFamily(cmd *cobra.Command, args []string) error {
-	appNumber := args[0]
-	if err := validateAppNumber(appNumber); err != nil {
+	inputID := args[0]
+	if flagDryRun && !appNumberRegex.MatchString(inputID) {
+		fmt.Fprintln(os.Stderr, "Resolve publication/patent identifier to an application number, then:")
+		return nil
+	}
+	appNumber, err := resolveApplicationInput(context.Background(), inputID, familyIDTypeFlag)
+	if err != nil {
 		return err
 	}
 	if flagDryRun {

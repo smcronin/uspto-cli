@@ -47,8 +47,9 @@ uspto update
 # Search patents
 uspto search --title "machine learning" --limit 5
 
-# Get application details
+# Get application details (application, patent, or publication ID)
 uspto app get 16123456
+uspto app meta 10902286 --id-type patent
 
 # One-shot summary (6 API calls combined)
 uspto summary 16123456
@@ -168,12 +169,16 @@ Bundle contents:
 
 ### Application Data
 
-18 subcommands for working with individual patent applications:
+18 subcommands for working with individual patent applications. `app` subcommands,
+`summary`, `family`, and `prosecution-timeline` accept an application number, patent
+number, or publication number. Application numbers resolve directly; other identifiers
+are looked up first. Use `--id-type app|publication|patent` for a numeric ambiguity.
 
 ```bash
 # Core data
 uspto app get <appNumber>              # Full application data
 uspto app meta <appNumber>             # Metadata only
+uspto app claims 10902286 --id-type patent # Numeric patent number
 uspto app docs <appNumber>             # File wrapper documents
 uspto app docs <appNumber> --sort date:asc
 uspto app text <appNumber> [index|documentIdentifier]     # Extract one document's text from XML/DOCX
@@ -224,13 +229,16 @@ Assignment note:
 # One-shot summary: metadata + continuity + assignments + transactions + foreign priority + documents
 # Makes 6 API calls and returns a unified view
 uspto summary 16123456
+uspto summary 10902286 --id-type patent  # Numeric patent number
 
 # Recursive family tree (follows parent/child continuity chains)
 uspto family 16123456 --depth 3
+uspto family US20230259568A1 --depth 3  # Publication number
 uspto family 16123456 --depth 3 --with-dates
 
 # Prosecution timeline (metadata + transactions + key docs in one view)
 uspto prosecution-timeline 16123456
+uspto prosecution-timeline 10902286 --id-type patent
 uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
 
@@ -279,8 +287,16 @@ uspto petition search "revival"
 uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED
 uspto petition search --app 16123456 --patent 10000000
 uspto petition search --facets decisionTypeCodeDescriptionText -f json -q
+uspto petition search revival --filter "finalDecidingOfficeName=OFFICE OF PETITIONS"
+uspto petition search --range "petitionMailDate=2024-01-01:2024-12-31" --fields "petitionDecisionRecordIdentifier,patentNumber"
+uspto petition search revival --all -f ndjson
+uspto petition search revival --download csv > petition_decisions.csv
 uspto petition get <recordId> --include-documents
 ```
+
+`petition search` supports the same core retrieval controls as patent search:
+`--fields`, repeatable `--filter field=value`, repeatable `--range field=from:to`,
+`--facets`, `--all` (up to 10,000 records), and `--download json|csv`.
 
 Dataset note: decision search data is currently dominated by `DENIED` records; `--decision GRANTED` may return no results depending on dataset coverage.
 
@@ -367,5 +383,3 @@ This project is not affiliated with, endorsed by, or sponsored by the United Sta
 ## License
 
 MIT
-
-

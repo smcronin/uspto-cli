@@ -799,8 +799,24 @@ func selectPrimaryAttorney(pfw *types.PatentFileWrapper) map[string]string {
 var appCmd = &cobra.Command{
 	Use:   "app",
 	Short: "Work with individual patent applications",
-	Long:  "Retrieve detailed data for a patent application by application number.\n\nSubcommands provide access to metadata, documents, prosecution history,\ncontinuity, assignments, attorneys, term adjustment, and more.",
+	Long:  "Retrieve detailed data for a patent application by application, publication, or patent number.\n\nSubcommands provide access to metadata, documents, prosecution history,\ncontinuity, assignments, attorneys, term adjustment, and more. Bare numeric IDs are treated as application numbers; use --id-type for numeric patent numbers.",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := initConfig(cmd); err != nil {
+			return err
+		}
+		if len(args) == 0 || flagDryRun {
+			return nil
+		}
+		appNumber, err := resolveApplicationInput(context.Background(), args[0], appIDTypeFlag)
+		if err != nil {
+			return err
+		}
+		args[0] = appNumber
+		return nil
+	},
 }
+
+var appIDTypeFlag = idTypeAuto
 
 // --- app get ---
 
@@ -1542,6 +1558,7 @@ Progress is shown on stderr.`,
 func init() {
 	// Register app command with root.
 	rootCmd.AddCommand(appCmd)
+	appCmd.PersistentFlags().StringVar(&appIDTypeFlag, "id-type", idTypeAuto, "Identifier type: auto, app, publication, patent")
 
 	// Register subcommands with app.
 	appCmd.AddCommand(appGetCmd)

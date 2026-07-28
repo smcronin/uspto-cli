@@ -1076,6 +1076,33 @@ func TestDownloadPatentsPost_SendsFormatInBody(t *testing.T) {
 	}
 }
 
+func TestDownloadPetitionDecisionsPost_SendsFormatInBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/petition/decisions/search/download" {
+			t.Fatalf("path = %s, want petition download path", r.URL.Path)
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if got, _ := body["format"].(string); got != "csv" {
+			t.Fatalf("format = %q, want %q", got, "csv")
+		}
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = w.Write([]byte("petitionDecisionRecordIdentifier\nrecord-1\n"))
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	_, err := c.DownloadPetitionDecisionsPost(context.Background(), types.SearchRequest{Q: "revival"}, "csv")
+	if err != nil {
+		t.Fatalf("DownloadPetitionDecisionsPost() error: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // NewClient — option funcs
 // ---------------------------------------------------------------------------
