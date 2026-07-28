@@ -98,6 +98,11 @@ Examples:
 			OfficialDateFrom: appTextFromFlag,
 			OfficialDateTo:   appTextToFlag,
 		}
+		if flagDryRun {
+			printDocumentListingDryRun(appNumber, docOpts)
+			fmt.Fprintln(os.Stderr, "Then: select the requested document and fetch its XML or DOCX download URL.")
+			return nil
+		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
 			return err
@@ -120,16 +125,10 @@ Examples:
 			fmt.Fprintf(os.Stderr, "Selected document %d automatically.\n", docIndex)
 		}
 
-		_, fmtLabel, dlURL, err := resolveTextFormat(doc, appTextAsFlag)
+		_, fmtLabel, _, err := resolveTextFormat(doc, appTextAsFlag)
 		if err != nil {
 			return fmt.Errorf("cannot extract text from document %d (%s - %s): %w",
 				docIndex, doc.DocumentCode, doc.DocumentCodeDescriptionText, err)
-		}
-
-		if flagDryRun {
-			fmt.Fprintf(os.Stdout, "TEXT %s (%s) [%s]\n", doc.DocumentCode, doc.OfficialDate, fmtLabel)
-			fmt.Fprintf(os.Stdout, "URL: %s\n", dlURL)
-			return nil
 		}
 
 		progress(fmt.Sprintf("Fetching %s text for %s (%s)...", fmtLabel, doc.DocumentCode, doc.OfficialDate))
@@ -181,26 +180,17 @@ Examples:
 			OfficialDateFrom: appTextAllFromFlag,
 			OfficialDateTo:   appTextAllToFlag,
 		}
+		if flagDryRun {
+			printDocumentListingDryRun(appNumber, docOpts)
+			fmt.Fprintln(os.Stderr, "Then: fetch XML or DOCX download URLs for each matching document.")
+			return nil
+		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
 			return err
 		}
 		if len(docResp.DocumentBag) == 0 {
 			return fmt.Errorf("no documents found for application %s", appNumber)
-		}
-
-		if flagDryRun {
-			for i, doc := range docResp.DocumentBag {
-				mimeType, fmtLabel, dlURL, resolveErr := resolveTextFormat(&doc, appTextAllAsFlag)
-				if resolveErr != nil {
-					fmt.Fprintf(os.Stdout, "[%d/%d] SKIP %s (%s) - %s\n", i+1, len(docResp.DocumentBag), doc.DocumentCode, doc.OfficialDate, resolveErr.Error())
-					continue
-				}
-				fmt.Fprintf(os.Stdout, "[%d/%d] TEXT %s (%s) [%s]\n", i+1, len(docResp.DocumentBag), doc.DocumentCode, doc.OfficialDate, fmtLabel)
-				fmt.Fprintf(os.Stdout, "URL: %s\n", dlURL)
-				_ = mimeType
-			}
-			return nil
 		}
 
 		result := AppDocumentTextBatchResult{

@@ -61,11 +61,13 @@ func init() {
 
 func runProsecutionTimeline(cmd *cobra.Command, args []string) error {
 	inputID := args[0]
-	if flagDryRun && !appNumberRegex.MatchString(inputID) {
-		fmt.Fprintln(os.Stderr, "Resolve publication/patent identifier to an application number, then:")
-		return nil
+	var appNumber string
+	var err error
+	if flagDryRun {
+		appNumber, err = planApplicationInputDryRun(inputID, prosecutionTimelineIDTypeFlag)
+	} else {
+		appNumber, err = resolveApplicationInput(context.Background(), inputID, prosecutionTimelineIDTypeFlag)
 	}
-	appNumber, err := resolveApplicationInput(context.Background(), inputID, prosecutionTimelineIDTypeFlag)
 	if err != nil {
 		return err
 	}

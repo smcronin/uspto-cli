@@ -110,6 +110,14 @@ func TestIsNonAPICommand(t *testing.T) {
 		t.Fatal("update command should be treated as non-API")
 	}
 
+	petitionFieldsCmd, _, err := rootCmd.Find([]string{"petition", "fields"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(petition fields): %v", err)
+	}
+	if !isNonAPICommand(petitionFieldsCmd) {
+		t.Fatal("petition fields command should be treated as non-API")
+	}
+
 	searchCmd, _, err := rootCmd.Find([]string{"search"})
 	if err != nil {
 		t.Fatalf("rootCmd.Find(search): %v", err)

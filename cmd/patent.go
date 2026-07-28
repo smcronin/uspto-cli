@@ -60,7 +60,11 @@ type patentBundleSummary struct {
 	PDFSkipped        int               `json:"pdfSkipped"`
 	PDFFailed         int               `json:"pdfFailed"`
 	Warnings          []string          `json:"warnings,omitempty"`
+	Status            string            `json:"status"`
+	Complete          bool              `json:"complete"`
 }
+
+const bundlePDFDownloadTimeout = 45 * time.Second
 
 type patentBundleDownloadResult struct {
 	Index        int    `json:"index"`
@@ -239,14 +243,11 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	pdfResults, downloaded, skipped, failed := downloadBundlePDFs(ctx, resolution.ApplicationNumber, docsResp.DocumentBag, filepath.Join(outDir, "pdf"))
 	downloadPath := filepath.Join(outDir, "04_download-all.json")
-	if err := writeJSONFile(downloadPath, pdfResults); err != nil {
-		return err
-	}
+	statusPath := filepath.Join(outDir, "05_bundle-status.json")
 	artifacts["pdfResults"] = downloadPath
+	artifacts["bundleStatus"] = statusPath
 
-	readmePath := filepath.Join(outDir, "README.md")
 	summary := patentBundleSummary{
 		InputID:           inputID,
 		InputType:         resolution.InputType,
@@ -257,16 +258,42 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 		Title:             meta.ApplicationMetaData.InventionTitle,
 		OutputDir:         absOutDir,
 		Artifacts:         artifacts,
-		PDFDownloaded:     downloaded,
-		PDFSkipped:        skipped,
-		PDFFailed:         failed,
-		Warnings:          warnings,
+		Status:            "in_progress",
+		Complete:          false,
 	}
+	if err := writeJSONFile(statusPath, summary); err != nil {
+		return err
+	}
+
+	checkpointStatus := func(downloaded, skipped, failed int) {
+		summary.PDFDownloaded = downloaded
+		summary.PDFSkipped = skipped
+		summary.PDFFailed = failed
+		_ = writeJSONFile(statusPath, summary)
+	}
+	pdfResults, downloaded, skipped, failed := downloadBundlePDFs(ctx, resolution.ApplicationNumber, docsResp.DocumentBag, filepath.Join(outDir, "pdf"), downloadPath, checkpointStatus)
+	if failed > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d PDF download(s) failed; see 04_download-all.json for per-file errors", failed))
+	}
+	if err := writeJSONFile(downloadPath, pdfResults); err != nil {
+		return err
+	}
+
+	readmePath := filepath.Join(outDir, "README.md")
+	summary.PDFDownloaded = downloaded
+	summary.PDFSkipped = skipped
+	summary.PDFFailed = failed
+	summary.Warnings = warnings
+	summary.Status = "completed"
+	summary.Complete = true
+	artifacts["readme"] = readmePath
+	summary.Artifacts = artifacts
 	if err := writeBundleReadme(readmePath, summary); err != nil {
 		return err
 	}
-	artifacts["readme"] = readmePath
-	summary.Artifacts = artifacts
+	if err := writeJSONFile(statusPath, summary); err != nil {
+		return err
+	}
 
 	if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
 		outputResult(cmd, summary, nil)
@@ -485,7 +512,7 @@ func writeBundleFulltext(grantXMLPath, outPath, appNumber string) error {
 	return writeJSONFile(outPath, result)
 }
 
-func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Document, outDir string) ([]patentBundleDownloadResult, int, int, int) {
+func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Document, outDir, manifestPath string, checkpoint func(int, int, int)) ([]patentBundleDownloadResult, int, int, int) {
 	results := make([]patentBundleDownloadResult, 0, len(docs))
 	downloaded := 0
 	skipped := 0
@@ -500,6 +527,7 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 				OfficialDate: doc.OfficialDate,
 				Error:        "creating pdf output directory: " + err.Error(),
 			})
+			checkpoint(downloaded, skipped, failed)
 		}
 		return results, downloaded, skipped, failed
 	}
@@ -508,11 +536,16 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 		pdfURL := findPDFOption(&doc)
 		if pdfURL == "" {
 			skipped++
+			results = append(results, patentBundleDownloadResult{Index: i + 1, DocumentCode: doc.DocumentCode, OfficialDate: doc.OfficialDate, Error: "no PDF download option"})
+			_ = writeJSONFile(manifestPath, results)
+			checkpoint(downloaded, skipped, failed)
 			continue
 		}
 
 		outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, ".pdf"))
-		savedPath, dlErr := api.DefaultClient.DownloadDocument(ctx, pdfURL, outPath)
+		downloadCtx, cancel := context.WithTimeout(ctx, bundlePDFDownloadTimeout)
+		savedPath, dlErr := api.DefaultClient.DownloadDocument(downloadCtx, pdfURL, outPath)
+		cancel()
 		if dlErr != nil {
 			failed++
 			results = append(results, patentBundleDownloadResult{
@@ -521,6 +554,8 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 				OfficialDate: doc.OfficialDate,
 				Error:        dlErr.Error(),
 			})
+			_ = writeJSONFile(manifestPath, results)
+			checkpoint(downloaded, skipped, failed)
 			continue
 		}
 		downloaded++
@@ -530,6 +565,8 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 			OfficialDate: doc.OfficialDate,
 			Path:         savedPath,
 		})
+		_ = writeJSONFile(manifestPath, results)
+		checkpoint(downloaded, skipped, failed)
 	}
 
 	return results, downloaded, skipped, failed
@@ -565,6 +602,7 @@ func writeBundleReadme(path string, summary patentBundleSummary) error {
 		"- `02_fulltext.json` - parsed grant XML full text (when available)",
 		"- `03_docs.json` - file-wrapper document index",
 		"- `04_download-all.json` - per-document PDF download results",
+		"- `05_bundle-status.json` - durable completion status and warnings",
 		"- `APP_NUMBER.txt` - resolved application number",
 		"- `xml/grant.xml` - raw grant XML (when available)",
 		"- `xml/pgpub.xml` - raw publication XML (when available)",

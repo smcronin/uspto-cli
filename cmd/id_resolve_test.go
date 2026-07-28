@@ -58,3 +58,24 @@ func TestResolveApplicationInput_RejectsInvalidType(t *testing.T) {
 		t.Fatal("resolveApplicationInput() expected error")
 	}
 }
+
+func TestPlanApplicationInputDryRun_ExternalIdentifierNeedsNoClient(t *testing.T) {
+	originalClient := api.DefaultClient
+	api.DefaultClient = nil
+	defer func() { api.DefaultClient = originalClient }()
+
+	got, err := planApplicationInputDryRun("US20230259568A1", idTypeAuto)
+	if err != nil {
+		t.Fatalf("planApplicationInputDryRun() error: %v", err)
+	}
+	if got != dryRunResolvedApplicationPlaceholder {
+		t.Fatalf("planApplicationInputDryRun() = %q, want placeholder", got)
+	}
+}
+
+func TestResolveApplicationInput_RejectsUnrecognizedAutoIdentifier(t *testing.T) {
+	_, err := resolveApplicationInput(context.Background(), "abc123", idTypeAuto)
+	if err == nil {
+		t.Fatal("resolveApplicationInput() expected invalid identifier error")
+	}
+}

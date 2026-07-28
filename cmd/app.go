@@ -804,7 +804,15 @@ var appCmd = &cobra.Command{
 		if err := initConfig(cmd); err != nil {
 			return err
 		}
-		if len(args) == 0 || flagDryRun {
+		if len(args) == 0 {
+			return nil
+		}
+		if flagDryRun {
+			appNumber, err := planApplicationInputDryRun(args[0], appIDTypeFlag)
+			if err != nil {
+				return err
+			}
+			args[0] = appNumber
 			return nil
 		}
 		appNumber, err := resolveApplicationInput(context.Background(), args[0], appIDTypeFlag)
@@ -817,6 +825,20 @@ var appCmd = &cobra.Command{
 }
 
 var appIDTypeFlag = idTypeAuto
+
+func printDocumentListingDryRun(appNumber string, opts types.DocumentOptions) {
+	params := map[string]string{}
+	if opts.DocumentCodes != "" {
+		params["documentCodes"] = opts.DocumentCodes
+	}
+	if opts.OfficialDateFrom != "" {
+		params["officialDateFrom"] = opts.OfficialDateFrom
+	}
+	if opts.OfficialDateTo != "" {
+		params["officialDateTo"] = opts.OfficialDateTo
+	}
+	printDryRunGET("/api/v1/patent/applications/"+appNumber+"/documents", params)
+}
 
 // --- app get ---
 
@@ -919,17 +941,7 @@ var appDocsCmd = &cobra.Command{
 			OfficialDateTo:   appDocsToFlag,
 		}
 		if flagDryRun {
-			params := map[string]string{}
-			if opts.DocumentCodes != "" {
-				params["documentCodes"] = opts.DocumentCodes
-			}
-			if opts.OfficialDateFrom != "" {
-				params["officialDateFrom"] = opts.OfficialDateFrom
-			}
-			if opts.OfficialDateTo != "" {
-				params["officialDateTo"] = opts.OfficialDateTo
-			}
-			printDryRunGET("/api/v1/patent/applications/"+appNumber+"/documents", params)
+			printDocumentListingDryRun(appNumber, opts)
 			return nil
 		}
 
@@ -1314,6 +1326,11 @@ the output file path (defaults to a generated filename).`,
 		docOpts := types.DocumentOptions{
 			DocumentCodes: normalizeDocumentCodes(appDownloadCodesFlag),
 		}
+		if flagDryRun {
+			printDocumentListingDryRun(appNumber, docOpts)
+			fmt.Fprintln(os.Stderr, "Then: select the requested document and download its resolved file URL.")
+			return nil
+		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
 			return err
@@ -1346,13 +1363,6 @@ the output file path (defaults to a generated filename).`,
 		outPath := appDownloadOutputFlag
 		if outPath == "" {
 			outPath = defaultOutputPath(doc, appNumber, ext)
-		}
-
-		if flagDryRun {
-			fmt.Fprintf(os.Stdout, "DOWNLOAD %s (%s) [%s] -> %s\n",
-				doc.DocumentCode, doc.OfficialDate, fmtLabel, outPath)
-			fmt.Fprintf(os.Stdout, "URL: %s\n", dlURL)
-			return nil
 		}
 
 		if !flagQuiet {
@@ -1414,7 +1424,7 @@ Progress is shown on stderr.`,
 		}
 
 		// Resolve the requested format.
-		mimeType, ext, fmtLabel, err := resolveDownloadFormat(appDownloadAllAsFlag)
+		mimeType, _, fmtLabel, err := resolveDownloadFormat(appDownloadAllAsFlag)
 		if err != nil {
 			return err
 		}
@@ -1424,6 +1434,11 @@ Progress is shown on stderr.`,
 			DocumentCodes:    normalizeDocumentCodes(appDownloadAllCodesFlag),
 			OfficialDateFrom: appDownloadAllFromFlag,
 			OfficialDateTo:   appDownloadAllToFlag,
+		}
+		if flagDryRun {
+			printDocumentListingDryRun(appNumber, docOpts)
+			fmt.Fprintf(os.Stderr, "Then: download each matching document as %s into the selected output directory.\n", fmtLabel)
+			return nil
 		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
@@ -1441,26 +1456,6 @@ Progress is shown on stderr.`,
 		}
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return fmt.Errorf("creating output directory: %w", err)
-		}
-
-		// Dry-run: show what would be downloaded without executing.
-		if flagDryRun {
-			for i, doc := range docResp.DocumentBag {
-				dlURL := findDownloadOption(&doc, mimeType)
-				status := "DOWNLOAD"
-				if dlURL == "" {
-					status = fmt.Sprintf("SKIP (no %s)", fmtLabel)
-				}
-				outExt := ext
-				if dlURL != "" {
-					outExt = downloadOutputExtension(mimeType, dlURL)
-				}
-				outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, outExt))
-				fmt.Fprintf(os.Stdout, "[%d/%d] %s %s (%s) -> %s\n",
-					i+1, len(docResp.DocumentBag), status, doc.DocumentCode, doc.OfficialDate, outPath)
-			}
-			fmt.Fprintf(os.Stdout, "\nDry run: %d documents found.\n", len(docResp.DocumentBag))
-			return nil
 		}
 
 		// Download each document that has the requested format.

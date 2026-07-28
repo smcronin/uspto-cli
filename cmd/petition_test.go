@@ -260,6 +260,25 @@ func TestBuildPetitionSearchRequest_RejectsMalformedRange(t *testing.T) {
 	}
 }
 
+func TestValidatePetitionSearchFields(t *testing.T) {
+	original := petitionSearchFlags
+	defer func() { petitionSearchFlags = original }()
+
+	petitionSearchFlags.fields = "petitionDecisionRecordIdentifier,patentNumber"
+	petitionSearchFlags.filters = []string{"finalDecidingOfficeName=OFFICE OF PETITIONS"}
+	petitionSearchFlags.ranges = []string{"petitionMailDate=2024-01-01:2024-12-31"}
+	petitionSearchFlags.facets = "decisionTypeCodeDescriptionText"
+	petitionSearchFlags.sort = "decisionDate:desc"
+	if err := validatePetitionSearchFields(); err != nil {
+		t.Fatalf("validatePetitionSearchFields() error: %v", err)
+	}
+
+	petitionSearchFlags.fields = "notARealField"
+	if err := validatePetitionSearchFields(); err == nil {
+		t.Fatal("validatePetitionSearchFields() expected unsupported field error")
+	}
+}
+
 func containsAll(s string, parts []string) bool {
 	for _, p := range parts {
 		if !strings.Contains(s, p) {

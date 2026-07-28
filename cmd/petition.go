@@ -75,6 +75,9 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 	if err := validatePetitionSearchMode(cmd); err != nil {
 		return invalidArgs(err)
 	}
+	if err := validatePetitionSearchFields(); err != nil {
+		return invalidArgs(err)
+	}
 
 	// Build the query string from the positional argument and filter flags.
 	var parts []string
@@ -190,6 +193,7 @@ func runPetitionSearchAll(ctx context.Context, cmd *cobra.Command, query string,
 			break
 		}
 	}
+	warnAutoPaginationTruncated(total, len(all))
 	outputResult(cmd, all, &types.PaginationMeta{Offset: petitionSearchFlags.offset, Limit: len(all), Total: total, HasMore: total > len(all)})
 	return nil
 }

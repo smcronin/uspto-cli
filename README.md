@@ -163,9 +163,15 @@ Bundle contents:
 - `02_fulltext.json` - parsed grant XML full text (if available)
 - `03_docs.json` - file-wrapper document index
 - `04_download-all.json` - PDF download results
+- `05_bundle-status.json` - durable completion status and warnings
 - `xml/grant.xml` and `xml/pgpub.xml` (when available)
 - `pdf/` directory with downloaded file-wrapper PDFs
 - `README.md` describing what was downloaded and any gaps
+
+Bundle downloads are non-atomic. Treat the directory as complete only when
+`05_bundle-status.json` reports `status: "completed"` and `complete: true`.
+If interrupted, that status file and `04_download-all.json` retain the last
+checkpointed PDF progress and per-file failures.
 
 ### Application Data
 
@@ -242,7 +248,9 @@ uspto prosecution-timeline 10902286 --id-type patent
 uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
 
-`family` JSON includes relationship-aware `allApplicationNumbers` entries so CON/DIV/CIP links are explicit in the flat member list.
+`family` JSON separates `parents` from `children`; every tree node and
+relationship-aware `allApplicationNumbers` entry includes a `direction`
+(`parent`, `child`, or `root`) so CON/DIV/CIP links remain unambiguous.
 
 ### PTAB (Patent Trial and Appeal Board)
 
@@ -292,11 +300,15 @@ uspto petition search --range "petitionMailDate=2024-01-01:2024-12-31" --fields 
 uspto petition search revival --all -f ndjson
 uspto petition search revival --download csv > petition_decisions.csv
 uspto petition get <recordId> --include-documents
+uspto petition fields -f table
 ```
 
 `petition search` supports the same core retrieval controls as patent search:
 `--fields`, repeatable `--filter field=value`, repeatable `--range field=from:to`,
 `--facets`, `--all` (up to 10,000 records), and `--download json|csv`.
+Run `uspto petition fields` to see the documented field names and which ones
+support field projection, filters, ranges, facets, or sorting. Unsupported
+field/operation combinations fail locally before making an API request.
 
 Dataset note: decision search data is currently dominated by `DENIED` records; `--decision GRANTED` may return no results depending on dataset coverage.
 
@@ -357,9 +369,9 @@ Built for AI agents and automation:
 
 - **Structured JSON envelope** with `ok`, `command`, `pagination`, `results`, `facets`, `version`
 - **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error
-- **`--dry-run`** shows the API request without executing (all commands)
+- **`--dry-run`** shows the API request plan without executing; dependent document URLs are shown as a follow-up step after their metadata lookup
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
-- **`--all`** auto-paginates up to 10,000 results
+- **`--all`** auto-paginates up to 10,000 results and emits a truncation warning when more matches remain
 - **`--count-only`** returns just total matches for fast landscape sizing
 - **`--download`** server-side bulk export (json or csv) in a single request
 - **`--facets`** returns aggregated counts alongside results

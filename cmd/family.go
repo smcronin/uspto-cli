@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
+	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +24,8 @@ type FamilyNode struct {
 	Status            string       `json:"status,omitempty"`
 	FilingDate        string       `json:"filingDate,omitempty"`
 	Relationship      string       `json:"relationship,omitempty"`
+	Direction         string       `json:"direction,omitempty"`
+	Parents           []FamilyNode `json:"parents,omitempty"`
 	Children          []FamilyNode `json:"children,omitempty"`
 }
 
@@ -30,6 +33,18 @@ type FamilyNode struct {
 type FamilyApplicationRef struct {
 	ApplicationNumber string `json:"applicationNumber"`
 	Relationship      string `json:"relationship"`
+	Direction         string `json:"direction"`
+}
+
+type familyVisit struct {
+	Relationship string
+	Direction    string
+}
+
+type familyRelatedApp struct {
+	ApplicationNumber string
+	Relationship      string
+	Direction         string
 }
 
 // FamilyResult is the top-level output for the family command.
@@ -85,11 +100,13 @@ func init() {
 
 func runFamily(cmd *cobra.Command, args []string) error {
 	inputID := args[0]
-	if flagDryRun && !appNumberRegex.MatchString(inputID) {
-		fmt.Fprintln(os.Stderr, "Resolve publication/patent identifier to an application number, then:")
-		return nil
+	var appNumber string
+	var err error
+	if flagDryRun {
+		appNumber, err = planApplicationInputDryRun(inputID, familyIDTypeFlag)
+	} else {
+		appNumber, err = resolveApplicationInput(context.Background(), inputID, familyIDTypeFlag)
 	}
-	appNumber, err := resolveApplicationInput(context.Background(), inputID, familyIDTypeFlag)
 	if err != nil {
 		return err
 	}
@@ -113,11 +130,11 @@ func runFamily(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 	client := api.DefaultClient
-	visited := make(map[string]string)
+	visited := make(map[string]familyVisit)
 
 	progress(fmt.Sprintf("Building family tree for %s (depth %d)...", appNumber, flagFamilyDepth))
 
-	tree := buildFamilyNode(ctx, client, appNumber, "", flagFamilyDepth, visited)
+	tree := buildFamilyNode(ctx, client, appNumber, "", "root", flagFamilyDepth, visited)
 
 	// Collect all unique application numbers and their relationship labels.
 	allAppNums := make([]string, 0, len(visited))
@@ -127,9 +144,11 @@ func runFamily(cmd *cobra.Command, args []string) error {
 	sortStrings(allAppNums)
 	allApps := make([]FamilyApplicationRef, 0, len(allAppNums))
 	for _, app := range allAppNums {
+		visit := visited[app]
 		allApps = append(allApps, FamilyApplicationRef{
 			ApplicationNumber: app,
-			Relationship:      visited[app],
+			Relationship:      visit.Relationship,
+			Direction:         visit.Direction,
 		})
 	}
 
@@ -160,10 +179,11 @@ func runFamily(cmd *cobra.Command, args []string) error {
 // buildFamilyNode recursively builds a FamilyNode by fetching continuity
 // and metadata for the given application number. It uses the visited set
 // to avoid cycles and redundant API calls.
-func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relationship string, depth int, visited map[string]string) FamilyNode {
+func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relationship, direction string, depth int, visited map[string]familyVisit) FamilyNode {
 	node := FamilyNode{
 		ApplicationNumber: appNumber,
 		Relationship:      relationship,
+		Direction:         direction,
 	}
 
 	// Mark as visited immediately to prevent cycles. Keep the first discovered
@@ -173,7 +193,7 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 		if rel == "" {
 			rel = "ROOT"
 		}
-		visited[appNumber] = rel
+		visited[appNumber] = familyVisit{Relationship: rel, Direction: direction}
 	}
 
 	// Fetch metadata for this application.
@@ -212,48 +232,45 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 
 	fw := contResp.PatentFileWrapperDataBag[0]
 
-	// Collect related application numbers from parents and children.
-	type relatedApp struct {
-		appNumber    string
-		relationship string
+	parents, children := collectFamilyRelatedApps(&fw, visited)
+	if len(parents)+len(children) > 0 {
+		progress(fmt.Sprintf("  Found %d related application(s) for %s.", len(parents)+len(children), appNumber))
 	}
 
-	var related []relatedApp
-
-	for _, p := range fw.ParentContinuityBag {
-		if p.ParentApplicationNumberText != "" && visited[p.ParentApplicationNumberText] == "" {
-			related = append(related, relatedApp{
-				appNumber:    p.ParentApplicationNumberText,
-				relationship: parentRelationship(p.ClaimParentageTypeCode),
-			})
-		}
-	}
-
-	for _, c := range fw.ChildContinuityBag {
-		if c.ChildApplicationNumberText != "" && visited[c.ChildApplicationNumberText] == "" {
-			related = append(related, relatedApp{
-				appNumber:    c.ChildApplicationNumberText,
-				relationship: childRelationship(c.ClaimParentageTypeCode),
-			})
-		}
-	}
-
-	if len(related) > 0 {
-		progress(fmt.Sprintf("  Found %d related application(s) for %s.", len(related), appNumber))
-	}
-
-	// Recursively build child nodes. Re-check visited before each recursion
-	// because an earlier sibling's subtree may have already visited an app
-	// that was in our related list.
-	for _, rel := range related {
-		if visited[rel.appNumber] != "" {
+	for _, rel := range parents {
+		if _, exists := visited[rel.ApplicationNumber]; exists {
 			continue
 		}
-		childNode := buildFamilyNode(ctx, client, rel.appNumber, rel.relationship, depth-1, visited)
-		node.Children = append(node.Children, childNode)
+		node.Parents = append(node.Parents, buildFamilyNode(ctx, client, rel.ApplicationNumber, rel.Relationship, rel.Direction, depth-1, visited))
+	}
+	for _, rel := range children {
+		if _, exists := visited[rel.ApplicationNumber]; exists {
+			continue
+		}
+		node.Children = append(node.Children, buildFamilyNode(ctx, client, rel.ApplicationNumber, rel.Relationship, rel.Direction, depth-1, visited))
 	}
 
 	return node
+}
+
+func collectFamilyRelatedApps(fw *types.PatentFileWrapper, visited map[string]familyVisit) (parents, children []familyRelatedApp) {
+	for _, p := range fw.ParentContinuityBag {
+		if p.ParentApplicationNumberText == "" {
+			continue
+		}
+		if _, exists := visited[p.ParentApplicationNumberText]; !exists {
+			parents = append(parents, familyRelatedApp{ApplicationNumber: p.ParentApplicationNumberText, Relationship: parentRelationship(p.ClaimParentageTypeCode), Direction: "parent"})
+		}
+	}
+	for _, c := range fw.ChildContinuityBag {
+		if c.ChildApplicationNumberText == "" {
+			continue
+		}
+		if _, exists := visited[c.ChildApplicationNumberText]; !exists {
+			children = append(children, familyRelatedApp{ApplicationNumber: c.ChildApplicationNumberText, Relationship: childRelationship(c.ClaimParentageTypeCode), Direction: "child"})
+		}
+	}
+	return parents, children
 }
 
 // parentRelationship normalizes a claim parentage type code for parent
@@ -311,7 +328,7 @@ func printTreeNode(node FamilyNode, prefix string, isLast bool) {
 	// Build the display line.
 	line := node.ApplicationNumber
 	if node.Relationship != "" {
-		line = fmt.Sprintf("[%s] %s", node.Relationship, line)
+		line = fmt.Sprintf("[%s %s] %s", strings.ToUpper(node.Direction), node.Relationship, line)
 	}
 	if node.PatentNumber != "" {
 		line += fmt.Sprintf(" (Pat. %s)", node.PatentNumber)
@@ -354,21 +371,29 @@ func printTreeNode(node FamilyNode, prefix string, isLast bool) {
 		fmt.Fprintf(os.Stdout, "%s%sTitle:  %s\n", infoPrefix, indentForInfo(prefix == ""), title)
 	}
 
-	// Print children.
-	for i, child := range node.Children {
+	printFamilyBranch("Parents", node.Parents, prefix, isLast)
+	printFamilyBranch("Children", node.Children, prefix, isLast)
+}
+
+func printFamilyBranch(label string, nodes []FamilyNode, prefix string, isLast bool) {
+	if len(nodes) == 0 {
+		return
+	}
+	if prefix == "" {
+		fmt.Fprintf(os.Stdout, "  %s:\n", label)
+	} else {
+		fmt.Fprintf(os.Stdout, "%s  %s:\n", prefix, label)
+	}
+	for i, child := range nodes {
 		var nextPrefix string
 		if prefix == "" {
-			nextPrefix = ""
+			nextPrefix = "  "
 		} else if isLast {
 			nextPrefix = prefix + "    "
 		} else {
 			nextPrefix = prefix + "│   "
 		}
-		// For root's children, use empty prefix.
-		if prefix == "" {
-			nextPrefix = ""
-		}
-		printTreeNode(child, nextPrefix, i == len(node.Children)-1)
+		printTreeNode(child, nextPrefix, i == len(nodes)-1)
 	}
 }
 
