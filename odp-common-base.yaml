@@ -1428,7 +1428,7 @@ components:
           example: 403
         error:
           example: Forbidden
-    
+
     Response404:
       type: object
       properties:
@@ -1439,7 +1439,7 @@ components:
         errorDetails:
           example: No matching records found, refine your search criteria and try again
         requestIdentifier:
-          example: 07c5c24d-bf8e-458c-9427-a038500d6e98  
+          example: 07c5c24d-bf8e-458c-9427-a038500d6e98
 
     Response500:
       type: object
@@ -1452,7 +1452,7 @@ components:
           example: Internal Server Error. Please contact Help Desk.
         requestIdentifier:
           example: 07c5c24d-bf8e-458c-9427-a038500d6e98
-    
+
     PetitionDecisionSearchRequest:
       type: object
       properties:
@@ -1523,11 +1523,11 @@ components:
           type: integer
           example: 1
         petitionDecisionDataBag:
-          type: array 
+          type: array
           items:
-            $ref: '#/components/schemas/PetitionDecisionAndDocuments'    
-          
-               
+            $ref: '#/components/schemas/PetitionDecisionAndDocuments'
+
+
     PetitionDecisionResponseBag:
       type: object
       properties:
@@ -1542,7 +1542,7 @@ components:
           type: array
           items:
              $ref: '#/components/schemas/PetitionDecisionFacet'
-        
+
 
     PetitionDecision:
        type: object
@@ -1627,9 +1627,9 @@ components:
             items:
               type: string
             example: ["35 USC 134"]
-    
-    
-    PetitionDecisionAndDocuments:  
+
+
+    PetitionDecisionAndDocuments:
         allOf:
          - $ref: '#/components/schemas/PetitionDecision'
         type: object
@@ -1638,7 +1638,7 @@ components:
             type: array
             items:
              $ref: '#/components/schemas/PetitionDecisionDocument'
-  
+
     PetitionDecisionFacetEntity:
           type: object
           properties:
@@ -1648,7 +1648,7 @@ components:
             count:
               type: integer
               example: 1
-              
+
     PetitionDecisionFacet:
             type: object
             properties:
@@ -1656,7 +1656,7 @@ components:
                 type: array
                 items:
                  $ref: '#/components/schemas/PetitionDecisionFacetEntity'
-                
+
               finalDecidingOfficeName:
                 type: array
                 items:
@@ -1676,7 +1676,7 @@ components:
               prosecutionStatusCodeDescriptionText:
                 type: array
                 items:
-                 $ref: '#/components/schemas/PetitionDecisionFacetEntity'                                                            
+                 $ref: '#/components/schemas/PetitionDecisionFacetEntity'
               petitionIssueConsideredTextBag:
                 type: array
                 items:
@@ -1702,7 +1702,7 @@ components:
                 items:
                  $ref: '#/components/schemas/PetitionDecisionFacetEntity'
 
-         
+
     PetitionDecisionDocument:
             type: object
             properties:

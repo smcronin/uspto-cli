@@ -2388,7 +2388,7 @@ paths:
             application/json:
               schema:
                 $ref: './odp-common-base.yaml#/components/schemas/Response500'
-                
+
   /api/v1/petition/decisions/{petitionDecisionRecordIdentifier}:
     x-ip-domain: Patent
     x-service-type: ["Search","Dissemination"]
@@ -2411,7 +2411,7 @@ paths:
               description: Petition decision number
         - name: includeDocuments
           in: query
-          description: This is a true or false...yes to include petition decision documents in the response and no to omit the petition decision documents from the response 
+          description: This is a true or false...yes to include petition decision documents in the response and no to omit the petition decision documents from the response
           schema:
             type: boolean
           example: true
@@ -2447,7 +2447,7 @@ paths:
             application/json:
               schema:
                 $ref: './odp-common-base.yaml#/components/schemas/Response500'
-                
+
   /api/v1/patent/applications/text-to-search:
     x-ip-domain: Patent
     x-service-type: [ "Search","Dissemination" ]
@@ -2519,21 +2519,21 @@ components:
       $ref: ./odp-common-base.yaml#/components/schemas/PatentSearchRequest
     PatentDownloadRequest:
       $ref: ./odp-common-base.yaml#/components/schemas/PatentDownloadRequest
-    PatentDataResponse:  
+    PatentDataResponse:
       $ref: ./odp-common-base.yaml#/components/schemas/PatentDataResponse
-    ApplicationMetaData:  
+    ApplicationMetaData:
       $ref: ./odp-common-base.yaml#/components/schemas/ApplicationMetaData
-    PatentTermAdjustment: 
+    PatentTermAdjustment:
       $ref: ./odp-common-base.yaml#/components/schemas/PatentTermAdjustment
     Assignment:
       $ref: ./odp-common-base.yaml#/components/schemas/Assignment
-    RecordAttorney:  
+    RecordAttorney:
       $ref: ./odp-common-base.yaml#/components/schemas/RecordAttorney
-    ParentContinuityData:  
+    ParentContinuityData:
       $ref: ./odp-common-base.yaml#/components/schemas/ParentContinuityData
-    ChildContinuityData:  
+    ChildContinuityData:
       $ref: ./odp-common-base.yaml#/components/schemas/ChildContinuityData
-    ForeignPriority:  
+    ForeignPriority:
       $ref: ./odp-common-base.yaml#/components/schemas/ForeignPriority
     EventData:
       $ref: ./odp-common-base.yaml#/components/schemas/EventData
@@ -2544,7 +2544,7 @@ components:
     GrantFileMetaData:
       $ref: ./odp-common-base.yaml#/components/schemas/GrantFileMetaData
     StatusCodeSearchResponse:
-      $ref: ./odp-common-base.yaml#/components/schemas/StatusCodeSearchResponse   
+      $ref: ./odp-common-base.yaml#/components/schemas/StatusCodeSearchResponse
     # BulkData
     BdssResponseProductBag:
       $ref: ./odp-common-base.yaml#/components/schemas/BdssResponseProductBag
@@ -2554,7 +2554,7 @@ components:
       $ref: ./odp-common-base.yaml#/components/schemas/PetitionDecisionResponseBag
     PetitionDecisionIdentifierResponseBag:
       $ref: ./odp-common-base.yaml#/components/schemas/PetitionDecisionIdentifierResponseBag
-   
+
     # Trial – Proceedings
     ProceedingDataResponse:
       $ref: ./trial-proceedings.yaml#/components/schemas/ProceedingDataResponse
@@ -2619,5 +2619,3 @@ components:
       $ref: ./trial-common.yaml#/components/schemas/Status413
     InternalError:
       $ref: ./trial-common.yaml#/components/schemas/InternalError
-
-    
