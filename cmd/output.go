@@ -65,12 +65,14 @@ func outputResultWithFacets(cmd *cobra.Command, data interface{}, pagination *ty
 // writeJSON outputs the standardized JSON envelope to stdout.
 func writeJSON(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue, opts OutputOptions) {
 	env := types.CLIResponse{
-		OK:         true,
-		Command:    cmd.Name(),
-		Pagination: pagination,
-		Results:    data,
-		Facets:     facets,
-		Version:    version,
+		OK:          true,
+		Command:     cmd.Name(),
+		CommandPath: cmd.CommandPath(),
+		Provider:    string(providerForCommand(cmd)),
+		Pagination:  pagination,
+		Results:     data,
+		Facets:      facets,
+		Version:     version,
 	}
 
 	var out []byte
@@ -196,14 +198,17 @@ func writeTable(data interface{}, opts OutputOptions) {
 // Used in JSON/NDJSON mode so agents can parse errors programmatically.
 func outputErrorJSON(errInfo *types.CLIError) {
 	env := types.CLIResponse{
-		OK:      false,
-		Version: version,
-		Error:   errInfo,
+		OK:          false,
+		Command:     activeCommand,
+		CommandPath: activePath,
+		Provider:    string(activeProvider),
+		Version:     version,
+		Error:       errInfo,
 	}
 
 	var out []byte
 	var err error
-	if flagMinify {
+	if flagMinify || flagFormat == "ndjson" {
 		out, err = json.Marshal(env)
 	} else {
 		out, err = json.MarshalIndent(env, "", "  ")

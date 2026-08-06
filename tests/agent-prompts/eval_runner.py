@@ -6,13 +6,13 @@ Runs each agent stress-test prompt through frix_headless.py and captures
 structured eval results to JSON files.
 
 Usage:
-    python tests/agent-prompts/eval_runner.py                    # Run all 10 prompts
+    python tests/agent-prompts/eval_runner.py                    # Run all discovered prompts
     python tests/agent-prompts/eval_runner.py --prompts 1,3,5    # Run specific prompts
-    python tests/agent-prompts/eval_runner.py --timeout 600      # Custom base timeout (P10 auto-bumped to >=900s)
+    python tests/agent-prompts/eval_runner.py --timeout 600      # Custom base timeout
     python tests/agent-prompts/eval_runner.py --dry-run           # Print prompts without running
 
 Output:
-    tests/agent-prompts/results/prompt01.json ... prompt10.json
+    tests/agent-prompts/results/promptNN.json (one per discovered prompt)
     tests/agent-prompts/results/eval_summary.json
 """
 
@@ -33,7 +33,7 @@ FRIX_ROOT = Path(r"C:\Users\sethc\dev\frix-agent")
 FRIX_HEADLESS = FRIX_ROOT / "frix_headless.py"
 RESULTS_DIR = SCRIPT_DIR / "results"
 WORKSPACE_BASE = SCRIPT_DIR / "workspaces"
-P10_MIN_TIMEOUT = 900
+MIN_TIMEOUT_BY_PROMPT = {10: 900}
 
 # Template for the structured output instruction (eval_file placeholder filled per-prompt)
 OUTPUT_INSTRUCTION_TEMPLATE = """\
@@ -56,9 +56,10 @@ Write this exact JSON schema (fill in your actual values):
 # Constraint prepended to every prompt
 CONSTRAINT = (
     "IMPORTANT: You may NOT use any Minesoft tools, patent-search tools, "
-    "or any other patent data source. This is an evaluation of the "
-    "uspto tool ONLY. All patent data must be retrieved exclusively "
-    "via the `uspto` command-line tool."
+    "generic web clients, or any other patent or trademark data source. "
+    "This is an evaluation of the uspto tool ONLY. All USPTO patent and "
+    "trademark data must be retrieved exclusively via the `uspto` "
+    "command-line tool. Local scripts may parse CLI output and artifacts."
 )
 
 
@@ -162,7 +163,9 @@ def run_prompt(
     full_prompt: str,
     eval_file: Path,
     timeout: int,
-    verbose: bool
+    verbose: bool,
+    position: int,
+    total_prompts: int,
 ) -> dict:
     """Run a single prompt through frix_headless.py and return the result."""
     workspace = WORKSPACE_BASE / f"prompt{prompt_num:02d}"
@@ -184,7 +187,11 @@ def run_prompt(
         "parse_error": None,
     }
 
-    print(f"  [{prompt_num:02d}/10] Running...", end=" ", flush=True)
+    print(
+        f"  [{position:02d}/{total_prompts:02d}] Prompt {prompt_num:02d}...",
+        end=" ",
+        flush=True,
+    )
     start = time.time()
 
     try:
@@ -280,7 +287,7 @@ def main():
     )
     parser.add_argument(
         "--timeout", type=int, default=600,
-        help="Base timeout per prompt in seconds (default: 600; prompt 10 uses at least 900)"
+        help="Base timeout per prompt in seconds (default: 600; selected long prompts may use a higher minimum)"
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true",
@@ -303,11 +310,6 @@ def main():
         requested = {int(n.strip()) for n in args.prompts.split(",")}
         prompt_files = [f for f in prompt_files if int(f.name[:2]) in requested]
 
-    # Validate frix_headless.py exists
-    if not FRIX_HEADLESS.exists():
-        print(f"Error: frix_headless.py not found at {FRIX_HEADLESS}", file=sys.stderr)
-        sys.exit(1)
-
     # Extract prompts and prepare eval file paths
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     prompts = []
@@ -327,11 +329,22 @@ def main():
         print(f"\n{len(prompts)} prompts prepared (dry-run, nothing executed)")
         return
 
+    # The dry-run path above is intentionally portable and needs no Frix checkout.
+    if not FRIX_HEADLESS.exists():
+        print(f"Error: frix_headless.py not found at {FRIX_HEADLESS}", file=sys.stderr)
+        sys.exit(1)
+
     print(f"\n{'='*70}")
     print("USPTO CLI SKILL EVALUATION")
     print(f"{'='*70}")
     print(f"Prompts:   {len(prompts)}")
-    print(f"Timeout:   {args.timeout}s base per prompt (P10 min {P10_MIN_TIMEOUT}s)")
+    timeout_overrides = ", ".join(
+        f"P{num:02d} min {seconds}s"
+        for num, seconds in sorted(MIN_TIMEOUT_BY_PROMPT.items())
+        if any(prompt_num == num for prompt_num, *_ in prompts)
+    )
+    timeout_note = f" ({timeout_overrides})" if timeout_overrides else ""
+    print(f"Timeout:   {args.timeout}s base per prompt{timeout_note}")
     print(f"Results:   {RESULTS_DIR}")
     print(f"Workspace: {WORKSPACE_BASE}")
     print(f"{'='*70}\n")
@@ -339,11 +352,19 @@ def main():
     all_results = []
     total_start = time.time()
 
-    for num, text, full, fname, eval_file in prompts:
+    for position, (num, text, full, fname, eval_file) in enumerate(prompts, start=1):
         timeout = args.timeout
-        if num == 10 and timeout < P10_MIN_TIMEOUT:
-            timeout = P10_MIN_TIMEOUT
-        result = run_prompt(num, text, full, eval_file, timeout, args.verbose)
+        timeout = max(timeout, MIN_TIMEOUT_BY_PROMPT.get(num, timeout))
+        result = run_prompt(
+            num,
+            text,
+            full,
+            eval_file,
+            timeout,
+            args.verbose,
+            position,
+            len(prompts),
+        )
         all_results.append(result)
 
         # Save individual result JSON (without raw stdout/stderr for cleanliness)

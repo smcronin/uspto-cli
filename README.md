@@ -1,8 +1,8 @@
 # uspto
 
-Agent-ready CLI for the [USPTO Open Data Portal](https://data.uspto.gov) API. Search patents, pull file wrappers, extract grant XML, browse PTAB proceedings, download bulk data — all from the terminal.
+Agent-ready CLI for USPTO patent and trademark data. Search patents through the [Open Data Portal](https://data.uspto.gov), discover marks through the official Trademark Search companion service, and retrieve official trademark status, file wrappers, images, and other artifacts from TSDR — all from one terminal.
 
-**First CLI tool built for the data.uspto.gov API.** Single static binary, zero runtime dependencies, 50+ API endpoints.
+Single static binary, zero runtime dependencies, structured output, safe bulk workflows, and raw escape hatches for agents.
 
 ## Install
 
@@ -14,28 +14,54 @@ go install github.com/smcronin/uspto-cli/cmd/uspto@latest
 # https://github.com/smcronin/uspto-cli/releases
 ```
 
-## API Key
+## Trademark Quick Start
 
-An API key is required. See the [setup guide](docs/api-key-setup.md) for full instructions.
-
-1. Create an account at [data.uspto.gov](https://data.uspto.gov/apis/getting-started)
-2. Verify your identity through ID.me (one-time)
-3. Copy your key from the [MyODP dashboard](https://data.uspto.gov/myodp)
+Trademark discovery is anonymous; official record retrieval needs a separate TSDR key. An Open Data Portal patent key does **not** work at TSDR.
 
 ```bash
-# Recommended: store key in global uspto config
-uspto config set-api-key your-key-here
+# Search candidate marks without any API key
+uspto trademark search --wordmark "OPENAI" --status live --limit 10
 
-# Or set in your shell environment
-export USPTO_API_KEY=your-key-here
+# Configure the separate TSDR key from https://account.uspto.gov/api-manager/
+uspto config set-tsdr-api-key "YOUR_TSDR_KEY"
 
-# Or pass directly per command
-uspto search --api-key your-key-here --title "machine learning"
+# Hydrate a candidate serial number from the official TSDR record
+uspto trademark case status sn:97054561
+uspto trademark case get sn:97054561 -f json
+
+# Inspect its file wrapper and build a reusable local bundle
+uspto trademark docs list sn:97054561
+uspto trademark case bundle sn:97054561 --output ./openai-mark
 ```
 
-One key per user — no organization-wide keys. Keys must not be shared (USPTO policy). Keys don't expire if used at least once per year. See the [USPTO FAQ](https://data.uspto.gov/support/faq) for more details.
+`trademark search` uses the public backend currently used by the official [Trademark Search](https://tmsearch.uspto.gov/) UI. USPTO does not publish that backend as a stable developer API, so treat search hits as candidates and hydrate selected identifiers through TSDR. See the [trademark API reference](docs/tsdr-api/README.md) for the verified service boundaries, endpoint inventory, and schemas.
 
-## Quick Start
+## API Keys and Service Boundaries
+
+USPTO patent and trademark APIs do not share one credential:
+
+| Task | Host/service | Authentication | CLI configuration |
+| --- | --- | --- | --- |
+| Patent search, file wrappers, PTAB, petitions, and bulk-product discovery | Open Data Portal at `api.uspto.gov` | ODP key in `X-API-KEY` | `USPTO_API_KEY` / `uspto config set-api-key` |
+| Trademark discovery by wording, owner, goods/services, or class | Trademark Search companion at `tmsearch.uspto.gov` | None currently required | None |
+| Official trademark status, documents, images, and case artifacts | TSDR at `tsdrapi.uspto.gov` | Separate TSDR key in `USPTO-API-KEY` | `USPTO_TSDR_API_KEY` / `uspto config set-tsdr-api-key` |
+
+Get the ODP key from the [MyODP dashboard](https://data.uspto.gov/myodp). Get the separate TSDR key from the [USPTO API Manager](https://account.uspto.gov/api-manager/). Never send one service's key to the other service.
+
+```bash
+# Recommended: persist both credentials in the user-level config
+uspto config set-api-key "YOUR_ODP_KEY"
+uspto config set-tsdr-api-key "YOUR_TSDR_KEY"
+uspto config show
+
+# Environment-variable alternative
+export USPTO_API_KEY="YOUR_ODP_KEY"
+export USPTO_TSDR_API_KEY="YOUR_TSDR_KEY"
+```
+
+The legacy `TSDR_API_KEY` environment name is accepted for compatibility; new setups should use `USPTO_TSDR_API_KEY`. See the [API-key setup guide](docs/api-key-setup.md) for account steps, dotenv import, precedence, and key-handling guidance.
+
+## Patent Quick Start
 
 ```bash
 # Set your API key once (global)
@@ -67,16 +93,18 @@ uspto search --assignee "Google" --granted -f json
 
 ### Config
 
-API keys are written at runtime to your user config file and are never baked into the binary during build/package.
+API keys are written at runtime to your user config file and are never baked into the binary during build/package. The two setters preserve the other service's credential.
 
 ```bash
-# Save key to global config (works from any directory)
-uspto config set-api-key your-key-here
+# Save both keys to global config (works from any directory)
+uspto config set-api-key "YOUR_ODP_KEY"
+uspto config set-tsdr-api-key "YOUR_TSDR_KEY"
 
-# Import key from a dotenv file
+# Import keys from a dotenv file without putting them in shell history
 uspto config set-api-key --from-dotenv .env
+uspto config set-tsdr-api-key --from-dotenv .env
 
-# Show config file location and key status (masked)
+# Show the config location and both key statuses (masked)
 uspto config show
 ```
 
@@ -92,6 +120,105 @@ uspto update --check
 # Install a specific version
 uspto update --version v0.1.2
 ```
+
+### Trademark Search and TSDR
+
+Use `uspto trademark` (aliases: `tm`, `marks`) for the complete trademark surface.
+
+| Goal | Command |
+| --- | --- |
+| Discover candidate marks | `trademark search` |
+| Compact or complete official case data | `trademark case status`, `case get` |
+| Goods/services, parties, prosecution events, designs, assignments, publications | `trademark case goods`, `parties`, `events`, `designs`, `assignments`, `publications` |
+| Registration maintenance data | `trademark case maintenance` |
+| Export status JSON/XML/HTML/PDF/ZIP | `trademark case export` |
+| Create an agent-ready local case directory | `trademark case bundle` |
+| Retrieve many cases in server-safe chunks | `trademark batch` |
+| List/filter/download file-wrapper documents | `trademark docs list`, `info`, `page`, `fetch`, `download`, `download-all`, `bundle`, `selected` |
+| Download the mark drawing | `trademark image` |
+| Check update metadata or inspect an opaque case-map token | `trademark last-update`, experimental `trademark casemap` |
+| Inspect sound/motion-mark media | `trademark multimedia` |
+| Retrieve the live contract or any safe GET/POST retrieval route | `trademark api-spec`, `trademark request` |
+
+#### Search and candidate hydration
+
+Friendly search flags compile to the official Trademark Search field syntax. Positional text is always literal combined-mark text—even when it contains punctuation such as colons. Use `--query` for expert field tags: `CM` mark, `ON` owner, `AT` attorney, `SN` serial, `RN` registration, `GS` goods/services, `IC` international class, `CC` coordinated class, `DC` design code, and `LD` live/dead.
+
+```bash
+# No API key required for these searches
+uspto trademark search "OPENAI"
+uspto trademark search --owner "Nike" --class 025 --status live --limit 25
+uspto trademark search --query 'CM:APPLE AND GS:"computer software"' --count-only -f json -q
+uspto trademark search --wordmark ACME --all --max-results 5000 -f ndjson -q
+
+# Advanced search-body escape hatch (file or stdin)
+uspto trademark search --raw-body query.json --raw-response -f json
+```
+
+Search is an undocumented companion contract used by the official UI, not TSDR. The CLI discovers its current versioned service URL at runtime, but callers should still tolerate schema or availability changes.
+When using `--raw-body`, put paging, `_source`, sorts, and aggregations in the
+JSON; typed shaping flags are rejected so an agent cannot mistake ignored flags
+for applied controls.
+
+#### Identifiers and official case records
+
+Prefix identifiers whenever the namespace matters:
+
+| Prefix | Identifier | Example |
+| --- | --- | --- |
+| `sn:` | U.S. application serial number | `sn:97054561` |
+| `rn:` | U.S. registration number | `rn:3500030` |
+| `ir:` | International Registration / Madrid number | `ir:0835690` |
+| `ref:` | Opaque USPTO reference identifier | `ref:Z1231384` |
+| `pn:` | Expungement/reexamination proceeding number | `pn:2022-100001E` |
+
+Human punctuation is normalized (`72-131351` becomes `72131351`), but significant letters and leading zeroes are preserved. An unprefixed eight-digit number is treated as a serial number; use `--id-type` or a prefix for anything ambiguous.
+
+```bash
+uspto trademark case status sn:97054561 rn:3500030 -f json
+uspto trademark case get sn:97054561 --representation parsed -f json
+uspto trademark case goods sn:97054561
+uspto trademark case parties sn:97054561 -f json
+uspto trademark case events sn:97054561 --latest 20
+uspto trademark case events sn:97054561 --code R.PR --from 2024-01-01 -f json
+```
+
+#### Batch, documents, exports, and raw access
+
+```bash
+# Batch full case transactions in chunks of at most 25
+uspto trademark batch serial 97054561 78787878 --chunk-size 25 -f json
+uspto trademark batch registration --ids-file registration-numbers.txt -f json -q
+
+# Inspect metadata first, then download only what is needed
+uspto trademark docs list sn:72131351 --type SPE --from 2003-01-01 --to 2003-12-31 -f json
+# Fast metadata-only triage omits locators; rerun without --fast before selecting an index
+uspto trademark docs list sn:72131351 --type SPE --fast
+uspto trademark docs download sn:72131351 DOCUMENT_ID --asset pdf -o document.pdf
+uspto trademark docs bundle sn:72131351 sn:76515878 --type SPE --asset zip -o specimens.zip
+uspto trademark docs download-all sn:72131351 --asset pdf -o ./documents --continue-on-error
+
+# Numeric indices resolve against the current filters and sort. They are scoped
+# to each case, so pair serialNumber with index in a multi-case list. Modern CMS
+# entries without a legacy document ID use their keyless public USPTO URL.
+uspto trademark docs info sn:97238896 2 --sort date:D -f json -q
+uspto trademark docs fetch sn:97238896 1 --sort date:D -o native-document.xml
+uspto trademark docs selected sn:72131351 --docs 1,3 --asset pdf -o selected.pdf
+
+# Export one official status artifact or a reproducible local case bundle
+uspto trademark case export sn:97054561 --asset xml -o status.xml
+uspto trademark case export sn:97054561 --asset pdf -o status.pdf
+uspto trademark case bundle sn:97054561 -o ./case-97054561
+uspto trademark case bundle sn:97054561 -o ./case-97054561-full --include-heavy
+
+# Safe, same-origin GET/POST retrieval escape hatch for routes not wrapped above
+uspto trademark api-spec -o tsdr-swagger.json
+uspto trademark request /ts/cd/maintenance/rn3500038/info.json -f json
+uspto trademark request /ts/cd/casedocs/sn72131351/mega-bundle --method POST --param case=false --param docs=4 --param assignments= --param prosecutionHistory= -o selected.pdf --expected pdf --dry-run
+uspto trademark request /ts/cd/pdfs --param f=/safe/server/value --output file.pdf --download --expected pdf
+```
+
+`trademark request` accepts only relative paths on the configured TSDR origin and strips credentials on cross-host redirects. Parameter order is preserved, and same-namespace identifier commas remain literal for the live bundle service. Binary/download-mode calls require `--output` before any request. The live Swagger advertises six retrieval POST variants, though live selected-bundle POSTs returned gateway 403 during verification; prefer their GET aliases and use POST for contract testing/future compatibility. Use `--download` for PDF/ZIP routes so the stricter artifact limiter is applied. The full verified reference is in [docs/tsdr-api](docs/tsdr-api/README.md).
 
 ### Patent Search
 
@@ -306,7 +433,7 @@ uspto status "abandoned"      # Search by description
 
 ## Output Formats
 
-All commands support four output formats via `-f`:
+Data-returning commands support four output formats via `-f`:
 
 | Format   | Flag         | Description                              |
 |----------|--------------|------------------------------------------|
@@ -317,11 +444,15 @@ All commands support four output formats via `-f`:
 
 ```bash
 # JSON envelope structure
-# {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.2.4"}
+# {"ok": true, "command": "search", "pagination": {...}, "results": [...], "version": "0.3.0"}
 
 # Minified JSON for piping
 uspto search --title sensor -f json --minify -q
+uspto trademark search --owner "OpenAI" -f json --minify -q
+uspto trademark case get sn:97054561 -f json --minify -q
 ```
+
+Binary trademark commands preflight and write atomically to `--output`, validate the expected payload signature, emit a streaming SHA-256, and refuse to replace existing files unless `--overwrite` is present. `trademark case bundle` includes those hashes in its manifest and preserves the lossless source XML alongside parsed JSON.
 
 ## Examples & Use Cases
 
@@ -339,7 +470,7 @@ If your agent runtime loads skills from a user directory (for example `~/.claude
 
 Built for AI agents and automation:
 
-- **Structured JSON envelope** with `ok`, `command`, `pagination`, `results`, `facets`, `version`
+- **Structured JSON envelope** with `ok`, `command`, `commandPath`, `provider`, `pagination`, `results`, `facets`, `version`
 - **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error
 - **`--dry-run`** shows the API request without executing (all commands)
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
@@ -350,19 +481,34 @@ Built for AI agents and automation:
 - **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command
 - **NDJSON** format for streaming large result sets
 - **Grant XML extraction** (`claims`, `citations`, `abstract`, `description`, `fulltext`) for structured patent text
+- **Typed trademark identifiers** prevent silent serial/registration/Madrid namespace mistakes
+- **Candidate-to-record workflow** separates anonymous trademark discovery from authoritative TSDR hydration
+- **Schema-tolerant trademark parsing** exposes useful case views and a generic ST.96 element tree under `raw`; retain an XML export when namespace/lexical fidelity matters
+- **Resumable trademark batching** chunks requests at 25 cases and reports missed/oversized elements
+- **Safe artifact handling** validates PDF/ZIP/PNG/XML/JSON/HTML before atomic writes
+- **Same-origin raw access** rejects absolute URLs so a TSDR credential cannot be sent to another host
+
+A strong agent workflow is: run a narrow `trademark search`; retain source/provenance and candidate IDs; deduplicate; run `case status` or `batch`; then request full case JSON, document metadata, and only the binary artifacts needed for selected records. Use `--dry-run` to inspect planned routes and `-f json --minify -q` for machine-readable calls.
 
 ## Rate Limiting
 
-Built-in rate limiter respects USPTO limits automatically:
-- **Burst limit: 1** — strictly sequential requests per API key
-- **Cross-process coordination** via file-based state
-- **429 auto-retry** — 3 attempts with 5-second backoff
-- **Meta data APIs:** 5M calls/week
-- **Document APIs:** 1.2M calls/week
+The built-in limiters coordinate across processes and keep requests sequential per key. Limits differ by service.
+
+For TSDR, USPTO publishes these per-key tiers:
+
+| Request class | Peak, 5 a.m.–10 p.m. Eastern | Off-peak, 10 p.m.–5 a.m. Eastern |
+| --- | ---: | ---: |
+| All requests | 60/minute | 120/minute |
+| PDF/ZIP downloads | 4/minute | 12/minute |
+| Multi-case PDF/ZIP downloads | 4/minute | 12/minute |
+
+The CLI conservatively leaves at least 1 second between TSDR metadata calls and 15 seconds between PDF/ZIP calls, honors `Retry-After` as a minimum, and uses a shared file-based limiter so parallel agents do not independently spend the same quota. It auto-retries waits of at most 30 seconds; longer provider windows return a typed rate-limit error with `error.retryAfterSeconds` so the caller can resume later without an early retry. Prefer metadata-first filtering and avoid unnecessary `--include-heavy` bundles.
+
+Patent ODP quotas remain service-specific: metadata APIs permit 5M calls/week and document APIs 1.2M calls/week. See the [ODP rate-limit reference](docs/uspto-api/rate-limits.md) and [TSDR operations reference](docs/tsdr-api/operations.md).
 
 ## Disclaimer
 
-This project is not affiliated with, endorsed by, or sponsored by the United States Patent and Trademark Office (USPTO). Data provided by the [USPTO Open Data Portal API](https://data.uspto.gov) (api.uspto.gov).
+This project is not affiliated with, endorsed by, or sponsored by the United States Patent and Trademark Office (USPTO). Patent data comes from the [USPTO Open Data Portal](https://data.uspto.gov); trademark discovery and record data come from USPTO Trademark Search and TSDR. Review the [official TSDR FAQ](https://tsdr.uspto.gov/faqview) and [USPTO trademark API guide](https://www.uspto.gov/sites/default/files/documents/tm-enterprise-api-user-guide-v2.pdf) for the governing service documentation.
 
 ## License
 

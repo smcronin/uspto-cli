@@ -1,6 +1,6 @@
 ---
 name: uspto
-description: "Search patents, get application data, browse PTAB proceedings, download documents, and analyze patent families using the uspto tool (USPTO Open Data Portal API)."
+description: "Search and retrieve USPTO patent and trademark data: patent applications, PTAB, file wrappers, families, official Trademark Search, and TSDR cases/documents/images using the uspto CLI."
 ---
 
 # USPTO CLI
@@ -8,6 +8,8 @@ description: "Search patents, get application data, browse PTAB proceedings, dow
 ## When to Use
 
 Use this skill when the user asks to:
+- Search trademarks by wordmark, owner, goods/services, class, design code, attorney, date, or live/dead status
+- Retrieve trademark status, owners, prosecution events, assignments, maintenance data, documents, or mark images through TSDR
 - Search for patents by keyword, inventor, assignee, CPC class, examiner, or date range
 - Look up a specific patent application's metadata, prosecution history, continuity, or assignments
 - Download patent documents (PDFs, DOCX, XML) from the file wrapper
@@ -22,7 +24,9 @@ Use this skill when the user asks to:
 
 ## Prerequisites
 
-The `uspto` binary must be installed and on PATH. The user needs a USPTO API key from the **ODP** (Open Data Portal) at `api.uspto.gov`.
+The `uspto` binary must be installed and on PATH. Patent ODP and trademark
+TSDR are separate systems with separate credentials. Anonymous Trademark
+Search needs no key.
 
 **Install:**
 ```bash
@@ -40,10 +44,24 @@ uspto config show                             # Verify key status
 
 If the user doesn't have a key: create account at https://data.uspto.gov/apis/getting-started, verify via ID.me, copy key from https://data.uspto.gov/myodp.
 
+For trademark case/status/document retrieval, obtain a separate TSDR key from
+https://account.uspto.gov/api-manager/ and configure it with:
+
+```bash
+uspto config set-tsdr-api-key your-tsdr-key
+uspto config set-tsdr-api-key --from-dotenv .env
+uspto config show
+```
+
+The ODP key does not work at TSDR. Read
+[references/trademarks.md](references/trademarks.md) before trademark work;
+it contains the service decision table, identifier rules, full command map,
+agent workflows, rate limits, and recovery guidance.
+
 ## Output Formats
 
 Always use `-f json -q` when calling the CLI programmatically:
-- `-f json` gives a structured envelope: `{ ok, command, pagination, results, facets, version, error }`
+- `-f json` gives a structured envelope: `{ ok, command, commandPath, provider, pagination, results, facets, version, error }`
 - `-q` (quiet) suppresses stderr progress messages
 - Add `--minify` for compact JSON
 - On `uspto search` only, add `--fields` to select specific response fields and save tokens
@@ -63,6 +81,22 @@ Exit codes: 0=OK, 1=general, 2=usage/validation, 3=auth-failure, 4=not-found, 5=
 | `US20250087686A1` | Use `search --pub-number US20250087686A1` first to get the app number |
 
 ## Commands Reference
+
+### Trademarks
+
+For any trademark request, read
+[references/trademarks.md](references/trademarks.md). The shortest safe pattern
+is discovery through keyless search followed by authoritative TSDR hydration:
+
+```bash
+uspto trademark search --wordmark "OPENAI" --status live -f json -q
+uspto trademark case get sn:97054561 -f json -q
+uspto trademark docs list sn:97054561 -f json -q
+```
+
+Case and document verbs are nested: use `trademark case status` and
+`trademark docs list`, not `trademark status` or `trademark list`. The CLI
+rejects omitted nesting with exit 2 and an actionable hint.
 
 ### Patent Bundle
 
@@ -288,7 +322,9 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 
 - **Reverse/forward citations**: ODP only gives what a patent cites (`app citations`), NOT what cites it. Reverse citations require PatentsView (`search.patentsview.org`, DIFFERENT API key).
 - **Disambiguated entities**: No inventor/assignee clustering or co-inventor networks.
-- **Trademarks**: Use TSDR API (`tsdrapi.uspto.gov`, separate key from `account.uspto.gov/api-manager`).
+- **Corpus-wide trademark analysis**: TSDR is identifier retrieval, not a
+  bulk/full-text corpus API. Use `trademark search` for discovery or current
+  ODP bulk trademark products plus a local index for corpus-scale work.
 - **Full-text body search**: Free-text search hits titles and indexed metadata only, not specification text.
 
 **Do NOT confuse API keys**: ODP (`X-API-KEY`, from data.uspto.gov/myodp) != PatentsView != TSDR. Completely separate auth systems.

@@ -16,6 +16,21 @@ func printDryRunGET(path string, params map[string]string) {
 	printDryRunParams(params)
 }
 
+// printDryRunEncodedGET preserves a provider-required raw query order.
+func printDryRunEncodedGET(path, encodedQuery string) {
+	printDryRunEncodedRequest("GET", path, encodedQuery)
+}
+
+// printDryRunEncodedRequest preserves repeated parameters, explicit empty
+// values, and provider-required ordering exactly as they will be sent.
+func printDryRunEncodedRequest(method, path, encodedQuery string) {
+	fmt.Fprintf(os.Stderr, "%s %s", method, path)
+	if encodedQuery != "" {
+		fmt.Fprintf(os.Stderr, "?%s", encodedQuery)
+	}
+	fmt.Fprintln(os.Stderr)
+}
+
 // printDryRunPOST prints a dry-run POST request with optional query params and body.
 func printDryRunPOST(path string, params map[string]string, body interface{}) {
 	fmt.Fprintf(os.Stderr, "POST %s\n", path)
@@ -36,10 +51,8 @@ func printDryRunParams(params map[string]string) {
 		return
 	}
 	keys := make([]string, 0, len(params))
-	for k, v := range params {
-		if v != "" {
-			keys = append(keys, k)
-		}
+	for k := range params {
+		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	if len(keys) == 0 {

@@ -19,13 +19,15 @@ import (
 // Every command wraps its results in this structure for consistent parsing
 // by both human users and AI agents.
 type CLIResponse struct {
-	OK         bool                    `json:"ok"`
-	Command    string                  `json:"command"`
-	Pagination *PaginationMeta         `json:"pagination,omitempty"`
-	Results    any                     `json:"results"`
-	Facets     map[string][]FacetValue `json:"facets,omitempty"`
-	Version    string                  `json:"version"`
-	Error      *CLIError               `json:"error,omitempty"`
+	OK          bool                    `json:"ok"`
+	Command     string                  `json:"command"`
+	CommandPath string                  `json:"commandPath,omitempty"`
+	Provider    string                  `json:"provider,omitempty"`
+	Pagination  *PaginationMeta         `json:"pagination,omitempty"`
+	Results     any                     `json:"results"`
+	Facets      map[string][]FacetValue `json:"facets,omitempty"`
+	Version     string                  `json:"version"`
+	Error       *CLIError               `json:"error,omitempty"`
 }
 
 // PaginationMeta contains offset-based pagination metadata for the CLI envelope.
@@ -38,10 +40,11 @@ type PaginationMeta struct {
 
 // CLIError is the structured error payload for JSON-mode error output.
 type CLIError struct {
-	Code    int    `json:"code"`
-	Type    string `json:"type"`
-	Message string `json:"message"`
-	Hint    string `json:"hint,omitempty"`
+	Code              int    `json:"code"`
+	Type              string `json:"type"`
+	Message           string `json:"message"`
+	Hint              string `json:"hint,omitempty"`
+	RetryAfterSeconds int64  `json:"retryAfterSeconds,omitempty"`
 }
 
 // ExitCodes defines differentiated exit codes for agent retry logic.
