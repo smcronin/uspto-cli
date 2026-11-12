@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -269,8 +272,12 @@ func flattenToMap(v interface{}) map[string]string {
 		return result
 	}
 
+	// Decode numbers as json.Number so integers keep their exact digits
+	// instead of passing through float64.
 	var raw map[string]interface{}
-	if err := json.Unmarshal(b, &raw); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&raw); err != nil {
 		// Not an object; treat as scalar.
 		result["value"] = strings.TrimSpace(string(b))
 		return result
@@ -296,10 +303,37 @@ func flattenMap(prefix string, m map[string]interface{}, out map[string]string) 
 			out[key] = string(b)
 		case nil:
 			out[key] = ""
+		case json.Number:
+			out[key] = formatJSONNumber(val)
+		case float64:
+			out[key] = formatFloat(val)
 		default:
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
+}
+
+// formatJSONNumber renders a decoded JSON number for CSV/table cells. Integers
+// are printed digit for digit; anything else is formatted as a float.
+func formatJSONNumber(n json.Number) string {
+	if _, err := n.Int64(); err == nil {
+		return n.String()
+	}
+	f, err := n.Float64()
+	if err != nil {
+		return n.String()
+	}
+	return formatFloat(f)
+}
+
+// formatFloat prints whole numbers as plain integers (fmt's %v switches to
+// exponent notation at 1e6, turning a file size of 123456789 into
+// 1.23456789e+08). Fractional values keep fmt's default formatting.
+func formatFloat(f float64) string {
+	if f == math.Trunc(f) && math.Abs(f) < 1e21 {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	return fmt.Sprintf("%v", f)
 }
 
 // sortStrings sorts a string slice in place (simple insertion sort to avoid
