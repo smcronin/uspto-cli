@@ -67,6 +67,7 @@ type patentBundleDownloadResult struct {
 	DocumentCode string `json:"documentCode"`
 	OfficialDate string `json:"officialDate"`
 	Path         string `json:"path,omitempty"`
+	RenamedFrom  string `json:"renamedFrom,omitempty"`
 	Error        string `json:"error,omitempty"`
 }
 
@@ -504,6 +505,11 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 		return results, downloaded, skipped, failed
 	}
 
+	// Documents filed together share an official date and code, so their
+	// default names collide. Number the later ones, as download-all does,
+	// instead of letting each overwrite the last.
+	seenPaths := map[string]int{}
+
 	for i, doc := range docs {
 		pdfURL := findPDFOption(&doc)
 		if pdfURL == "" {
@@ -511,7 +517,8 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 			continue
 		}
 
-		outPath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, ".pdf"))
+		basePath := filepath.Join(outDir, defaultOutputPath(&doc, appNumber, ".pdf"))
+		outPath, collided := uniqueOutputPath(basePath, seenPaths)
 		savedPath, dlErr := api.DefaultClient.DownloadDocument(ctx, pdfURL, outPath)
 		if dlErr != nil {
 			failed++
@@ -524,11 +531,16 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 			continue
 		}
 		downloaded++
+		renamedFrom := ""
+		if collided {
+			renamedFrom = basePath
+		}
 		results = append(results, patentBundleDownloadResult{
 			Index:        i + 1,
 			DocumentCode: doc.DocumentCode,
 			OfficialDate: doc.OfficialDate,
 			Path:         savedPath,
+			RenamedFrom:  renamedFrom,
 		})
 	}
 
