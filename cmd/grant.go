@@ -71,33 +71,44 @@ func grantPatentNumber(g *types.PatentGrantXML) string {
 	return g.BibData.PublicationRef.DocumentID.DocNum
 }
 
+var (
+	xmlTagRE         = regexp.MustCompile(`<[^>]+>`)
+	xmlProcInstRE    = regexp.MustCompile(`<\?[^?]+\?>`)
+	xmlParaOpenRE    = regexp.MustCompile(`<p[^>]*>`)
+	whitespaceRunRE  = regexp.MustCompile(`\s+`)
+	inlineSpaceRunRE = regexp.MustCompile(`[^\S\n]+`)
+	blankLineRunRE   = regexp.MustCompile(`\n{3,}`)
+)
+
 // stripXMLTags removes XML tags and normalizes whitespace from inner XML text.
+//
+// Markup is removed before entities are decoded. In inner XML every literal
+// "<" is markup, while "&lt;" is text; decoding first would turn "x &lt; 5"
+// into something that looks like the start of a tag and delete what follows.
 func stripXMLTags(s string) string {
+	// Remove XML processing instructions and tags.
+	s = xmlProcInstRE.ReplaceAllString(s, " ")
+	s = xmlTagRE.ReplaceAllString(s, " ")
 	s = html.UnescapeString(s)
-	re := regexp.MustCompile(`<[^>]+>`)
-	s = re.ReplaceAllString(s, " ")
-	// Remove XML processing instructions too.
-	pi := regexp.MustCompile(`<\?[^?]+\?>`)
-	s = pi.ReplaceAllString(s, " ")
-	s = regexp.MustCompile(`\s+`).ReplaceAllString(s, " ")
+	s = whitespaceRunRE.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
 }
 
 // stripXMLTagsPreserveParagraphs removes XML tags but preserves paragraph breaks.
+// As in stripXMLTags, entities are decoded only after the markup is gone.
 func stripXMLTagsPreserveParagraphs(s string) string {
-	s = html.UnescapeString(s)
 	// Replace paragraph tags with double newline.
-	s = regexp.MustCompile(`<p[^>]*>`).ReplaceAllString(s, "\n\n")
+	s = xmlParaOpenRE.ReplaceAllString(s, "\n\n")
 	s = strings.ReplaceAll(s, "</p>", "")
 	// Replace processing instructions with paragraph breaks.
-	s = regexp.MustCompile(`<\?[^?]+\?>`).ReplaceAllString(s, "\n\n")
+	s = xmlProcInstRE.ReplaceAllString(s, "\n\n")
 	// Remove all other tags.
-	re := regexp.MustCompile(`<[^>]+>`)
-	s = re.ReplaceAllString(s, " ")
+	s = xmlTagRE.ReplaceAllString(s, " ")
+	s = html.UnescapeString(s)
 	// Normalize runs of whitespace within lines.
-	s = regexp.MustCompile(`[^\S\n]+`).ReplaceAllString(s, " ")
+	s = inlineSpaceRunRE.ReplaceAllString(s, " ")
 	// Normalize multiple blank lines to double newline.
-	s = regexp.MustCompile(`\n{3,}`).ReplaceAllString(s, "\n\n")
+	s = blankLineRunRE.ReplaceAllString(s, "\n\n")
 	return strings.TrimSpace(s)
 }
 
