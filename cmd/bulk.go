@@ -220,11 +220,21 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 	}
 
 	files := product.ProductFileBag.FileDataBag
+	// The total is the product's full file count, not the number left after
+	// --limit, so callers can tell a truncated listing from a complete one.
+	total := len(files)
+	if product.ProductFileBag.Count > total {
+		total = product.ProductFileBag.Count
+	}
 	if bulkFilesLimit > 0 && bulkFilesLimit < len(files) {
 		files = files[:bulkFilesLimit]
 	}
 	if !flagQuiet {
-		fmt.Fprintf(os.Stderr, "%d files available for %s\n", len(files), productID)
+		if len(files) < total {
+			fmt.Fprintf(os.Stderr, "%d files available for %s (showing %d)\n", total, productID, len(files))
+		} else {
+			fmt.Fprintf(os.Stderr, "%d files available for %s\n", len(files), productID)
+		}
 	}
 
 	var pagination *types.PaginationMeta
@@ -232,8 +242,8 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 		pagination = &types.PaginationMeta{
 			Offset:  0,
 			Limit:   len(files),
-			Total:   len(files),
-			HasMore: false,
+			Total:   total,
+			HasMore: len(files) < total,
 		}
 	}
 

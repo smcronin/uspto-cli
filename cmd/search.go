@@ -563,8 +563,17 @@ func validateSearchInputs() error {
 		return err
 	}
 	for _, expr := range searchFlags.filters {
-		if !strings.Contains(expr, "=") {
+		name, value, ok := strings.Cut(expr, "=")
+		if !ok {
 			return fmt.Errorf("invalid --filter %q: expected field=value", expr)
+		}
+		// An empty side used to be dropped silently, which ran the search
+		// without the filter the caller asked for.
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("invalid --filter %q: missing field name before '='", expr)
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("invalid --filter %q: missing value after '='", expr)
 		}
 	}
 	return nil

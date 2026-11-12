@@ -493,3 +493,37 @@ func TestRunSearchAllPagesCSV_ClientSideConcat(t *testing.T) {
 		t.Fatalf("csv output missing concatenated second-page row A101, got:\n%s", s)
 	}
 }
+
+func TestValidateSearchInputs_FilterNeedsFieldAndValue(t *testing.T) {
+	origFlags := searchFlags
+	defer func() { searchFlags = origFlags }()
+
+	tests := []struct {
+		name    string
+		filter  string
+		wantErr string
+	}{
+		{name: "field and value", filter: "applicationTypeLabelName=Utility"},
+		{name: "value containing equals", filter: "docketNumber=A=B"},
+		{name: "no equals sign", filter: "applicationTypeLabelName", wantErr: "expected field=value"},
+		{name: "empty value", filter: "applicationTypeLabelName=", wantErr: "missing value"},
+		{name: "blank value", filter: "applicationTypeLabelName=  ", wantErr: "missing value"},
+		{name: "empty field", filter: "=Utility", wantErr: "missing field name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetSearchFlagsForTest()
+			searchFlags.filters = []string{tt.filter}
+			err := validateSearchInputs()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validateSearchInputs() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validateSearchInputs() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
