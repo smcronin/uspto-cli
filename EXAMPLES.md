@@ -334,8 +334,9 @@ uspto search --assignee "Tesla" --all -f csv > tesla_portfolio.csv
 # Get filing counts by technology area
 uspto search --assignee "Microsoft" --facets cpcSectionLabelName -f json
 
-# Export PTAB proceedings
-uspto ptab search --type IPR --all -f csv > all_iprs.csv
+# Export PTAB proceedings (ptab search has no --all; page with --limit/--offset)
+uspto ptab search --type IPR --limit 100 -f csv > iprs_page1.csv
+uspto ptab search --type IPR --limit 100 --offset 100 -f csv > iprs_page2.csv
 ```
 
 ## Let Your AI Agent Do Patent Research

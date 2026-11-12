@@ -295,7 +295,7 @@ Bundle contents:
 
 ### Application Data
 
-18 subcommands for working with individual patent applications:
+19 subcommands for working with individual patent applications:
 
 ```bash
 # Core data
@@ -492,7 +492,7 @@ A strong agent workflow is: run a narrow `trademark search`; retain source/prove
 
 ## Rate Limiting
 
-The built-in limiters coordinate across processes and keep requests sequential per key. Limits differ by service.
+The built-in limiters keep requests sequential per key. The TSDR limiter coordinates across processes; the patent ODP limiter sequences requests within one process only, so avoid running several patent commands in parallel. Limits differ by service.
 
 For TSDR, USPTO publishes these per-key tiers:
 
@@ -504,7 +504,7 @@ For TSDR, USPTO publishes these per-key tiers:
 
 The CLI conservatively leaves at least 1 second between TSDR metadata calls and 15 seconds between PDF/ZIP calls, honors `Retry-After` as a minimum, and uses a shared file-based limiter so parallel agents do not independently spend the same quota. It auto-retries waits of at most 30 seconds; longer provider windows return a typed rate-limit error with `error.retryAfterSeconds` so the caller can resume later without an early retry. Prefer metadata-first filtering and avoid unnecessary `--include-heavy` bundles.
 
-Patent ODP quotas remain service-specific: metadata APIs permit 5M calls/week and document APIs 1.2M calls/week. See the [ODP rate-limit reference](docs/uspto-api/rate-limits.md) and [TSDR operations reference](docs/tsdr-api/operations.md).
+Patent ODP quotas remain service-specific: metadata APIs permit 5M calls/week and document APIs 1.2M calls/week. ODP requests are retried up to three times: a 429 waits 5 seconds (or `Retry-After` if longer), a 5xx waits 1/2/3 seconds, and a dropped connection is retried after a short pause; a 429 that asks for more than 30 seconds is returned with `error.retryAfterSeconds` instead. See the [ODP rate-limit reference](docs/uspto-api/rate-limits.md) and [TSDR operations reference](docs/tsdr-api/operations.md).
 
 ## Disclaimer
 

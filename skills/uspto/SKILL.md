@@ -33,6 +33,9 @@ Search needs no key.
 go install github.com/smcronin/uspto-cli/cmd/uspto@latest
 # Or update an existing install:
 uspto update
+uspto update --check                 # Show current/latest version without installing
+uspto update --version v0.2.4        # Install a specific release
+uspto update --force                 # Reinstall even when already on the target version
 ```
 
 **API Key Setup:**
@@ -155,9 +158,15 @@ uspto app txn 16123456 -f json -q          # Prosecution history events
 uspto app cont 16123456 -f json -q         # Continuity (parents/children)
 uspto app assign 16123456 -f json -q       # Assignments/ownership
 uspto app attorney 16123456 -f json -q     # Attorney/agent info
+uspto app attorney 16123456 --primary -f json -q   # Only the primary attorney/agent
 uspto app pta 16123456 -f json -q          # Patent term adjustment
-uspto app fp 16123456 -f json -q           # Foreign priority claims
-uspto app xml 16123456 -f json -q          # Associated XML doc metadata
+uspto app fp 16123456 -f json -q           # Foreign priority claims (alias of foreign-priority)
+uspto app xml 16123456 -f json -q          # Associated XML doc metadata (alias of associated-docs)
+
+# Read a file-wrapper document as text (XML first, then DOCX; PDF-only documents are not OCRed)
+uspto app text 16123456 --codes office-action --latest -f json -q
+uspto app text 16123456 3 --as docx -f json -q
+uspto app text-all 16123456 --codes office-action -f json -q   # Every matching readable document
 
 # Download a document by 1-based index
 uspto app dl 16123456 3 -o ./office-action.pdf
@@ -192,6 +201,7 @@ uspto summary 16123456 -f json -q
 
 # Recursive patent family tree (follows continuity chains)
 uspto family 16123456 --depth 3 -f json -q
+uspto family 16123456 --depth 3 --with-dates        # Filing dates in the table-format tree
 
 # One-shot prosecution timeline
 uspto prosecution-timeline 16123456 -f json -q
@@ -203,11 +213,28 @@ uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```bash
 uspto ptab search --type IPR --patent 9876543 -f json -q
 uspto ptab search --petitioner "Samsung" --status "Instituted" -f json -q
+uspto ptab search --patent-owner "Samsung" --limit 50 -f json -q
+uspto ptab search --app 15144741 -f json -q              # By application number (--family is an alias)
 uspto ptab get IPR2023-00001 -f json -q
+
+# Decisions: search, one by document ID, or all for a trial
+uspto ptab decisions --trial IPR2020-00388 -f json -q
+uspto ptab decisions --outcome "Adverse Judgment" --type "Final Written Decision" -f json -q
+uspto ptab decision <documentId> -f json -q
 uspto ptab decisions-for IPR2022-00302 -f json -q
+
+# Documents: search, one by document ID, or all for a trial
+uspto ptab docs --trial IPR2025-01319 -f json -q
+uspto ptab doc <documentId> -f json -q
 uspto ptab docs-for IPR2025-01319 -f json -q
+
+# Appeals and interferences: search, one by document ID, or all for a number
 uspto ptab appeals "obviousness" --limit 10 -f json -q
+uspto ptab appeal <documentId> -f json -q
+uspto ptab appeals-for <appealNumber> -f json -q
 uspto ptab interferences --limit 10 -f json -q
+uspto ptab interference <documentId> -f json -q
+uspto ptab interferences-for <interferenceNumber> -f json -q
 # Bulk download
 uspto ptab search --type IPR --download csv > ipr_proceedings.csv
 ```
@@ -217,6 +244,7 @@ uspto ptab search --type IPR --download csv > ipr_proceedings.csv
 ```bash
 uspto petition search "revival" -f json -q
 uspto petition search --app 16123456 -f json -q
+uspto petition search --office "OFFICE OF PETITIONS" --decision DENIED -f json -q   # --decision: GRANTED, DENIED, DISMISSED
 uspto petition get <recordId> --include-documents -f json -q
 ```
 
@@ -224,6 +252,7 @@ uspto petition get <recordId> --include-documents -f json -q
 
 ```bash
 uspto bulk search "patent grant" -f json -q
+uspto bulk search --category "Patent Grant" --frequency WEEKLY -f json -q   # --frequency: WEEKLY, DAILY, MONTHLY, ANNUAL
 uspto bulk get PTGRXML --include-files --latest -f json -q
 uspto bulk files PTFWPRE --limit 10 -f json -q
 uspto bulk download PTGRXML ipg240102.zip -o ./data/
@@ -309,14 +338,15 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 
 - **Data coverage**: ODP covers applications from **2001-01-01 onward**. Older patents may return 404.
 - **CPC search unreliable**: `--cpc "H04W"` may 404. Use `--filter "applicationMetaData.cpcClassificationBag=H04W*"` instead.
-- **Never combine --granted and --pending**: Returns ALL 5.4M+ apps instead of the intersection.
+- **`--granted` and `--pending` are mutually exclusive**: the CLI rejects the combination with an error before any request.
 - **`--granted-after` is more reliable** than `--filed-after + --granted` for issued-only date windows.
 - **`--type` flag unreliable via GET**: Use `--filter "applicationTypeLabelName=Design"` instead.
 - **6MB payload limit**: Reduce `--limit` or use `--fields` to narrow response. HTTP 413 = too broad.
 - **Single-item endpoints return arrays**: Access `results[0]`. Exception: `summary` returns `results: {...}` (object).
-- **Rate limiting is automatic**: CLI handles 429 retry (3x, 5s backoff) and cross-process coordination. No sleep needed.
+- **Retries are automatic**: up to 3 retries for 429 (waits 5 s, or `Retry-After` if longer), 5xx, and dropped connections. A 429 asking for more than 30 s is returned with `error.retryAfterSeconds` instead of being slept through. No sleep needed between sequential calls.
+- **Do not run patent (ODP) commands in parallel**: ODP allows one request at a time and separate `uspto` processes do not coordinate with each other, so parallel runs draw 429s. TSDR trademark commands do coordinate across processes.
 - **Patent XML may be missing**: Some records have no grant/pgpub XML. Fall back to `app docs` PDF workflow.
-- **`--dry-run`**: Available on all commands. Shows the API URL without executing.
+- **`--dry-run`**: Available on all commands. Prints the USPTO request on stderr without sending it; patent and trademark data commands leave stdout empty.
 
 ## What This API Cannot Do
 
@@ -336,5 +366,5 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 | 2 | Usage error | Check flags, app number format (bare digits) |
 | 3 | Auth failure | `uspto config show` to verify; `config set-api-key` to reset |
 | 4 | Not found | May predate 2001 coverage or not exist |
-| 5 | Rate limited | Auto-retried 3x. If persistent, wait 30s |
+| 5 | Rate limited | Auto-retried 3x. If persistent, wait `error.retryAfterSeconds` when present, otherwise 30s |
 | 6 | Server error | USPTO is down. Check https://data.uspto.gov |

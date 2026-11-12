@@ -91,11 +91,17 @@ uspto trademark search "OPENAI" --status live -f json -q
 # Friendly filters combine with AND
 uspto trademark search --wordmark APPLE --class 009 --status live -f json -q
 uspto trademark search --owner "OpenAI OpCo" --goods software -f json -q
-uspto trademark search --attorney Smith --filed-from 2025-01-01 -f json -q
+uspto trademark search --attorney Smith --filed-from 2025-01-01 --filed-to 2025-06-30 -f json -q
+uspto trademark search --owner NIKE --registered-from 2020-01-01 --registered-to 2020-12-31 -f json -q
+uspto trademark search --serial 97054561 -f json -q             # Serial number (SN)
+uspto trademark search --registration 3500030 -f json -q        # Registration number (RN)
+uspto trademark search --us-class 100 --status live -f json -q  # Coordinated/US class (CC)
+uspto trademark search --design-code 030101 -f json -q          # Design search code (DC)
 
 # Official field-tag syntax passes through unchanged
 uspto trademark search --query 'CM:"APPLE" AND IC:009 AND LD:true' -f json -q
 uspto trademark search --query 'ON:"NIKE" OR ON:"Nike Innovate"' --all --max-results 5000 -f json -q
+# --raw-query is an alias for --query
 
 # Count, pagination, projections, exact sorts, and facets
 uspto trademark search --owner NIKE --count-only -f json -q
@@ -145,6 +151,7 @@ uspto trademark case events sn:97054561 --latest 20 -f json -q
 uspto trademark case events sn:97054561 --code NOA --from 2024-01-01 -f json -q
 uspto trademark case assignments sn:97054561 -f json -q
 uspto trademark case designs sn:97054561 -f json -q
+uspto trademark case publications sn:97054561 -f json -q
 uspto trademark case maintenance rn:3500038 -f json -q
 ```
 
@@ -156,6 +163,8 @@ uspto trademark batch serial 97054561 78787878 -f json -q
 uspto trademark batch registration --ids-file registrations.txt -f json -q
 uspto trademark batch international --ids-file - --allow-dupes -f json -q
 uspto trademark batch serial --ids-file serials.txt --from OPAQUE_START --to OPAQUE_END -f json -q
+uspto trademark batch serial --ids-file serials.txt --chunk-size 10 -f json -q   # Cases per request (max 25)
+uspto trademark batch serial 97054561 78787878 --display -f json -q               # Server's reduced display projection
 ```
 
 Inspect `transactions`, `missedElements`, and `oversized`; do not silently
@@ -176,6 +185,8 @@ not be reused by `info`, `download`, `page`, or `fetch`.
 uspto trademark docs list sn:72131351 -f json -q
 uspto trademark docs list sn:72131351 --type SPE --from 2020-01-01 -f json -q
 uspto trademark docs list sn:72131351 --type SPE --fast
+uspto trademark docs list sn:72131351 --date 2003-06-17 -f json -q      # Exact document date
+uspto trademark docs list sn:72131351 --category RC -f json -q          # Document category code
 uspto trademark docs info sn:72131351 UNC20081028103437 -f json -q
 
 uspto trademark docs download sn:72131351 UNC20081028103437 --asset pdf -o document.pdf
@@ -194,6 +205,8 @@ uspto trademark docs bundle --ids-file marks.txt --asset zip -o portfolio.zip
 
 uspto trademark docs selected sn:72131351 --case --docs 1,3 --history 2 --asset pdf -o selected.pdf
 uspto trademark docs download-all sn:72131351 --type SPE --asset pdf -o specimens/
+# Keep going past a failed document and report it under "failures"
+uspto trademark docs download-all sn:72131351 --asset pdf -o documents/ --continue-on-error
 ```
 
 PDF/ZIP calls are much more limited than metadata; avoid `download-all` until
@@ -222,6 +235,7 @@ uspto trademark case bundle sn:97054561 -o ./case/ --include-heavy
 
 uspto trademark last-update sn:97054561 --response-format json -f json -q
 uspto trademark multimedia info sn:12345678 -f json -q
+uspto trademark multimedia download sn:12345678 0001 -o mark-sound.bin
 ```
 
 The safe retrieval escape hatch reaches all live Swagger GET/POST operations
@@ -237,7 +251,8 @@ uspto trademark api-spec -o tsdr-swagger.json
 ```
 
 Use repeated `--param key=value`; repeated and explicitly empty values are
-preserved. Current Swagger POST variants use query parameters. `--body` and
+preserved. `--accept` sets the request's Accept header and `--content-type`
+the POST Content-Type (default `application/json` with `--body`). Current Swagger POST variants use query parameters. `--body` and
 `--form` are bounded, replayable forward-compatibility options. Live selected-
 bundle POST returned gateway 403 with a valid GET-capable key, so prefer GET
 aliases for real work and treat POST 403 as possible method/gateway behavior,
