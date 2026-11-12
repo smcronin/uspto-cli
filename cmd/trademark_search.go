@@ -369,7 +369,7 @@ func dateRangeClause(tag, from, to string) (string, error) {
 	from = strings.ReplaceAll(strings.TrimSpace(from), "-", "")
 	to = strings.ReplaceAll(strings.TrimSpace(to), "-", "")
 	for _, value := range []string{from, to} {
-		if value != "" && (len(value) != 8 || !isNumericQuery(value)) {
+		if value != "" && (len(value) != 8 || !isNumeric(value)) {
 			return "", trademarkInvalidArgumentf("%s date must be YYYYMMDD or YYYY-MM-DD", tag)
 		}
 		if value != "" {

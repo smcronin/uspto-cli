@@ -117,17 +117,27 @@ func writeCSV(data interface{}, opts OutputOptions) {
 
 	// Flatten each item into a string-keyed map for CSV columns.
 	rows := make([]map[string]string, 0, len(items))
-	headerSet := make(map[string]bool)
-
 	for _, item := range items {
-		flat := flattenToMap(item)
-		rows = append(rows, flat)
-		for k := range flat {
-			headerSet[k] = true
-		}
+		rows = append(rows, flattenToMap(item))
+	}
+	writeCSVRows(rows)
+}
+
+// writeCSVRows writes already-flattened rows as CSV: one header row holding
+// the union of all keys, then one record per row. Nothing is written for an
+// empty row set.
+func writeCSVRows(rows []map[string]string) {
+	if len(rows) == 0 {
+		return
 	}
 
 	// Collect and sort headers for deterministic column order.
+	headerSet := make(map[string]bool)
+	for _, row := range rows {
+		for k := range row {
+			headerSet[k] = true
+		}
+	}
 	headers := make([]string, 0, len(headerSet))
 	for k := range headerSet {
 		headers = append(headers, k)

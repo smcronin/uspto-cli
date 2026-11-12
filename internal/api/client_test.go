@@ -910,28 +910,6 @@ func TestUsptoAPIError_Error(t *testing.T) {
 	})
 }
 
-func TestUsptoAPIError_IsRetryable(t *testing.T) {
-	tests := []struct {
-		statusCode int
-		want       bool
-	}{
-		{429, true},
-		{500, true},
-		{502, true},
-		{503, true},
-		{400, false},
-		{401, false},
-		{403, false},
-		{404, false},
-	}
-	for _, tc := range tests {
-		e := &UsptoAPIError{StatusCode: tc.statusCode}
-		if got := e.IsRetryable(); got != tc.want {
-			t.Errorf("IsRetryable() for %d = %v, want %v", tc.statusCode, got, tc.want)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // followRedirects — follows 301/302 and re-applies headers
 // ---------------------------------------------------------------------------
@@ -1245,30 +1223,6 @@ func TestDownloadDocument_ErrorStatus(t *testing.T) {
 	}
 	if apiErr.StatusCode != 404 {
 		t.Errorf("StatusCode = %d, want 404", apiErr.StatusCode)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// DryRunURL
-// ---------------------------------------------------------------------------
-
-func TestDryRunURL(t *testing.T) {
-	c := &Client{baseURL: "https://api.uspto.gov"}
-
-	got := c.DryRunURL("GET", "/api/v1/patent/applications/search", "widget",
-		types.SearchOptions{Limit: 10, Offset: 20, Sort: "filingDate desc"})
-
-	if !strings.HasPrefix(got, "GET https://api.uspto.gov/api/v1/patent/applications/search?") {
-		t.Errorf("DryRunURL() = %q, want it to start with 'GET https://api.uspto.gov/api/v1/patent/applications/search?'", got)
-	}
-	if !strings.Contains(got, "q=widget") {
-		t.Errorf("DryRunURL() = %q, want it to contain 'q=widget'", got)
-	}
-	if !strings.Contains(got, "limit=10") {
-		t.Errorf("DryRunURL() = %q, want it to contain 'limit=10'", got)
-	}
-	if !strings.Contains(got, "offset=20") {
-		t.Errorf("DryRunURL() = %q, want it to contain 'offset=20'", got)
 	}
 }
 

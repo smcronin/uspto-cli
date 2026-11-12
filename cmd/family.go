@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -335,14 +334,14 @@ func printTreeNode(node FamilyNode, prefix string, isLast bool) {
 	}
 
 	if node.Status != "" {
-		fmt.Fprintf(os.Stdout, "%s%sStatus: %s\n", infoPrefix, indentForInfo(prefix == ""), node.Status)
+		fmt.Fprintf(os.Stdout, "%s  Status: %s\n", infoPrefix, node.Status)
 	}
 	if node.Title != "" {
 		title := node.Title
 		if len(title) > 70 {
 			title = title[:67] + "..."
 		}
-		fmt.Fprintf(os.Stdout, "%s%sTitle:  %s\n", infoPrefix, indentForInfo(prefix == ""), title)
+		fmt.Fprintf(os.Stdout, "%s  Title:  %s\n", infoPrefix, title)
 	}
 
 	// Print children.
@@ -360,25 +359,5 @@ func printTreeNode(node FamilyNode, prefix string, isLast bool) {
 			nextPrefix = ""
 		}
 		printTreeNode(child, nextPrefix, i == len(node.Children)-1)
-	}
-}
-
-// indentForInfo returns spacing for status/title lines under a node.
-func indentForInfo(isRoot bool) string {
-	if isRoot {
-		return "  "
-	}
-	return "  "
-}
-
-// writeKeyValueFamily renders the family result as a flat key-value display
-// (used as fallback for non-tree formats).
-func writeKeyValueFamily(result FamilyResult) {
-	fmt.Fprintf(os.Stdout, "Root:           %s\n", result.Root)
-	fmt.Fprintf(os.Stdout, "Total Members:  %s\n", strconv.Itoa(result.TotalMembers))
-	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "Applications:")
-	for _, app := range result.AllApplicationNumbers {
-		fmt.Fprintf(os.Stdout, "  %s (%s)\n", app.ApplicationNumber, app.Relationship)
 	}
 }

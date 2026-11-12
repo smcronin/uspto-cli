@@ -88,11 +88,6 @@ func (e *UsptoAPIError) Error() string {
 	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Message)
 }
 
-// IsRetryable returns true for status codes that may succeed on retry.
-func (e *UsptoAPIError) IsRetryable() bool {
-	return e.StatusCode == 429 || e.StatusCode >= 500
-}
-
 // ---------------------------------------------------------------------------
 // RateLimiter (in-process + file-based cross-process)
 // ---------------------------------------------------------------------------
@@ -266,25 +261,6 @@ var DefaultClient *Client
 // GetBaseURL returns the base URL of the API client.
 func (c *Client) GetBaseURL() string {
 	return c.baseURL
-}
-
-// DryRunURL constructs the full URL that would be sent for a request,
-// without actually executing it. Useful for --dry-run output.
-func (c *Client) DryRunURL(method, path, query string, opts types.SearchOptions) string {
-	params := make(map[string]string)
-	if query != "" {
-		params["q"] = query
-	}
-	if opts.Limit > 0 {
-		params["limit"] = fmt.Sprintf("%d", opts.Limit)
-	}
-	if opts.Offset > 0 {
-		params["offset"] = fmt.Sprintf("%d", opts.Offset)
-	}
-	if opts.Sort != "" {
-		params["sort"] = opts.Sort
-	}
-	return method + " " + c.buildURL(path, params)
 }
 
 // Internal helpers

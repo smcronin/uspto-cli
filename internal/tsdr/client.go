@@ -976,21 +976,6 @@ func (c *Client) RawEncodedRequestStream(ctx context.Context, method, path, enco
 	return c.openRequestURL(ctx, method, fullURL, accept, contentType, body, download)
 }
 
-// PublicAsset retrieves a URL returned in TSDR document metadata without
-// forwarding the TSDR credential. Only HTTPS USPTO hosts are accepted.
-func (c *Client) PublicAsset(ctx context.Context, rawURL string) (*Response, error) {
-	stream, err := c.PublicAssetStream(ctx, rawURL)
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
-	body, err := readBoundedBody(stream.Body, maxBufferedBody)
-	if err != nil {
-		return nil, fmt.Errorf("reading public USPTO asset: %w", err)
-	}
-	return &Response{Body: body, ContentType: stream.ContentType, URL: stream.URL, StatusCode: stream.StatusCode}, nil
-}
-
 // PublicAssetStream opens a metadata-provided USPTO URL without forwarding
 // the TSDR key. Every redirect is revalidated as HTTPS on a USPTO host.
 func (c *Client) PublicAssetStream(ctx context.Context, rawURL string) (*StreamResponse, error) {

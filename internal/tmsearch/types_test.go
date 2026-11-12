@@ -14,7 +14,11 @@ func TestBuildSearchRequest(t *testing.T) {
 		Limit:          25,
 		Offset:         50,
 		TrackTotalHits: &track,
-		Sort:           StableSort(SortAscending),
+		Sort: []SortSpec{
+			{Field: SortWordmarkExact, Direction: SortAscending},
+			{Field: SortInternationalClassExact, Direction: SortAscending},
+			{Field: SortID, Direction: SortAscending},
+		},
 		Facets: []TermFacet{
 			{
 				Name:  "classes",

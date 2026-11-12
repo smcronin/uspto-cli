@@ -201,11 +201,6 @@ func resolveAPIKey() (string, error) {
 	return config.LoadAPIKey()
 }
 
-// isNonAPICommand returns true for commands that don't call the USPTO API.
-func isNonAPICommand(cmd *cobra.Command) bool {
-	return providerForCommand(cmd) == providerNone
-}
-
 type credentialError struct {
 	provider string
 	message  string

@@ -82,8 +82,8 @@ func TestResolveAPIKey_Precedence(t *testing.T) {
 	})
 }
 
-func TestIsNonAPICommand(t *testing.T) {
-	if !isNonAPICommand(rootCmd) {
+func TestProviderForCommand_NonAPICommands(t *testing.T) {
+	if providerForCommand(rootCmd) != providerNone {
 		t.Fatal("root command should be treated as non-API")
 	}
 
@@ -91,7 +91,7 @@ func TestIsNonAPICommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(config show): %v", err)
 	}
-	if !isNonAPICommand(cfgCmd) {
+	if providerForCommand(cfgCmd) != providerNone {
 		t.Fatal("config subcommand should be treated as non-API")
 	}
 
@@ -99,7 +99,7 @@ func TestIsNonAPICommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(update): %v", err)
 	}
-	if !isNonAPICommand(updateCmd) {
+	if providerForCommand(updateCmd) != providerNone {
 		t.Fatal("update command should be treated as non-API")
 	}
 
@@ -107,7 +107,7 @@ func TestIsNonAPICommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(search): %v", err)
 	}
-	if isNonAPICommand(searchCmd) {
+	if providerForCommand(searchCmd) == providerNone {
 		t.Fatal("search command should be treated as API command")
 	}
 }

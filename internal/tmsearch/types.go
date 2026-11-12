@@ -105,16 +105,6 @@ func (s SortSpec) validate() error {
 	return nil
 }
 
-// StableSort returns the deterministic three-field ordering used for reliable
-// pagination and comparison of Trademark Search results.
-func StableSort(direction SortDirection) []SortSpec {
-	return []SortSpec{
-		{Field: SortWordmarkExact, Direction: direction},
-		{Field: SortInternationalClassExact, Direction: direction},
-		{Field: SortID, Direction: direction},
-	}
-}
-
 // TermFacet describes an arbitrary Elasticsearch terms aggregation. Name is
 // the response aggregation key, Field is the indexed field, Size controls the
 // number of buckets, and Options permits additional terms parameters such as

@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -372,7 +370,6 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 	totalCount := 0
 
 	var rows []map[string]string
-	headerSet := make(map[string]bool)
 
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, "Using client-side CSV concat flow (--all + -f csv).")
@@ -396,11 +393,7 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		}
 
 		for _, item := range resp.PatentFileWrapperDataBag {
-			flat := flattenToMap(item)
-			rows = append(rows, flat)
-			for k := range flat {
-				headerSet[k] = true
-			}
+			rows = append(rows, flattenToMap(item))
 		}
 
 		if !flagQuiet {
@@ -413,26 +406,7 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		}
 	}
 
-	if len(rows) == 0 {
-		return nil
-	}
-
-	headers := make([]string, 0, len(headerSet))
-	for h := range headerSet {
-		headers = append(headers, h)
-	}
-	sortStrings(headers)
-
-	w := csv.NewWriter(os.Stdout)
-	_ = w.Write(headers)
-	for _, row := range rows {
-		record := make([]string, len(headers))
-		for i, h := range headers {
-			record[i] = row[h]
-		}
-		_ = w.Write(record)
-	}
-	w.Flush()
+	writeCSVRows(rows)
 	return nil
 }
 
@@ -962,53 +936,4 @@ func resolveRelativeDate(s string) (string, error) {
 	}
 
 	return result.Format("2006-01-02"), nil
-}
-
-// ---------------------------------------------------------------------------
-// Dry-run helpers
-// ---------------------------------------------------------------------------
-
-// dryRunPost prints the POST request that would be sent without executing it.
-func dryRunPost(body types.SearchRequest) (*types.PatentDataResponse, error) {
-	fmt.Fprintln(os.Stderr, "POST /api/v1/patent/applications/search")
-
-	out, err := json.MarshalIndent(body, "  ", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  body: (marshal error: %v)\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  body:\n  %s\n", string(out))
-	}
-
-	return &types.PatentDataResponse{}, nil
-}
-
-// dryRunGet prints the GET request that would be sent without executing it.
-func dryRunGet(query string, opts types.SearchOptions) (*types.PatentDataResponse, error) {
-	fmt.Fprintln(os.Stderr, "GET /api/v1/patent/applications/search")
-
-	var params []string
-	if query != "" {
-		params = append(params, "q="+query)
-	}
-	if opts.Limit > 0 {
-		params = append(params, "limit="+strconv.Itoa(opts.Limit))
-	}
-	if opts.Offset > 0 {
-		params = append(params, "offset="+strconv.Itoa(opts.Offset))
-	}
-	if opts.Sort != "" {
-		params = append(params, "sort="+opts.Sort)
-	}
-	if opts.Fields != "" {
-		params = append(params, "fields="+opts.Fields)
-	}
-	if opts.Facets != "" {
-		params = append(params, "facets="+opts.Facets)
-	}
-
-	if len(params) > 0 {
-		fmt.Fprintf(os.Stderr, "  ?%s\n", strings.Join(params, "&"))
-	}
-
-	return &types.PatentDataResponse{}, nil
 }
