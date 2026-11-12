@@ -16,7 +16,7 @@ cmd/
   petition.go              - Petition decision search/get
   bulk.go                  - Bulk data search/get/files/download
   status.go                - Status code lookup
-  summary.go               - Compound 5-API-call application summary
+  summary.go               - Compound 7-API-call application summary
   family.go                - Recursive patent family tree builder
 internal/
   types/types.go           - All API response types, XML structs for grant parsing

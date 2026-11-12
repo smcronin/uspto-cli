@@ -76,7 +76,7 @@ uspto search --title "machine learning" --limit 5
 # Get application details
 uspto app get 16123456
 
-# One-shot summary (6 API calls combined)
+# One-shot summary (7 API calls combined)
 uspto summary 16123456
 
 # Extract claims from a granted patent
@@ -348,8 +348,8 @@ Assignment note:
 ### Compound Commands
 
 ```bash
-# One-shot summary: metadata + continuity + assignments + transactions + foreign priority + documents
-# Makes 6 API calls and returns a unified view
+# One-shot summary: metadata + term adjustment + continuity + assignments + transactions + foreign priority + documents
+# Makes 7 API calls and returns a unified view
 uspto summary 16123456
 
 # Recursive family tree (follows parent/child continuity chains)

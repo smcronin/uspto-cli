@@ -187,7 +187,7 @@ uspto app fulltext 16123456 -f json -q     # Everything in one shot (largest)
 ### Compound Commands
 
 ```bash
-# Best "first look" command -- 5 API calls combined
+# Best "first look" command -- 7 API calls combined
 uspto summary 16123456 -f json -q
 
 # Recursive patent family tree (follows continuity chains)
