@@ -284,6 +284,7 @@ func handleError(err error) int {
 		case apiErr.StatusCode == 429:
 			code = types.ExitRateLimited
 			errInfo.Type = "RATE_LIMITED"
+			errInfo.RetryAfterSeconds = retryAfterSeconds(apiErr.RetryAfter)
 			errInfo.Hint = "Rate limit exceeded. Wait a moment and retry."
 		case apiErr.StatusCode >= 500:
 			code = types.ExitServerError
