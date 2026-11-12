@@ -290,19 +290,21 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// dryRunPatentBundle describes the bundle's requests on stderr, like every
+// other dry run, so stdout stays empty for -f json callers.
 func dryRunPatentBundle(inputID, idType string) error {
-	fmt.Fprintln(os.Stdout, "Patent bundle dry-run")
-	fmt.Fprintf(os.Stdout, "Input: %s (%s)\n", inputID, idType)
+	fmt.Fprintln(os.Stderr, "Patent bundle dry-run")
+	fmt.Fprintf(os.Stderr, "Input: %s (%s)\n", inputID, idType)
 	if idType != idTypeApp {
-		fmt.Fprintln(os.Stdout, "Would resolve to application number via search endpoint first.")
+		fmt.Fprintln(os.Stderr, "Would resolve to application number via search endpoint first.")
 	}
-	fmt.Fprintln(os.Stdout, "Would call:")
-	fmt.Fprintln(os.Stdout, "  GET /api/v1/patent/applications/search (if needed for id resolution)")
-	fmt.Fprintln(os.Stdout, "  GET /api/v1/patent/applications/<appNumber>/meta-data")
-	fmt.Fprintln(os.Stdout, "  GET /api/v1/patent/applications/<appNumber>/associated-documents")
-	fmt.Fprintln(os.Stdout, "  GET /api/v1/patent/applications/<appNumber>/documents")
-	fmt.Fprintln(os.Stdout, "  GET <grant/pgpub fileLocationURI> for XML")
-	fmt.Fprintln(os.Stdout, "  GET <document PDF downloadUrl> for file-wrapper PDFs")
+	fmt.Fprintln(os.Stderr, "Would call:")
+	fmt.Fprintln(os.Stderr, "  GET /api/v1/patent/applications/search (if needed for id resolution)")
+	fmt.Fprintln(os.Stderr, "  GET /api/v1/patent/applications/<appNumber>/meta-data")
+	fmt.Fprintln(os.Stderr, "  GET /api/v1/patent/applications/<appNumber>/associated-documents")
+	fmt.Fprintln(os.Stderr, "  GET /api/v1/patent/applications/<appNumber>/documents")
+	fmt.Fprintln(os.Stderr, "  GET <grant/pgpub fileLocationURI> for XML")
+	fmt.Fprintln(os.Stderr, "  GET <document PDF downloadUrl> for file-wrapper PDFs")
 	return nil
 }
 

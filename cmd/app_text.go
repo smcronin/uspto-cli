@@ -98,6 +98,18 @@ Examples:
 			OfficialDateFrom: appTextFromFlag,
 			OfficialDateTo:   appTextToFlag,
 		}
+		if flagDryRun {
+			printDryRunDocuments(appNumber, docOpts)
+			switch {
+			case len(args) > 1:
+				fmt.Fprintf(os.Stderr, "Then: GET <XML or DOCX downloadUrl of document %s> and extract its text\n", args[1])
+			case appTextLatestFlag:
+				fmt.Fprintln(os.Stderr, "Then: GET <XML or DOCX downloadUrl of the latest listed document> and extract its text")
+			default:
+				fmt.Fprintln(os.Stderr, "Then: extract the text if exactly one document is listed; otherwise list the documents")
+			}
+			return nil
+		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
 			return err
@@ -113,23 +125,17 @@ Examples:
 		if doc == nil {
 			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a docIndex (1-%d), a documentIdentifier, or use --latest.\n",
 				len(docResp.DocumentBag), len(docResp.DocumentBag))
-			writeDocumentsTable(docResp.DocumentBag)
+			writeDocumentChoices(docResp.DocumentBag)
 			return nil
 		}
 		if autoPicked && !flagQuiet {
 			fmt.Fprintf(os.Stderr, "Selected document %d automatically.\n", docIndex)
 		}
 
-		_, fmtLabel, dlURL, err := resolveTextFormat(doc, appTextAsFlag)
+		_, fmtLabel, _, err := resolveTextFormat(doc, appTextAsFlag)
 		if err != nil {
 			return fmt.Errorf("cannot extract text from document %d (%s - %s): %w",
 				docIndex, doc.DocumentCode, doc.DocumentCodeDescriptionText, err)
-		}
-
-		if flagDryRun {
-			fmt.Fprintf(os.Stdout, "TEXT %s (%s) [%s]\n", doc.DocumentCode, doc.OfficialDate, fmtLabel)
-			fmt.Fprintf(os.Stdout, "URL: %s\n", dlURL)
-			return nil
 		}
 
 		progress(fmt.Sprintf("Fetching %s text for %s (%s)...", fmtLabel, doc.DocumentCode, doc.OfficialDate))
@@ -181,26 +187,17 @@ Examples:
 			OfficialDateFrom: appTextAllFromFlag,
 			OfficialDateTo:   appTextAllToFlag,
 		}
+		if flagDryRun {
+			printDryRunDocuments(appNumber, docOpts)
+			fmt.Fprintln(os.Stderr, "Then: GET <XML or DOCX downloadUrl> for each listed document that has one and extract its text")
+			return nil
+		}
 		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
 		if err != nil {
 			return err
 		}
 		if len(docResp.DocumentBag) == 0 {
 			return fmt.Errorf("no documents found for application %s", appNumber)
-		}
-
-		if flagDryRun {
-			for i, doc := range docResp.DocumentBag {
-				mimeType, fmtLabel, dlURL, resolveErr := resolveTextFormat(&doc, appTextAllAsFlag)
-				if resolveErr != nil {
-					fmt.Fprintf(os.Stdout, "[%d/%d] SKIP %s (%s) - %s\n", i+1, len(docResp.DocumentBag), doc.DocumentCode, doc.OfficialDate, resolveErr.Error())
-					continue
-				}
-				fmt.Fprintf(os.Stdout, "[%d/%d] TEXT %s (%s) [%s]\n", i+1, len(docResp.DocumentBag), doc.DocumentCode, doc.OfficialDate, fmtLabel)
-				fmt.Fprintf(os.Stdout, "URL: %s\n", dlURL)
-				_ = mimeType
-			}
-			return nil
 		}
 
 		result := AppDocumentTextBatchResult{

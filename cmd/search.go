@@ -261,6 +261,10 @@ func runSearchCountOnly(ctx context.Context, cmd *cobra.Command, freeTextQuery s
 	if err != nil {
 		return err
 	}
+	if flagDryRun {
+		// The request was printed; there is no result to report.
+		return nil
+	}
 
 	if !flagQuiet {
 		fmt.Fprintf(os.Stderr, "%d total results\n", resp.Count)
@@ -282,6 +286,11 @@ func runSearchSinglePage(ctx context.Context, cmd *cobra.Command, freeTextQuery 
 	resp, err := executeSearch(ctx, freeTextQuery, usePost, searchFlags.limit, searchFlags.offset)
 	if err != nil {
 		return err
+	}
+	if flagDryRun {
+		// The request was printed; emitting an empty envelope here would read
+		// as "zero results".
+		return nil
 	}
 
 	pagination := &types.PaginationMeta{
@@ -317,6 +326,10 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		resp, err := executeSearch(ctx, freeTextQuery, usePost, pageSize, offset)
 		if err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunAllPagesNote(pageSize)
+			return nil
 		}
 
 		if totalCount == 0 {
@@ -370,6 +383,10 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		if err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunAllPagesNote(pageSize)
+			return nil
+		}
 
 		if totalCount == 0 {
 			totalCount = resp.Count
@@ -417,6 +434,11 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 	}
 	w.Flush()
 	return nil
+}
+
+// printDryRunAllPagesNote explains what --all does after the first request.
+func printDryRunAllPagesNote(pageSize int) {
+	fmt.Fprintf(os.Stderr, "Then: repeat with offset increased by %d until all results (at most %d) are fetched\n", pageSize, autoPageLimit)
 }
 
 // executeSearch runs a single search API call using either GET or POST.
