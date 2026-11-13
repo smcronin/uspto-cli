@@ -123,6 +123,16 @@ func TestDryRun_NoRequestsAndNoStdout(t *testing.T) {
 			wantStderr: []string{"POST /api/v1/patent/applications/search", `"limit": 25`},
 		},
 		{
+			name:  "search pending",
+			setup: func() { searchFlags.title = "battery"; searchFlags.pending = true },
+			run:   func() error { return runSearch(searchCmd, nil) },
+			wantStderr: []string{
+				"POST /api/v1/patent/applications/search",
+				`(applicationMetaData.inventionTitle:battery) AND NOT applicationMetaData.publicationCategoryBag:\"Granted/Issued\"`,
+				"NOT applicationMetaData.applicationStatusDescriptionText:Abandon*",
+			},
+		},
+		{
 			name:       "search all pages",
 			setup:      func() { searchFlags.title = "battery"; searchFlags.all = true },
 			run:        func() error { return runSearch(searchCmd, nil) },

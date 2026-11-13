@@ -88,6 +88,9 @@ Examples:
   # Date range with convenience filter
   uspto search --title "battery" --filed-within 2y --granted
 
+  # Applications still pending (not granted, not abandoned)
+  uspto search --assignee "Tesla" --pending --count-only -f json -q
+
   # Sorted results in JSON
   uspto search --cpc "H04W" --sort "filingDate:desc" -f json
 
@@ -136,7 +139,7 @@ func init() {
 
 	// Convenience boolean filters.
 	f.BoolVar(&searchFlags.granted, "granted", false, "Show only granted/issued patents")
-	f.BoolVar(&searchFlags.pending, "pending", false, "Show only pending (pre-grant) applications")
+	f.BoolVar(&searchFlags.pending, "pending", false, "Show only applications still pending: not granted, not abandoned, not an expired provisional")
 
 	// Pagination.
 	f.IntVar(&searchFlags.limit, "limit", 25, "Number of results per page")
@@ -599,6 +602,9 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	// ranges and convenience filters are handled via rangeFilters/filters,
 	// so we use buildGetQuery (without dates) to build only the q= part.
 	q := buildGetQuery(freeTextQuery)
+	if searchFlags.pending {
+		q = withPendingExclusions(q)
+	}
 	if q != "" {
 		body.Q = q
 	}
@@ -606,17 +612,12 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	// Structured filters from --filter flags.
 	body.Filters = buildStructuredFilters()
 
-	// Convenience boolean filters (--granted, --pending) as structured filters.
+	// --granted as a structured filter. (--pending is a set of exclusions in
+	// q, added above: a filter can only say what a record has.)
 	if searchFlags.granted {
 		body.Filters = append(body.Filters, types.Filter{
 			Name:  "applicationMetaData.publicationCategoryBag",
 			Value: []string{"Granted/Issued"},
-		})
-	}
-	if searchFlags.pending {
-		body.Filters = append(body.Filters, types.Filter{
-			Name:  "applicationMetaData.publicationCategoryBag",
-			Value: []string{"Pre-Grant Publications - PGPub"},
 		})
 	}
 
@@ -809,19 +810,60 @@ func buildGetQueryWithDates(freeTextQuery string) string {
 	if searchFlags.granted {
 		extra = append(extra, "applicationMetaData.publicationCategoryBag:"+quoteIfNeeded("Granted/Issued"))
 	}
+	query := base
+	if len(extra) > 0 {
+		suffix := strings.Join(extra, " AND ")
+		if base != "" {
+			query = base + " AND " + suffix
+		} else {
+			query = suffix
+		}
+	}
+
+	// --pending always takes the POST path today (needsPostEndpoint); the
+	// clause is added here too so the two paths cannot drift apart.
 	if searchFlags.pending {
-		extra = append(extra, "applicationMetaData.publicationCategoryBag:"+quoteIfNeeded("Pre-Grant Publications - PGPub"))
+		query = withPendingExclusions(query)
 	}
+	return query
+}
 
-	if len(extra) == 0 {
-		return base
-	}
+// pendingExclusions are the query clauses --pending negates. A pending
+// application is one that is still alive: not granted, not abandoned, and not
+// a provisional that has run out.
+//
+//   - Granted: publicationCategoryBag lists every publication an application
+//     ever had, so a granted patent carries "Granted/Issued" whatever its
+//     status text has since become ("Patented Case", "Patent Expired Due to
+//     NonPayment of Maintenance Fees", ...).
+//   - Abandoned: every abandonment status contains the word, for example
+//     "Abandoned  --  Failure to Respond to an Office Action" and "Expressly
+//     Abandoned  --  During Examination".
+//   - "Provisional Application Expired" is the terminal status of a
+//     provisional; it is neither granted nor abandoned, and not alive.
+//
+// The previous implementation filtered on publicationCategoryBag =
+// "Pre-Grant Publications - PGPub", which means "was published before
+// grant" and therefore matched most granted patents as well.
+var pendingExclusions = []string{
+	`applicationMetaData.publicationCategoryBag:"Granted/Issued"`,
+	`applicationMetaData.applicationStatusDescriptionText:Abandon*`,
+	`applicationMetaData.applicationStatusDescriptionText:Expressly*`,
+	`applicationMetaData.applicationStatusDescriptionText:"Provisional Application Expired"`,
+}
 
-	suffix := strings.Join(extra, " AND ")
-	if base != "" {
-		return base + " AND " + suffix
+// withPendingExclusions appends the --pending exclusions to a query. The
+// caller's query is parenthesised so an OR inside it cannot capture them.
+func withPendingExclusions(query string) string {
+	clauses := make([]string, 0, len(pendingExclusions))
+	for _, c := range pendingExclusions {
+		clauses = append(clauses, "NOT "+c)
 	}
-	return suffix
+	exclusions := strings.Join(clauses, " AND ")
+	if strings.TrimSpace(query) == "" {
+		return exclusions
+	}
+	return "(" + query + ") AND " + exclusions
 }
 
 // buildGetSort formats the --sort flag for the GET endpoint.

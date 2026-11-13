@@ -230,6 +230,10 @@ uspto search --cpc-group H01M --granted-after 2024-01-01 --limit 10
 uspto search --assignee "Apple" --granted --sort filingDate:desc
 uspto search --publication-number US20190095759A1 --limit 1
 
+# Granted patents only, or applications still pending
+uspto search --assignee "Apple" --granted --count-only -f json -q
+uspto search --assignee "Apple" --pending --count-only -f json -q
+
 # Assignor / reel-frame (assignment records)
 uspto search --assignor "Samsung" --limit 20
 uspto search --reel-frame "012345/0001"
@@ -256,6 +260,11 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - Uses `GET /search` for simple query-only cases.
 - For `--download`, it uses `POST /search/download` when those advanced parameters are present; otherwise `GET /search/download`.
 - `--all -f csv` performs client-side page concatenation for CSV export UX (useful when you need paged search semantics instead of `--download csv`).
+
+`--granted` and `--pending`:
+- `--granted` keeps records whose publication categories include `Granted/Issued`.
+- `--pending` keeps applications that are still alive: it excludes every record with a `Granted/Issued` publication category, every status that starts with `Abandon` or `Expressly` (the abandonment statuses), and `Provisional Application Expired`. It does not require a pre-grant publication. PCT international-phase records (for example `PCT - International Search Report Mailed to IB`) are neither granted nor abandoned and remain in the results; add `--filter` or `--status` terms to narrow further.
+- The two flags cannot be combined. A search with neither returns everything, including abandoned applications.
 
 **All search flags:**
 `--title`, `--inventor`, `--assignee`, `--examiner`, `--applicant`, `--assignor`,

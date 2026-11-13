@@ -127,6 +127,7 @@ uspto search "wireless sensor network" -f json -q
 # Field filters
 uspto search --title "neural network" --inventor "Smith" --limit 10 -f json -q
 uspto search --assignee "Apple" --cpc "G06N" --granted -f json -q
+uspto search --assignee "Apple" --pending --count-only -f json -q   # Still pending: not granted, not abandoned
 uspto search --patent 10902286 -f json -q
 uspto search --pub-number "US20190095759A1" -f json -q
 
@@ -342,6 +343,7 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 - **Data coverage**: ODP covers applications from **2001-01-01 onward**. Older patents may return 404.
 - **CPC search unreliable**: `--cpc "H04W"` may 404. Use `--filter "applicationMetaData.cpcClassificationBag=H04W*"` instead.
 - **`--granted` and `--pending` are mutually exclusive**: the CLI rejects the combination with an error before any request.
+- **`--pending` means still alive**: it excludes granted patents, abandoned applications and expired provisionals, so the count is "applications still in prosecution" (plus PCT international-phase records, which are neither). Neither flag = everything, abandoned included. Releases up to v0.3.0 treated `--pending` as "has a pre-grant publication", which returned most granted patents too.
 - **`--granted-after` is more reliable** than `--filed-after + --granted` for issued-only date windows.
 - **`--type` flag unreliable via GET**: Use `--filter "applicationTypeLabelName=Design"` instead.
 - **6MB payload limit**: Reduce `--limit` or use `--fields` to narrow response. HTTP 413 = too broad.

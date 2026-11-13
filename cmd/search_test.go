@@ -527,3 +527,80 @@ func TestValidateSearchInputs_FilterNeedsFieldAndValue(t *testing.T) {
 		})
 	}
 }
+
+// --pending means "still alive": not granted, not abandoned, not an expired
+// provisional. It used to filter on the PGPub publication category, which
+// most granted patents carry too.
+func TestBuildPostBody_PendingExcludesGrantedAndAbandoned(t *testing.T) {
+	orig := searchFlags
+	defer func() { searchFlags = orig }()
+
+	const exclusions = `NOT applicationMetaData.publicationCategoryBag:"Granted/Issued"` +
+		` AND NOT applicationMetaData.applicationStatusDescriptionText:Abandon*` +
+		` AND NOT applicationMetaData.applicationStatusDescriptionText:Expressly*` +
+		` AND NOT applicationMetaData.applicationStatusDescriptionText:"Provisional Application Expired"`
+
+	tests := []struct {
+		name  string
+		query string
+		setup func()
+		wantQ string
+	}{
+		{name: "free text", query: "battery", wantQ: "(battery) AND " + exclusions},
+		{name: "no other terms", query: "", wantQ: exclusions},
+		{
+			name:  "OR in the caller's query stays grouped",
+			query: "battery OR capacitor",
+			wantQ: "(battery OR capacitor) AND " + exclusions,
+		},
+		{
+			name:  "shorthand flag",
+			setup: func() { searchFlags.assignee = "Tesla" },
+			wantQ: "(assignmentBag.assigneeBag.assigneeNameText:Tesla) AND " + exclusions,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetSearchFlagsForTest()
+			searchFlags.pending = true
+			if tt.setup != nil {
+				tt.setup()
+			}
+			if !needsPostEndpoint() {
+				t.Fatal("--pending must use the POST endpoint")
+			}
+
+			body := buildPostBody(tt.query, 25, 0)
+
+			if body.Q != tt.wantQ {
+				t.Errorf("q =\n  %s\nwant\n  %s", body.Q, tt.wantQ)
+			}
+			for _, f := range body.Filters {
+				if f.Name == "applicationMetaData.publicationCategoryBag" {
+					t.Errorf("--pending still sends a publicationCategoryBag filter: %+v", f)
+				}
+			}
+			// The GET builder must agree, should the routing ever change.
+			if got := buildGetQueryWithDates(tt.query); got != tt.wantQ {
+				t.Errorf("GET query =\n  %s\nwant\n  %s", got, tt.wantQ)
+			}
+		})
+	}
+}
+
+func TestBuildPostBody_GrantedIsUnchangedAndNotPending(t *testing.T) {
+	orig := searchFlags
+	defer func() { searchFlags = orig }()
+	resetSearchFlagsForTest()
+	searchFlags.granted = true
+
+	body := buildPostBody("battery", 25, 0)
+
+	if body.Q != "battery" {
+		t.Errorf("q = %q, want the caller's query untouched", body.Q)
+	}
+	if len(body.Filters) != 1 || body.Filters[0].Name != "applicationMetaData.publicationCategoryBag" ||
+		len(body.Filters[0].Value) != 1 || body.Filters[0].Value[0] != "Granted/Issued" {
+		t.Errorf("filters = %+v, want the Granted/Issued filter", body.Filters)
+	}
+}
