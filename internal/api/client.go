@@ -1,6 +1,7 @@
-// Package api implements the USPTO Open Data Portal API client with rate
-// limiting, automatic retry on 429, file-based cross-process rate limit
-// state, and all documented endpoints.
+// Package api implements the USPTO Open Data Portal API client with
+// per-process rate limiting, automatic retry on 429, and all documented
+// endpoints. The rate limiter sequences the requests of one process only;
+// separate processes sharing an API key are not coordinated.
 package api
 
 import (
@@ -63,8 +64,11 @@ const (
 	// retried early.
 	maxRetryWait = 30 * time.Second
 
-	// rateLimitFile is the name of the file used for cross-process rate
-	// limit state. It is stored in the OS temp directory.
+	// rateLimitFile is the name of the file that carries the time of the
+	// last request from one run to the next. It is stored in the OS temp
+	// directory, read once when a client starts and rewritten after every
+	// request. It is not a lock and is never re-read, so it does not
+	// coordinate processes that run at the same time.
 	rateLimitFile = "uspto-ratelimit"
 	// legacyRateLimitFile is kept for backwards-compatible reads.
 	legacyRateLimitFile = "uspto-cli-ratelimit"
@@ -91,13 +95,20 @@ func (e *UsptoAPIError) Error() string {
 }
 
 // ---------------------------------------------------------------------------
-// RateLimiter (in-process + file-based cross-process)
+// RateLimiter (per process)
 // ---------------------------------------------------------------------------
 
 // rateLimiter enforces sequential requests (burst limit = 1) with a minimum
-// gap of 100 ms between requests. On 429 it forces a 5 s wait. Timestamp
-// state is persisted to a temp file so concurrent CLI invocations sharing
-// the same API key do not race.
+// gap of 100 ms between requests. On 429 it forces a 5 s wait.
+//
+// It is a per-process limiter. The mutex, the last-request time and the 429
+// back-off all live in memory. The last-request time is also written to a
+// temp file, but that file is only read when a client starts, so its one
+// effect is that a new process waits out the 100 ms gap after the previous
+// process's last request. Two uspto processes running at the same time on
+// one API key are not sequenced against each other and can overlap, which
+// the API answers with 429. (The TSDR client does coordinate across
+// processes, with lock files; see internal/tsdr.)
 type rateLimiter struct {
 	mu             sync.Mutex
 	lastRequestEnd time.Time
@@ -105,7 +116,8 @@ type rateLimiter struct {
 }
 
 // newRateLimiter creates a rate limiter and loads the last-request timestamp
-// from the cross-process state file.
+// left in the state file by an earlier run. This is the only time the file
+// is read.
 func newRateLimiter() *rateLimiter {
 	rl := &rateLimiter{}
 	rl.loadState()
@@ -132,7 +144,8 @@ func (rl *rateLimiter) loadState() {
 	}
 }
 
-// saveState writes the last-request timestamp to the temp file.
+// saveState writes the last-request timestamp to the temp file. The write is
+// not locked, and no running process reads it back.
 func (rl *rateLimiter) saveState() {
 	data := []byte(strconv.FormatInt(rl.lastRequestEnd.UnixNano(), 10))
 	_ = os.WriteFile(stateFilePath(), data, 0644)
@@ -173,7 +186,8 @@ func (rl *rateLimiter) waitForSlot() {
 }
 
 // markRequestComplete records the current time as the end of the most
-// recent request and persists it for cross-process coordination.
+// recent request and writes it to the state file for the next process to
+// start from. Processes already running do not see it.
 func (rl *rateLimiter) markRequestComplete() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
