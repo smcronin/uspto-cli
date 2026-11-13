@@ -39,24 +39,58 @@ type ForeignPrioritySummary struct {
 	FilingDate        string `json:"filingDate"`
 }
 
+// SecurityInterestSummary is a recorded conveyance that encumbers the
+// application without transferring title: a security agreement, lien,
+// mortgage, pledge or collateral assignment.
+type SecurityInterestSummary struct {
+	Holder       string `json:"holder"`
+	Conveyance   string `json:"conveyance"`
+	RecordedDate string `json:"recordedDate,omitempty"`
+	ReelFrame    string `json:"reelFrame,omitempty"`
+}
+
+// Values of AppSummary.CurrentAssigneeSource.
+const (
+	// assigneeFromAssignment: the assignee of the latest recorded conveyance
+	// that transfers title.
+	assigneeFromAssignment = "assignment"
+	// assigneeFromApplicant: no title conveyance is recorded, so the name is
+	// the applicant from the application metadata.
+	assigneeFromApplicant = "applicant"
+)
+
 // AppSummary is the flattened, agent-friendly summary of a patent application.
 type AppSummary struct {
-	ApplicationNumber    string                   `json:"applicationNumber"`
-	PatentNumber         string                   `json:"patentNumber,omitempty"`
-	Title                string                   `json:"title"`
-	Status               string                   `json:"status"`
-	FilingDate           string                   `json:"filingDate"`
-	GrantDate            string                   `json:"grantDate,omitempty"`
-	Applicant            string                   `json:"applicant"`
-	Inventors            []string                 `json:"inventors"`
-	Examiner             string                   `json:"examiner,omitempty"`
-	ArtUnit              string                   `json:"artUnit,omitempty"`
-	CPC                  []string                 `json:"cpc,omitempty"`
-	EntityStatus         string                   `json:"entityStatus,omitempty"`
-	PTADays              int                      `json:"ptaDays"`
-	Parents              []ContinuitySummary      `json:"parents,omitempty"`
-	Children             []ContinuitySummary      `json:"children,omitempty"`
-	CurrentAssignee      string                   `json:"currentAssignee,omitempty"`
+	ApplicationNumber string              `json:"applicationNumber"`
+	PatentNumber      string              `json:"patentNumber,omitempty"`
+	Title             string              `json:"title"`
+	Status            string              `json:"status"`
+	FilingDate        string              `json:"filingDate"`
+	GrantDate         string              `json:"grantDate,omitempty"`
+	Applicant         string              `json:"applicant"`
+	Inventors         []string            `json:"inventors"`
+	Examiner          string              `json:"examiner,omitempty"`
+	ArtUnit           string              `json:"artUnit,omitempty"`
+	CPC               []string            `json:"cpc,omitempty"`
+	EntityStatus      string              `json:"entityStatus,omitempty"`
+	PTADays           int                 `json:"ptaDays"`
+	Parents           []ContinuitySummary `json:"parents,omitempty"`
+	Children          []ContinuitySummary `json:"children,omitempty"`
+
+	// CurrentAssignee is the assignee of the latest recorded conveyance that
+	// transfers title; security interests, liens, licences and releases are
+	// not ownership and are skipped. CurrentAssigneeSource says where the
+	// name came from ("assignment", or "applicant" when no title conveyance
+	// is recorded). For "assignment" the conveyance text and recorded date
+	// of that record are given so the basis can be checked.
+	CurrentAssignee             string `json:"currentAssignee,omitempty"`
+	CurrentAssigneeSource       string `json:"currentAssigneeSource,omitempty"`
+	CurrentAssigneeConveyance   string `json:"currentAssigneeConveyance,omitempty"`
+	CurrentAssigneeRecordedDate string `json:"currentAssigneeRecordedDate,omitempty"`
+	// SecurityInterests lists the recorded encumbrances, oldest first. A
+	// later release is not matched against them: check `app assignments`.
+	SecurityInterests []SecurityInterestSummary `json:"securityInterests,omitempty"`
+
 	RecentEvents         []EventSummary           `json:"recentEvents,omitempty"`
 	ForeignPriority      []ForeignPrioritySummary `json:"foreignPriority,omitempty"`
 	ForeignPriorityCount int                      `json:"foreignPriorityCount"`
@@ -149,6 +183,140 @@ func recentEventSummaries(events []types.EventData, n int) []EventSummary {
 		})
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// Ownership from assignment records
+// ---------------------------------------------------------------------------
+
+// ownership is what the assignment records say about who owns an application.
+type ownership struct {
+	// Assignee, Conveyance and RecordedDate describe the latest recorded
+	// conveyance that transfers title. Assignee is empty when there is none.
+	Assignee     string
+	Conveyance   string
+	RecordedDate string
+	// SecurityInterests are the recorded encumbrances, oldest first.
+	SecurityInterests []SecurityInterestSummary
+}
+
+// Words that mark a conveyance as not transferring title. They are matched
+// as whole words of the conveyance text, so "LIEN" does not match "CLIENT".
+var (
+	// encumbranceWords: the assignee takes a security interest, not title.
+	encumbranceWords = []string{"SECURITY", "SECURED", "LIEN", "LIENS", "MORTGAGE", "COLLATERAL", "PLEDGE"}
+	// releaseWords: an earlier encumbrance is being lifted; the assignee is
+	// whoever it is released to, which is not a transfer of title either.
+	releaseWords = []string{"RELEASE", "RELEASES", "DISCHARGE", "TERMINATION"}
+	// licenceWords: a licence leaves title where it was.
+	licenceWords = []string{"LICENSE", "LICENCE", "SUBLICENSE"}
+)
+
+// conveyanceKind classifies an assignment record by its conveyance text.
+type conveyanceKind int
+
+const (
+	conveysTitle         conveyanceKind = iota // assignment, merger, change of name, ...
+	conveysEncumbrance                         // security interest, lien, mortgage, pledge
+	conveysOtherNonTitle                       // release of an encumbrance, licence
+)
+
+// classifyConveyance decides whether a recorded conveyance transfers title.
+// Anything that is not recognisably an encumbrance, a release or a licence
+// counts as a title conveyance: assignments, mergers, changes of name and
+// corrective assignments all name the owner in their assignee.
+func classifyConveyance(text string) conveyanceKind {
+	words := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToUpper(text), func(r rune) bool { return r < 'A' || r > 'Z' }) {
+		words[w] = true
+	}
+	has := func(list []string) bool {
+		for _, w := range list {
+			if words[w] {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case has(releaseWords):
+		// "RELEASE OF SECURITY INTEREST" has both; the release decides.
+		return conveysOtherNonTitle
+	case has(encumbranceWords):
+		return conveysEncumbrance
+	case has(licenceWords):
+		return conveysOtherNonTitle
+	}
+	return conveysTitle
+}
+
+// ownershipFrom reads the current assignee and the security interests out of
+// an application's assignment records.
+//
+// The current assignee is the first-named assignee of the title conveyance
+// with the latest recorded date (received date when the recorded date is
+// missing). The latest record of any kind used to be taken, so a security
+// agreement recorded after the last assignment named the lender as owner.
+func ownershipFrom(assignments []types.Assignment) ownership {
+	var own ownership
+	latestDate := ""
+	found := false
+
+	for i := range assignments {
+		a := &assignments[i]
+		date := a.AssignmentRecordedDate
+		if date == "" {
+			date = a.AssignmentReceivedDate
+		}
+		holder := ""
+		if len(a.AssigneeBag) > 0 {
+			holder = a.AssigneeBag[0].AssigneeNameText
+		}
+
+		switch classifyConveyance(a.ConveyanceText) {
+		case conveysEncumbrance:
+			own.SecurityInterests = append(own.SecurityInterests, SecurityInterestSummary{
+				Holder:       holder,
+				Conveyance:   a.ConveyanceText,
+				RecordedDate: date,
+				ReelFrame:    a.ReelAndFrameNumber,
+			})
+		case conveysTitle:
+			if holder == "" {
+				continue
+			}
+			if !found || date > latestDate {
+				found = true
+				latestDate = date
+				own.Assignee, own.Conveyance, own.RecordedDate = holder, a.ConveyanceText, date
+			}
+		}
+	}
+
+	sort.SliceStable(own.SecurityInterests, func(i, j int) bool {
+		return own.SecurityInterests[i].RecordedDate < own.SecurityInterests[j].RecordedDate
+	})
+	return own
+}
+
+// applyOwnership writes the ownership reading into the summary. When no
+// title conveyance is recorded (a direct filing by the owner, or records
+// that hold only security interests) it falls back to the applicant from the
+// metadata and says so in CurrentAssigneeSource, instead of naming a lender
+// or leaving the reader to guess.
+func applyOwnership(summary *AppSummary, own ownership) {
+	summary.SecurityInterests = own.SecurityInterests
+	if own.Assignee != "" {
+		summary.CurrentAssignee = own.Assignee
+		summary.CurrentAssigneeSource = assigneeFromAssignment
+		summary.CurrentAssigneeConveyance = own.Conveyance
+		summary.CurrentAssigneeRecordedDate = own.RecordedDate
+		return
+	}
+	if summary.Applicant != "" {
+		summary.CurrentAssignee = summary.Applicant
+		summary.CurrentAssigneeSource = assigneeFromApplicant
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -288,26 +456,13 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	assignResp, err := client.GetAssignment(ctx, appNumber)
 	if err != nil {
 		failed("assignment", err)
-	} else if succeeded++; len(assignResp.PatentFileWrapperDataBag) > 0 {
-		fw := assignResp.PatentFileWrapperDataBag[0]
-
-		// Find the most recent assignment by recorded date.
-		var latestAssignment *types.Assignment
-		latestDate := ""
-		for i := range fw.AssignmentBag {
-			a := &fw.AssignmentBag[i]
-			date := a.AssignmentRecordedDate
-			if date == "" {
-				date = a.AssignmentReceivedDate
-			}
-			if latestDate == "" || date > latestDate {
-				latestDate = date
-				latestAssignment = a
-			}
+	} else {
+		succeeded++
+		var assignments []types.Assignment
+		if len(assignResp.PatentFileWrapperDataBag) > 0 {
+			assignments = assignResp.PatentFileWrapperDataBag[0].AssignmentBag
 		}
-		if latestAssignment != nil && len(latestAssignment.AssigneeBag) > 0 {
-			summary.CurrentAssignee = latestAssignment.AssigneeBag[0].AssigneeNameText
-		}
+		applyOwnership(&summary, ownershipFrom(assignments))
 	}
 
 	// 4. Transactions (10 most recent)
@@ -418,7 +573,25 @@ func writeKeyValueSummary(s AppSummary) {
 	if s.PTADays > 0 {
 		kv("PTA Days", fmt.Sprintf("%d", s.PTADays))
 	}
-	kv("Current Assignee", s.CurrentAssignee)
+	switch s.CurrentAssigneeSource {
+	case assigneeFromAssignment:
+		basis := s.CurrentAssigneeConveyance
+		if s.CurrentAssigneeRecordedDate != "" {
+			basis += ", recorded " + s.CurrentAssigneeRecordedDate
+		}
+		kv("Current Assignee", fmt.Sprintf("%s (%s)", s.CurrentAssignee, strings.TrimPrefix(basis, ", ")))
+	case assigneeFromApplicant:
+		kv("Current Assignee", s.CurrentAssignee+" (the applicant; no title assignment is recorded)")
+	default:
+		kv("Current Assignee", s.CurrentAssignee)
+	}
+	for _, si := range s.SecurityInterests {
+		line := fmt.Sprintf("%s (%s", si.Holder, si.Conveyance)
+		if si.RecordedDate != "" {
+			line += ", recorded " + si.RecordedDate
+		}
+		kv("Security Interest", line+")")
+	}
 	if s.ForeignPriorityCount > 0 {
 		kv("Foreign Priority", fmt.Sprintf("%d claim(s)", s.ForeignPriorityCount))
 	}

@@ -284,7 +284,9 @@ uspto app continuity 16123456
 One command pulls together metadata, prosecution history, assignments, continuity, and documents:
 
 ```bash
-# Full application summary (makes 7 API calls, returns unified view)
+# Full application summary (makes 7 API calls, returns unified view).
+# currentAssignee is the owner of record: lenders with a security interest
+# are listed separately under securityInterests
 uspto summary 16123456
 
 # Who owns it? Check assignment/transfer history

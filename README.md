@@ -410,6 +410,14 @@ uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 
 `family` JSON includes relationship-aware `allApplicationNumbers` entries so CON/DIV/CIP links are explicit in the flat member list.
 
+`summary` reads ownership from the assignment records:
+
+- `currentAssignee` is the first-named assignee of the latest recorded conveyance that transfers title. Security interests, liens, mortgages, pledges, licences and releases are skipped, so a security agreement recorded after the last assignment no longer names the lender as owner.
+- `currentAssigneeSource` is `assignment` when the name comes from such a record, with its text in `currentAssigneeConveyance` and its date in `currentAssigneeRecordedDate`. It is `applicant` when no title conveyance is recorded; `currentAssignee` is then the applicant from the metadata, and the conveyance fields are absent.
+- `securityInterests` lists each recorded encumbrance (`holder`, `conveyance`, `recordedDate`, `reelFrame`), oldest first. Releases are not matched against them; read `uspto app assignments` for the full chain.
+
+The classification goes by the words of the conveyance text. It is a reading aid, not a title opinion.
+
 Commands that make several requests (`summary`, `family`, `app download-all`, `app text-all`, `patent bundle`) report failure in two ways:
 
 - **Nothing worked** (unknown application, bad key, every download refused): the command fails with `ok: false`, the first error, and its typed exit code. It no longer returns an empty result with exit 0.
