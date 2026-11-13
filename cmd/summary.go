@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -345,64 +346,64 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		ApplicationNumber: appNumber,
 	}
 
-	// Track partial failures so we can still return what we got. firstErr and
-	// succeeded tell "partial" apart from "nothing came back at all".
+	// Track failures of the other sub-requests so we can still return what
+	// we got, marked partial.
 	var warnings []string
-	var firstErr error
-	succeeded := 0
 	failed := func(what string, err error) {
-		if firstErr == nil {
-			firstErr = err
-		}
 		warnings = append(warnings, fmt.Sprintf("failed to fetch %s: %v", what, err))
 	}
 
-	// 1. Metadata
+	// 1. Metadata. It is the only source of the application's identity
+	// (title, status, dates, applicant, inventors), so without it there is
+	// no summary to report, whatever the other endpoints would say: return
+	// the error (ok:false and the typed exit code) without asking them.
 	progress("Fetching metadata...")
 	metaResp, err := client.GetMetadata(ctx, appNumber)
 	if err != nil {
-		failed("metadata", err)
-	} else if succeeded++; len(metaResp.PatentFileWrapperDataBag) > 0 {
-		fw := metaResp.PatentFileWrapperDataBag[0]
-		md := fw.ApplicationMetaData
+		return err
+	}
+	if len(metaResp.PatentFileWrapperDataBag) == 0 {
+		return &api.UsptoAPIError{StatusCode: http.StatusNotFound, Message: "no metadata found for application " + appNumber}
+	}
+	fw := metaResp.PatentFileWrapperDataBag[0]
+	md := fw.ApplicationMetaData
 
-		summary.Title = md.InventionTitle
-		summary.PatentNumber = md.PatentNumber
-		summary.Status = md.ApplicationStatusDescriptionText
-		summary.FilingDate = md.FilingDate
-		summary.GrantDate = md.GrantDate
-		summary.Examiner = md.ExaminerNameText
-		summary.ArtUnit = md.GroupArtUnitNumber
-		summary.CPC = md.CpcClassificationBag
-		summary.EntityStatus = md.EntityStatusData.BusinessEntityStatusCategory
-		summary.LastUpdated = fw.LastIngestionDateTime
+	summary.Title = md.InventionTitle
+	summary.PatentNumber = md.PatentNumber
+	summary.Status = md.ApplicationStatusDescriptionText
+	summary.FilingDate = md.FilingDate
+	summary.GrantDate = md.GrantDate
+	summary.Examiner = md.ExaminerNameText
+	summary.ArtUnit = md.GroupArtUnitNumber
+	summary.CPC = md.CpcClassificationBag
+	summary.EntityStatus = md.EntityStatusData.BusinessEntityStatusCategory
+	summary.LastUpdated = fw.LastIngestionDateTime
 
-		// Applicant
-		if md.FirstApplicantName != "" {
-			summary.Applicant = md.FirstApplicantName
-		} else if len(md.ApplicantBag) > 0 {
-			a := md.ApplicantBag[0]
-			if a.ApplicantNameText != "" {
-				summary.Applicant = a.ApplicantNameText
-			} else if a.PreferredName != "" {
-				summary.Applicant = a.PreferredName
-			}
+	// Applicant
+	if md.FirstApplicantName != "" {
+		summary.Applicant = md.FirstApplicantName
+	} else if len(md.ApplicantBag) > 0 {
+		a := md.ApplicantBag[0]
+		if a.ApplicantNameText != "" {
+			summary.Applicant = a.ApplicantNameText
+		} else if a.PreferredName != "" {
+			summary.Applicant = a.PreferredName
 		}
+	}
 
-		// Inventors
-		for _, inv := range md.InventorBag {
-			name := inventorName(inv)
-			if name != "" {
-				summary.Inventors = append(summary.Inventors, name)
-			}
+	// Inventors
+	for _, inv := range md.InventorBag {
+		name := inventorName(inv)
+		if name != "" {
+			summary.Inventors = append(summary.Inventors, name)
 		}
+	}
 
-		// PTA, if this response happens to carry it. The meta-data endpoint
-		// documents ApplicationMetaData only, so the adjustment call below is
-		// the authoritative source.
-		if fw.PatentTermAdjustmentData != nil {
-			summary.PTADays = fw.PatentTermAdjustmentData.AdjustmentTotalQuantity
-		}
+	// PTA, if this response happens to carry it. The meta-data endpoint
+	// documents ApplicationMetaData only, so the adjustment call below is
+	// the authoritative source.
+	if fw.PatentTermAdjustmentData != nil {
+		summary.PTADays = fw.PatentTermAdjustmentData.AdjustmentTotalQuantity
 	}
 
 	// 1b. Patent term adjustment. An application without PTA data (pending,
@@ -414,7 +415,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		if !isNotFoundAPIError(err) {
 			failed("patent term adjustment", err)
 		}
-	} else if succeeded++; len(ptaResp.PatentFileWrapperDataBag) > 0 {
+	} else if len(ptaResp.PatentFileWrapperDataBag) > 0 {
 		if pta := ptaResp.PatentFileWrapperDataBag[0].PatentTermAdjustmentData; pta != nil {
 			summary.PTADays = pta.AdjustmentTotalQuantity
 		}
@@ -425,7 +426,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	contResp, err := client.GetContinuity(ctx, appNumber)
 	if err != nil {
 		failed("continuity", err)
-	} else if succeeded++; len(contResp.PatentFileWrapperDataBag) > 0 {
+	} else if len(contResp.PatentFileWrapperDataBag) > 0 {
 		fw := contResp.PatentFileWrapperDataBag[0]
 
 		for _, p := range fw.ParentContinuityBag {
@@ -457,7 +458,6 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		failed("assignment", err)
 	} else {
-		succeeded++
 		var assignments []types.Assignment
 		if len(assignResp.PatentFileWrapperDataBag) > 0 {
 			assignments = assignResp.PatentFileWrapperDataBag[0].AssignmentBag
@@ -470,7 +470,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	txResp, err := client.GetTransactions(ctx, appNumber)
 	if err != nil {
 		failed("transactions", err)
-	} else if succeeded++; len(txResp.PatentFileWrapperDataBag) > 0 {
+	} else if len(txResp.PatentFileWrapperDataBag) > 0 {
 		fw := txResp.PatentFileWrapperDataBag[0]
 		summary.RecentEvents = recentEventSummaries(fw.EventDataBag, recentEventCount)
 	}
@@ -480,7 +480,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	fpResp, err := client.GetForeignPriority(ctx, appNumber)
 	if err != nil {
 		failed("foreign priority", err)
-	} else if succeeded++; len(fpResp.PatentFileWrapperDataBag) > 0 {
+	} else if len(fpResp.PatentFileWrapperDataBag) > 0 {
 		fw := fpResp.PatentFileWrapperDataBag[0]
 		summary.ForeignPriorityCount = len(fw.ForeignPriorityBag)
 		for _, fp := range fw.ForeignPriorityBag {
@@ -498,7 +498,6 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		failed("documents", err)
 	} else {
-		succeeded++
 		summary.DocumentCount = len(docResp.DocumentBag)
 
 		// Find the latest document by official date.
@@ -513,13 +512,6 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		if latestDesc != "" {
 			summary.LastDocument = fmt.Sprintf("%s (%s)", latestDesc, latestDate)
 		}
-	}
-
-	// Nothing came back at all (unknown application, bad key, outage). That
-	// is a failure, not an empty summary: returning the first error gives the
-	// caller ok:false and the typed exit code.
-	if succeeded == 0 && firstErr != nil {
-		return firstErr
 	}
 
 	// Some sub-requests failed. The rest of the summary is still useful, so

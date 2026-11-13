@@ -421,6 +421,7 @@ The classification goes by the words of the conveyance text. It is a reading aid
 Commands that make several requests (`summary`, `family`, `app download-all`, `app text-all`, `patent bundle`) report failure in two ways:
 
 - **Nothing worked** (unknown application, bad key, every download refused): the command fails with `ok: false`, the first error, and its typed exit code. It no longer returns an empty result with exit 0.
+- **The identifying step failed**: `summary` fails the same way when its metadata request fails, even if other requests succeeded, because without metadata there is no title, status, applicant or inventor to report. `family` fails when both the metadata and the continuity of the root application fail.
 - **Part of it failed**: exit code 0 and `ok: true`, and the JSON envelope adds `"partial": true` plus a `warnings` array naming each failed step. `-q` does not remove them. With `-f table`, `csv` or `ndjson` the same warnings are printed on stderr, also under `-q`.
 
 ```bash

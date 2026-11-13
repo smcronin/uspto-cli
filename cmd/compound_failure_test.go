@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -132,6 +133,52 @@ func TestRunSummary_TotalFailureReturnsTypedError(t *testing.T) {
 				t.Errorf("a failed summary wrote a result to stdout:\n%s", stdout)
 			}
 			wantExit(t, runErr, tt.code)
+		})
+	}
+}
+
+// Without metadata there is nothing to identify the application by, so a
+// failed metadata request fails the summary even when every other endpoint
+// would answer. The other endpoints are not asked.
+func TestRunSummary_MetadataFailureIsTotalFailure(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		code   int
+	}{
+		{"metadata refused", http.StatusForbidden, "", types.ExitAuthFailure},
+		{"metadata server error", http.StatusBadRequest, "", types.ExitGeneralError},
+		{"metadata with no record", http.StatusOK, `{"count":0,"patentFileWrapperDataBag":[]}`, types.ExitNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var others int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if strings.HasSuffix(r.URL.Path, "/meta-data") {
+					w.WriteHeader(tt.status)
+					_, _ = w.Write([]byte(tt.body))
+					return
+				}
+				atomic.AddInt32(&others, 1)
+				_, _ = w.Write([]byte(standAloneBody(r.URL.Path)))
+			}))
+			defer ts.Close()
+			compoundHarness(t, ts, "json", true)
+
+			var runErr error
+			stdout, _, _ := captureTrademarkOutput(t, func() error {
+				runErr = runSummary(summaryCmd, []string{"16123456"})
+				return nil
+			})
+			if stdout != "" {
+				t.Errorf("a summary without metadata wrote a result to stdout:\n%s", stdout)
+			}
+			wantExit(t, runErr, tt.code)
+			if n := atomic.LoadInt32(&others); n != 0 {
+				t.Errorf("summary sent %d further request(s) after metadata failed, want 0", n)
+			}
 		})
 	}
 }
