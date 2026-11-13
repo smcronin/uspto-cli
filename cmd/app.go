@@ -29,7 +29,7 @@ var appNumberRegex = regexp.MustCompile(`^\d{6,12}$`)
 // validateAppNumber checks that the application number is valid.
 func validateAppNumber(appNumber string) error {
 	if !appNumberRegex.MatchString(appNumber) {
-		return fmt.Errorf("invalid application number %q: must be 6-12 digits", appNumber)
+		return usageErrorf("invalid application number %q: must be 6-12 digits", appNumber)
 	}
 	return nil
 }
@@ -132,7 +132,10 @@ func writeDocumentsTableTo(w io.Writer, docs []types.Document) {
 	t := table.NewWriter()
 	t.SetOutputMirror(w)
 	t.SetStyle(table.StyleLight)
-	t.AppendHeader(table.Row{"#", "Date", "Code", "Direction", "Description", "Formats", "Text"})
+	// "#" is a position in this listing and changes with the filters and
+	// sort. "Document ID" is the documentIdentifier, the handle that stays
+	// the same; `app download` and `app text` accept either.
+	t.AppendHeader(table.Row{"#", "Document ID", "Date", "Code", "Direction", "Description", "Formats", "Text"})
 
 	for _, doc := range summarizeDocuments(docs) {
 		textFormat := "-"
@@ -141,6 +144,7 @@ func writeDocumentsTableTo(w io.Writer, docs []types.Document) {
 		}
 		t.AppendRow(table.Row{
 			doc.Index,
+			safeStr(doc.DocumentIdentifier, "-"),
 			safeStr(doc.OfficialDate, "-"),
 			safeStr(doc.DocumentCode, "-"),
 			safeStr(doc.Direction, "-"),
@@ -632,7 +636,7 @@ func resolveDownloadFormat(format string) (mimeType string, ext string, label st
 	if ext, ok := downloadFormatExtensions[upper]; ok {
 		return upper, ext, canonicalFormatLabels[upper], nil
 	}
-	return "", "", "", fmt.Errorf("unknown download format %q (valid: pdf, docx, xml)", format)
+	return "", "", "", usageErrorf("unknown download format %q (valid: pdf, docx, xml)", format)
 }
 
 // documentOptionsParams converts document listing options to query params.
@@ -737,7 +741,7 @@ func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Docume
 	parts := strings.SplitN(expr, ":", 2)
 	field := strings.ToLower(strings.TrimSpace(parts[0]))
 	if field != "date" && field != "officialdate" {
-		return nil, fmt.Errorf("invalid --sort %q: supported fields are date or officialDate", expr)
+		return nil, usageErrorf("invalid --sort %q: supported fields are date or officialDate", expr)
 	}
 	desc := false
 	if len(parts) == 2 {
@@ -747,7 +751,7 @@ func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Docume
 		case "desc":
 			desc = true
 		default:
-			return nil, fmt.Errorf("invalid --sort %q: order must be asc or desc", expr)
+			return nil, usageErrorf("invalid --sort %q: order must be asc or desc", expr)
 		}
 	}
 
@@ -763,14 +767,66 @@ func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Docume
 	return sorted, nil
 }
 
+// documentListing is the set of flags that decides which file-wrapper
+// documents a command sees and in what order: --codes, --from, --to, --sort.
+// `app docs`, `app download` and `app text` all list through it, so the same
+// flags give the same 1-based numbering in each of them.
+type documentListing struct {
+	codes string // --codes: document codes or aliases, comma-separated
+	from  string // --from: earliest official date
+	to    string // --to: latest official date
+	sort  string // --sort: date:asc or date:desc; empty keeps the API's order
+}
+
+// validate checks the dates and the sort expression without any request.
+func (l documentListing) validate() error {
+	if err := validateDateRange("--from", l.from, "--to", l.to); err != nil {
+		return err
+	}
+	_, err := sortDocumentsByDateExpr(nil, l.sort)
+	return err
+}
+
+// options are the server-side filters of the listing.
+func (l documentListing) options() types.DocumentOptions {
+	return types.DocumentOptions{
+		DocumentCodes:    normalizeDocumentCodes(l.codes),
+		OfficialDateFrom: l.from,
+		OfficialDateTo:   l.to,
+	}
+}
+
+// forSelector returns the listing a document selector is resolved against.
+// A 1-based index only means something within the caller's own listing. A
+// documentIdentifier names one document whatever the filters say, so it is
+// looked up in the whole, unsorted file wrapper.
+func (l documentListing) forSelector(selector string) documentListing {
+	// isDocumentIndex (trademark_docs.go): the selector is a whole number.
+	if isDocumentIndex(selector) {
+		return l
+	}
+	return documentListing{}
+}
+
+// fetch lists the application's documents with the listing's filters applied
+// by the API and its sort applied here.
+func (l documentListing) fetch(ctx context.Context, appNumber string) ([]types.Document, error) {
+	resp, err := api.DefaultClient.GetDocuments(ctx, appNumber, l.options())
+	if err != nil {
+		return nil, err
+	}
+	return sortDocumentsByDateExpr(resp.DocumentBag, l.sort)
+}
+
 func resolveDocumentSelection(docs []types.Document, selector string) (int, *types.Document, error) {
+	selector = strings.TrimSpace(selector)
 	if len(docs) == 0 {
 		return 0, nil, fmt.Errorf("no documents available")
 	}
 
 	if idx, err := strconv.Atoi(selector); err == nil {
 		if idx < 1 || idx > len(docs) {
-			return 0, nil, fmt.Errorf("document index %d out of range (1-%d)", idx, len(docs))
+			return 0, nil, usageErrorf("document index %d out of range (1-%d)", idx, len(docs))
 		}
 		return idx, &docs[idx-1], nil
 	}
@@ -780,7 +836,7 @@ func resolveDocumentSelection(docs []types.Document, selector string) (int, *typ
 			return i + 1, &docs[i], nil
 		}
 	}
-	return 0, nil, fmt.Errorf("document identifier %q not found", selector)
+	return 0, nil, usageErrorf("document identifier %q not found", selector)
 }
 
 func uniqueOutputPath(path string, seen map[string]int) (string, bool) {
@@ -924,32 +980,30 @@ var (
 var appDocsCmd = &cobra.Command{
 	Use:   "docs <appNumber>",
 	Short: "List file wrapper documents",
-	Long:  "List all documents in the file wrapper for an application. Optionally\nfilter by document codes and/or date range.",
-	Args:  cobra.ExactArgs(1),
+	Long: `List all documents in the file wrapper for an application. Optionally
+filter by document codes and/or date range, and sort by date.
+
+Each document has a documentIdentifier ("Document ID" in the table,
+documentIdentifier in JSON). Pass it to "app download" or "app text": it names
+the same document whatever filters are in use. The 1-based index ("#") is a
+position in this listing, so it is only valid in another command that is
+given the same --codes, --from, --to and --sort.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appNumber := args[0]
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
-		if err := validateDateRange("--from", appDocsFromFlag, "--to", appDocsToFlag); err != nil {
+		listing := documentListing{codes: appDocsCodesFlag, from: appDocsFromFlag, to: appDocsToFlag, sort: appDocsSortFlag}
+		if err := listing.validate(); err != nil {
 			return err
 		}
-
-		opts := types.DocumentOptions{
-			DocumentCodes:    normalizeDocumentCodes(appDocsCodesFlag),
-			OfficialDateFrom: appDocsFromFlag,
-			OfficialDateTo:   appDocsToFlag,
-		}
 		if flagDryRun {
-			printDryRunDocuments(appNumber, opts)
+			printDryRunDocuments(appNumber, listing.options())
 			return nil
 		}
 
-		resp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, opts)
-		if err != nil {
-			return err
-		}
-		sortedDocs, err := sortDocumentsByDateExpr(resp.DocumentBag, appDocsSortFlag)
+		sortedDocs, err := listing.fetch(context.Background(), appNumber)
 		if err != nil {
 			return err
 		}
@@ -1289,26 +1343,40 @@ var appAssociatedDocsCmd = &cobra.Command{
 var (
 	appDownloadOutputFlag string
 	appDownloadCodesFlag  string
+	appDownloadFromFlag   string
+	appDownloadToFlag     string
+	appDownloadSortFlag   string
 	appDownloadAsFlag     string
 )
 
 var appDownloadCmd = &cobra.Command{
-	Use:     "download <appNumber> [docIndex|documentIdentifier]",
+	Use:     "download <appNumber> [documentIdentifier|docIndex]",
 	Aliases: []string{"dl"},
 	Short:   "Download a document from the file wrapper",
 	Long: `Download a specific document from the application's file wrapper.
 
-If docIndex/documentIdentifier is not specified, lists all documents so you can pick one.
-The docIndex is 1-based (matching the output of "app docs").
-You can also pass the exact documentIdentifier value.
+Select the document by its documentIdentifier (the "Document ID" column of
+"app docs", documentIdentifier in JSON). The identifier names the same
+document whatever filters are in use, so it needs no other flags.
+
+A 1-based docIndex also works. It is a position in the listing, so it is only
+valid with the same --codes, --from, --to and --sort that were given to
+"app docs"; with different flags the same number is a different document.
+
+If neither is given, the documents are listed so you can pick one.
 
 Use --as to select the download format: pdf (default), docx, or xml.
 Office action PDFs are typically image-based scans with no embedded text.
 Use --as docx to get a Word document with full structured text (available
 for most examiner-generated documents like rejections and allowances).
 
-Use --codes to filter documents before selecting. Use --output to specify
-the output file path (defaults to a generated filename).`,
+Use --output to specify the output file path (defaults to a generated
+filename).
+
+Examples:
+  uspto app docs 16123456 --codes CTNF,CTFR -f json -q
+  uspto app download 16123456 LMGEU99FGREENX5 -o office-action.pdf
+  uspto app download 16123456 2 --codes CTNF,CTFR --sort date:desc`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appNumber := args[0]
@@ -1322,16 +1390,22 @@ the output file path (defaults to a generated filename).`,
 			return err
 		}
 
-		// List documents to find the target.
-		docOpts := types.DocumentOptions{
-			DocumentCodes: normalizeDocumentCodes(appDownloadCodesFlag),
+		// List documents to find the target. An index is resolved against the
+		// listing these flags describe, exactly as "app docs" numbers it; a
+		// documentIdentifier is looked up in the whole file wrapper.
+		listing := documentListing{codes: appDownloadCodesFlag, from: appDownloadFromFlag, to: appDownloadToFlag, sort: appDownloadSortFlag}
+		if err := listing.validate(); err != nil {
+			return err
+		}
+		if len(args) > 1 {
+			listing = listing.forSelector(args[1])
 		}
 		if flagDryRun {
 			// The download URL is only known from the document listing, so a
 			// dry run describes both steps without performing either.
-			printDryRunDocuments(appNumber, docOpts)
+			printDryRunDocuments(appNumber, listing.options())
 			if len(args) < 2 {
-				fmt.Fprintln(os.Stderr, "Then: list the documents (no docIndex or documentIdentifier given, so nothing is downloaded)")
+				fmt.Fprintln(os.Stderr, "Then: list the documents (no documentIdentifier or docIndex given, so nothing is downloaded)")
 				return nil
 			}
 			target := appDownloadOutputFlag
@@ -1341,24 +1415,24 @@ the output file path (defaults to a generated filename).`,
 			fmt.Fprintf(os.Stderr, "Then: GET <%s downloadUrl of document %s> -> %s\n", fmtLabel, args[1], target)
 			return nil
 		}
-		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
+		docs, err := listing.fetch(context.Background(), appNumber)
 		if err != nil {
 			return err
 		}
 
-		if len(docResp.DocumentBag) == 0 {
+		if len(docs) == 0 {
 			return fmt.Errorf("no documents found for application %s", appNumber)
 		}
 
-		// If no docIndex given, show the document list and exit.
+		// If no selector given, show the document list and exit.
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a docIndex (1-%d) or documentIdentifier to download.\n",
-				len(docResp.DocumentBag), len(docResp.DocumentBag))
-			writeDocumentChoices(docResp.DocumentBag)
+			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a documentIdentifier, or a docIndex (1-%d) with these same filters, to download.\n",
+				len(docs), len(docs))
+			writeDocumentChoices(docs)
 			return nil
 		}
 
-		docIndex, doc, err := resolveDocumentSelection(docResp.DocumentBag, args[1])
+		docIndex, doc, err := resolveDocumentSelection(docs, args[1])
 		if err != nil {
 			return err
 		}
@@ -1392,10 +1466,11 @@ the output file path (defaults to a generated filename).`,
 		// In JSON mode, output download result.
 		if flagFormat == "json" || flagFormat == "ndjson" {
 			outputResult(cmd, map[string]string{
-				"path":         savedPath,
-				"format":       fmtLabel,
-				"documentCode": doc.DocumentCode,
-				"officialDate": doc.OfficialDate,
+				"path":               savedPath,
+				"format":             fmtLabel,
+				"documentIdentifier": doc.DocumentIdentifier,
+				"documentCode":       doc.DocumentCode,
+				"officialDate":       doc.OfficialDate,
 			}, nil)
 		}
 
@@ -1475,13 +1550,14 @@ Progress is shown on stderr.`,
 
 		// Download each document that has the requested format.
 		type downloadResult struct {
-			Index        int    `json:"index"`
-			DocumentCode string `json:"documentCode"`
-			OfficialDate string `json:"officialDate"`
-			Format       string `json:"format"`
-			Path         string `json:"path,omitempty"`
-			RenamedFrom  string `json:"renamedFrom,omitempty"`
-			Error        string `json:"error,omitempty"`
+			Index              int    `json:"index"`
+			DocumentIdentifier string `json:"documentIdentifier"`
+			DocumentCode       string `json:"documentCode"`
+			OfficialDate       string `json:"officialDate"`
+			Format             string `json:"format"`
+			Path               string `json:"path,omitempty"`
+			RenamedFrom        string `json:"renamedFrom,omitempty"`
+			Error              string `json:"error,omitempty"`
 		}
 
 		var results []downloadResult
@@ -1491,6 +1567,8 @@ Progress is shown on stderr.`,
 		errCount := 0
 		collisionCount := 0
 		seenPaths := map[string]int{}
+		var warnings []string
+		var firstErr error
 
 		for i, doc := range docResp.DocumentBag {
 			dlURL := findDownloadOption(&doc, mimeType)
@@ -1523,13 +1601,25 @@ Progress is shown on stderr.`,
 			if dlErr != nil {
 				errCount++
 				results = append(results, downloadResult{
-					Index:        i + 1,
-					DocumentCode: doc.DocumentCode,
-					OfficialDate: doc.OfficialDate,
-					Format:       fmtLabel,
-					Error:        dlErr.Error(),
+					Index:              i + 1,
+					DocumentIdentifier: doc.DocumentIdentifier,
+					DocumentCode:       doc.DocumentCode,
+					OfficialDate:       doc.OfficialDate,
+					Format:             fmtLabel,
+					Error:              dlErr.Error(),
 				})
-				fmt.Fprintf(os.Stderr, "  Error: %v\n", dlErr)
+				if firstErr == nil {
+					firstErr = dlErr
+				}
+				warning := fmt.Sprintf("document %d (%s, %s) was not downloaded: %v",
+					i+1, doc.DocumentCode, doc.OfficialDate, dlErr)
+				warnings = append(warnings, warning)
+				// One stderr line per failure. Without -q it is printed here,
+				// under the progress line of the download that failed, and is
+				// not repeated at the end; with -q it is printed at the end.
+				if !flagQuiet {
+					fmt.Fprintln(os.Stderr, "Warning: "+warning)
+				}
 				continue
 			}
 
@@ -1539,12 +1629,13 @@ Progress is shown on stderr.`,
 				renamedFrom = basePath
 			}
 			results = append(results, downloadResult{
-				Index:        i + 1,
-				DocumentCode: doc.DocumentCode,
-				OfficialDate: doc.OfficialDate,
-				Format:       fmtLabel,
-				Path:         savedPath,
-				RenamedFrom:  renamedFrom,
+				Index:              i + 1,
+				DocumentIdentifier: doc.DocumentIdentifier,
+				DocumentCode:       doc.DocumentCode,
+				OfficialDate:       doc.OfficialDate,
+				Format:             fmtLabel,
+				Path:               savedPath,
+				RenamedFrom:        renamedFrom,
 			})
 		}
 
@@ -1553,8 +1644,21 @@ Progress is shown on stderr.`,
 				downloaded, skipped, fmtLabel, errCount, totalDocs, len(seenPaths), collisionCount)
 		}
 
+		// Every download failed: nothing was saved, so this is a failure with
+		// the first error's typed exit code, not an empty success.
+		if downloaded == 0 && firstErr != nil {
+			return fmt.Errorf("all %d downloads failed: %w", errCount, firstErr)
+		}
+
+		// Some downloads failed. The files that did arrive are on disk, so
+		// the command succeeds, but the result says it is incomplete.
+		notes := resultNotes{Warnings: warnings, Partial: errCount > 0}
+		if flagQuiet {
+			reportWarnings(notes.Warnings)
+		}
+
 		if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
-			outputResult(cmd, results, nil)
+			outputResultWithNotes(cmd, results, nil, nil, notes)
 		}
 
 		return nil
@@ -1594,7 +1698,10 @@ func init() {
 
 	// download flags
 	appDownloadCmd.Flags().StringVarP(&appDownloadOutputFlag, "output", "o", "", "Output file path (default: auto-generated)")
-	appDownloadCmd.Flags().StringVar(&appDownloadCodesFlag, "codes", "", "Filter documents by codes/aliases before selecting")
+	appDownloadCmd.Flags().StringVar(&appDownloadCodesFlag, "codes", "", "Comma-separated document codes/aliases the docIndex is counted within (as in app docs)")
+	appDownloadCmd.Flags().StringVar(&appDownloadFromFlag, "from", "", "Earliest official date the docIndex is counted within (YYYY-MM-DD, as in app docs)")
+	appDownloadCmd.Flags().StringVar(&appDownloadToFlag, "to", "", "Latest official date the docIndex is counted within (YYYY-MM-DD, as in app docs)")
+	appDownloadCmd.Flags().StringVar(&appDownloadSortFlag, "sort", "", "Sort the docIndex is counted in (date:asc or date:desc, as in app docs)")
 	appDownloadCmd.Flags().StringVar(&appDownloadAsFlag, "as", "pdf", "Download format: pdf, docx, or xml")
 
 	// download-all flags

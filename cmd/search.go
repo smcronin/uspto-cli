@@ -62,11 +62,12 @@ var searchFlags struct {
 }
 
 // autoPageLimit is the maximum number of results that auto-pagination will
-// fetch. The USPTO API caps search results at 10,000.
-const autoPageLimit = 10000
+// fetch. The USPTO API caps search results at 10,000. (A variable, like
+// autoPageSize, only so tests can exercise the cap with small numbers.)
+var autoPageLimit = 10000
 
 // autoPageSize is the page size used during auto-pagination.
-const autoPageSize = 100
+var autoPageSize = 100
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
@@ -87,6 +88,9 @@ Examples:
 
   # Date range with convenience filter
   uspto search --title "battery" --filed-within 2y --granted
+
+  # Applications still pending (not granted, not abandoned)
+  uspto search --assignee "Tesla" --pending --count-only -f json -q
 
   # Sorted results in JSON
   uspto search --cpc "H04W" --sort "filingDate:desc" -f json
@@ -136,12 +140,12 @@ func init() {
 
 	// Convenience boolean filters.
 	f.BoolVar(&searchFlags.granted, "granted", false, "Show only granted/issued patents")
-	f.BoolVar(&searchFlags.pending, "pending", false, "Show only pending (pre-grant) applications")
+	f.BoolVar(&searchFlags.pending, "pending", false, "Show only applications still pending: not granted, not abandoned, not an expired provisional")
 
 	// Pagination.
 	f.IntVar(&searchFlags.limit, "limit", 25, "Number of results per page")
 	f.IntVar(&searchFlags.offset, "offset", 0, "Result offset for pagination")
-	f.BoolVar(&searchFlags.all, "all", false, "Auto-paginate to fetch all results (up to 10,000)")
+	f.BoolVar(&searchFlags.all, "all", false, "Auto-paginate to fetch all results (up to 10,000). With --download: the same full export, ignoring --limit")
 	f.IntVar(&searchFlags.page, "page", 0, "Page number (1-based, alternative to --offset)")
 	f.BoolVar(&searchFlags.countOnly, "count-only", false, "Return only total count (no result records)")
 
@@ -152,7 +156,7 @@ func init() {
 	f.StringVar(&searchFlags.fields, "fields", "", "Comma-separated list of fields to return")
 	f.StringArrayVar(&searchFlags.filters, "filter", nil, "Structured filter: field=value (repeatable, comma-separated values)")
 	f.StringVar(&searchFlags.facets, "facets", "", "Comma-separated facet fields")
-	f.String("download", "", "Download all results in one request (json or csv)")
+	addDownloadFlag(searchCmd)
 
 	rootCmd.AddCommand(searchCmd)
 }
@@ -174,7 +178,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if searchFlags.filedWithin != "" {
 		resolved, err := resolveRelativeDate(searchFlags.filedWithin)
 		if err != nil {
-			return fmt.Errorf("invalid --filed-within value %q: %w", searchFlags.filedWithin, err)
+			return usageErrorf("invalid --filed-within value %q: %w", searchFlags.filedWithin, err)
 		}
 		// Only override if --filed-after was not explicitly set.
 		if searchFlags.filedAfter == "" {
@@ -199,48 +203,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	// --download: use the bulk download endpoint instead of paginated search.
-	if dlFmt := downloadFormat(cmd); dlFmt != "" {
-		if needsPost {
-			body := buildPostBody(freeTextQuery, searchFlags.limit, searchFlags.offset)
-			if flagDryRun {
-				printDryRunPOST("/api/v1/patent/applications/search/download", nil, map[string]interface{}{
-					"q":            body.Q,
-					"filters":      body.Filters,
-					"rangeFilters": body.RangeFilters,
-					"sort":         body.Sort,
-					"fields":       body.Fields,
-					"pagination":   body.Pagination,
-					"facets":       body.Facets,
-					"format":       dlFmt,
-				})
-				return nil
-			}
-			data, err := api.DefaultClient.DownloadPatentsPost(ctx, body, dlFmt)
-			if err != nil {
-				return annotateSearch404(err)
-			}
-			writeDownloadResult(data)
-			return nil
-		}
-
-		query := buildGetQuery(freeTextQuery)
-		opts := types.SearchOptions{
-			Limit:  searchFlags.limit,
-			Offset: searchFlags.offset,
-			Sort:   buildGetSort(),
-		}
-		if flagDryRun {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = dlFmt
-			printDryRunGET("/api/v1/patent/applications/search/download", params)
-			return nil
-		}
-		data, err := api.DefaultClient.DownloadPatents(ctx, query, dlFmt, opts)
-		if err != nil {
-			return annotateSearch404(err)
-		}
-		writeDownloadResult(data)
-		return nil
+	// (validateSearchMode has already rejected a bad --download value.)
+	if dlFmt, _ := downloadFormat(cmd); dlFmt != "" {
+		return runSearchDownload(ctx, cmd, freeTextQuery, needsPost, dlFmt)
 	}
 
 	if searchFlags.all {
@@ -251,6 +216,90 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	return runSearchSinglePage(ctx, cmd, freeTextQuery, needsPost)
+}
+
+// runSearchDownload exports the search through the server-side download
+// endpoint and writes the raw JSON or CSV to stdout.
+//
+// The endpoint pages like the search endpoint and defaults to 25 rows, so the
+// export first counts the matches and asks for all of them (at most
+// 10,000). An explicit --limit is sent as given. --all means the same full
+// export and overrides --limit, as it does for a paginated search.
+func runSearchDownload(ctx context.Context, cmd *cobra.Command, freeTextQuery string, usePost bool, dlFmt string) error {
+	const downloadPath = "/api/v1/patent/applications/search/download"
+
+	limit, offset := searchFlags.limit, searchFlags.offset
+	fullExport := searchFlags.all || !explicitExportLimit(cmd)
+
+	if flagDryRun {
+		// Nothing is sent, so the count that would set the limit is unknown:
+		// print the count request, then the download with a placeholder.
+		var limitShown interface{} = limit
+		if fullExport {
+			if _, err := executeSearchCountOnly(ctx, freeTextQuery, usePost); err != nil {
+				return err
+			}
+			printDryRunExportNote()
+			limitShown = exportLimitPlaceholder
+		}
+		if usePost {
+			body := buildPostBody(freeTextQuery, limit, offset)
+			printDryRunPOST(downloadPath, nil, map[string]interface{}{
+				"q":            body.Q,
+				"filters":      body.Filters,
+				"rangeFilters": body.RangeFilters,
+				"sort":         body.Sort,
+				"fields":       body.Fields,
+				"pagination":   map[string]interface{}{"offset": offset, "limit": limitShown},
+				"facets":       body.Facets,
+				"format":       dlFmt,
+			})
+			return nil
+		}
+		params := searchOptionsToParams(buildGetQuery(freeTextQuery), types.SearchOptions{
+			Limit:  limit,
+			Offset: offset,
+			Sort:   buildGetSort(),
+			Fields: strings.Join(projectedFields(), ","),
+		})
+		params["format"] = dlFmt
+		params["limit"] = fmt.Sprint(limitShown)
+		printDryRunGET(downloadPath, params)
+		return nil
+	}
+
+	if fullExport {
+		resp, err := executeSearchCountOnly(ctx, freeTextQuery, usePost)
+		if err != nil {
+			return err
+		}
+		limit = exportLimit(resp.Count, offset)
+		reportExportSize(resp.Count, limit)
+		if limit == 0 {
+			writeEmptyExport(dlFmt)
+			return nil
+		}
+	}
+
+	var data []byte
+	var err error
+	if usePost {
+		data, err = api.DefaultClient.DownloadPatentsPost(ctx, buildPostBody(freeTextQuery, limit, offset), dlFmt)
+	} else {
+		// --fields goes on the GET export as it does in the POST body; it
+		// used to be dropped here, so a GET export carried every column.
+		data, err = api.DefaultClient.DownloadPatents(ctx, buildGetQuery(freeTextQuery), dlFmt, types.SearchOptions{
+			Limit:  limit,
+			Offset: offset,
+			Sort:   buildGetSort(),
+			Fields: strings.Join(projectedFields(), ","),
+		})
+	}
+	if err != nil {
+		return exportTimeoutHint(annotateSearch404(err))
+	}
+	writeDownloadResult(data)
+	return nil
 }
 
 // runSearchCountOnly performs a lightweight search and returns only the total count.
@@ -319,6 +368,7 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 	offset := searchFlags.offset
 	pageSize := autoPageSize
 	totalCount := 0
+	emptyPage := false
 
 	for {
 		resp, err := executeSearch(ctx, freeTextQuery, usePost, pageSize, offset)
@@ -338,6 +388,7 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		}
 
 		allResults = append(allResults, resp.PatentFileWrapperDataBag...)
+		emptyPage = len(resp.PatentFileWrapperDataBag) == 0
 
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "  fetched %d / %d\n", len(allResults), totalCount)
@@ -346,7 +397,7 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		offset += pageSize
 
 		// Stop conditions: we have all results, hit API cap, or no more data.
-		if offset >= totalCount || offset >= autoPageLimit || len(resp.PatentFileWrapperDataBag) == 0 {
+		if offset >= totalCount || offset >= autoPageLimit || emptyPage {
 			break
 		}
 	}
@@ -358,8 +409,45 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		HasMore: totalCount > len(allResults),
 	}
 
-	outputResult(cmd, allResults, pagination)
+	var notes resultNotes
+	if warning, truncated := allPagesTruncation(len(allResults), totalCount, offset, emptyPage); warning != "" {
+		pagination.Truncated = truncated
+		notes.Warnings = []string{warning}
+	}
+
+	outputResultWithNotes(cmd, allResults, pagination, nil, notes)
 	return nil
+}
+
+// allPagesTruncation reports an --all run that stopped before the end of the
+// result set. nextOffset is where the following page would have started, and
+// emptyPage says the run stopped because the last page came back empty. It
+// returns "" for a complete run; otherwise it prints the warning on stderr
+// and returns it for the JSON envelope, with truncated true only when the
+// stop was the 10,000-result ceiling of USPTO search.
+//
+// An empty page below the ceiling is a different stop: the server had no
+// more rows than it reported (the result set changed while paging, or the
+// count was an estimate). It gets its own warning and is not called
+// truncation, because splitting the query would not recover anything.
+//
+// The line is printed for every output format and under --quiet: ndjson, csv
+// and table output have no envelope, and a silently short export is exactly
+// what a landscape count must not rest on.
+func allPagesTruncation(fetched, total, nextOffset int, emptyPage bool) (warning string, truncated bool) {
+	if nextOffset >= total {
+		return "", false
+	}
+	if emptyPage {
+		warning = fmt.Sprintf("returned %d of %d results; the API sent an empty page at offset %d, before the reported total. The result set may have changed while paging; rerun to check.",
+			fetched, total, nextOffset-autoPageSize)
+	} else {
+		warning = fmt.Sprintf("returned %d of %d results; USPTO search stops at %d. Split the query (for example by filing-date range) to get the rest.",
+			fetched, total, autoPageLimit)
+		truncated = true
+	}
+	fmt.Fprintln(os.Stderr, "Warning: "+warning)
+	return warning, truncated
 }
 
 // runSearchAllPagesCSV fetches all pages and concatenates rows client-side
@@ -370,6 +458,7 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 	totalCount := 0
 
 	var rows []map[string]string
+	emptyPage := false
 
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, "Using client-side CSV concat flow (--all + -f csv).")
@@ -395,16 +484,19 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		for _, item := range resp.PatentFileWrapperDataBag {
 			rows = append(rows, flattenToMap(item))
 		}
+		emptyPage = len(resp.PatentFileWrapperDataBag) == 0
 
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "  fetched %d / %d\n", len(rows), totalCount)
 		}
 
 		offset += pageSize
-		if offset >= totalCount || offset >= autoPageLimit || len(resp.PatentFileWrapperDataBag) == 0 {
+		if offset >= totalCount || offset >= autoPageLimit || emptyPage {
 			break
 		}
 	}
+
+	allPagesTruncation(len(rows), totalCount, offset, emptyPage)
 
 	writeCSVRows(rows)
 	return nil
@@ -538,16 +630,16 @@ func annotateSearch404(err error) error {
 
 func validateSearchInputs() error {
 	if searchFlags.limit <= 0 {
-		return fmt.Errorf("invalid --limit %d: must be > 0", searchFlags.limit)
+		return usageErrorf("invalid --limit %d: must be > 0", searchFlags.limit)
 	}
 	if searchFlags.offset < 0 {
-		return fmt.Errorf("invalid --offset %d: must be >= 0", searchFlags.offset)
+		return usageErrorf("invalid --offset %d: must be >= 0", searchFlags.offset)
 	}
 	if searchFlags.page < 0 {
-		return fmt.Errorf("invalid --page %d: must be >= 1", searchFlags.page)
+		return usageErrorf("invalid --page %d: must be >= 1", searchFlags.page)
 	}
 	if searchFlags.granted && searchFlags.pending {
-		return fmt.Errorf("cannot combine --granted and --pending")
+		return usageErrorf("cannot combine --granted and --pending")
 	}
 	if err := validateSortExpr("--sort", searchFlags.sort); err != nil {
 		return err
@@ -561,23 +653,27 @@ func validateSearchInputs() error {
 	for _, expr := range searchFlags.filters {
 		name, value, ok := strings.Cut(expr, "=")
 		if !ok {
-			return fmt.Errorf("invalid --filter %q: expected field=value", expr)
+			return usageErrorf("invalid --filter %q: expected field=value", expr)
 		}
 		// An empty side used to be dropped silently, which ran the search
 		// without the filter the caller asked for.
 		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("invalid --filter %q: missing field name before '='", expr)
+			return usageErrorf("invalid --filter %q: missing field name before '='", expr)
 		}
 		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("invalid --filter %q: missing value after '='", expr)
+			return usageErrorf("invalid --filter %q: missing value after '='", expr)
 		}
 	}
 	return nil
 }
 
 func validateSearchMode(cmd *cobra.Command) error {
-	if searchFlags.countOnly && downloadFormat(cmd) != "" {
-		return fmt.Errorf("cannot combine --count-only and --download")
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if searchFlags.countOnly && dlFmt != "" {
+		return usageErrorf("cannot combine --count-only and --download")
 	}
 	return nil
 }
@@ -599,6 +695,9 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	// ranges and convenience filters are handled via rangeFilters/filters,
 	// so we use buildGetQuery (without dates) to build only the q= part.
 	q := buildGetQuery(freeTextQuery)
+	if searchFlags.pending {
+		q = withPendingExclusions(q)
+	}
 	if q != "" {
 		body.Q = q
 	}
@@ -606,17 +705,12 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	// Structured filters from --filter flags.
 	body.Filters = buildStructuredFilters()
 
-	// Convenience boolean filters (--granted, --pending) as structured filters.
+	// --granted as a structured filter. (--pending is a set of exclusions in
+	// q, added above: a filter can only say what a record has.)
 	if searchFlags.granted {
 		body.Filters = append(body.Filters, types.Filter{
 			Name:  "applicationMetaData.publicationCategoryBag",
 			Value: []string{"Granted/Issued"},
-		})
-	}
-	if searchFlags.pending {
-		body.Filters = append(body.Filters, types.Filter{
-			Name:  "applicationMetaData.publicationCategoryBag",
-			Value: []string{"Pre-Grant Publications - PGPub"},
 		})
 	}
 
@@ -629,13 +723,7 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	}
 
 	// Field projection.
-	if searchFlags.fields != "" {
-		fields := strings.Split(searchFlags.fields, ",")
-		for i, f := range fields {
-			fields[i] = strings.TrimSpace(f)
-		}
-		body.Fields = fields
-	}
+	body.Fields = projectedFields()
 
 	// Facets.
 	if searchFlags.facets != "" {
@@ -647,6 +735,20 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	}
 
 	return body
+}
+
+// projectedFields returns the --fields list, split on commas and trimmed, or
+// nil when the flag is not set. The POST body sends it as an array and the
+// GET export as a comma-separated parameter.
+func projectedFields() []string {
+	if searchFlags.fields == "" {
+		return nil
+	}
+	fields := strings.Split(searchFlags.fields, ",")
+	for i, f := range fields {
+		fields[i] = strings.TrimSpace(f)
+	}
+	return fields
 }
 
 // buildStructuredFilters parses repeatable --filter flags into Filter objects.
@@ -809,19 +911,66 @@ func buildGetQueryWithDates(freeTextQuery string) string {
 	if searchFlags.granted {
 		extra = append(extra, "applicationMetaData.publicationCategoryBag:"+quoteIfNeeded("Granted/Issued"))
 	}
+	query := base
+	if len(extra) > 0 {
+		suffix := strings.Join(extra, " AND ")
+		if base != "" {
+			query = base + " AND " + suffix
+		} else {
+			query = suffix
+		}
+	}
+
+	// --pending always takes the POST path today (needsPostEndpoint); the
+	// clause is added here too so the two paths cannot drift apart.
 	if searchFlags.pending {
-		extra = append(extra, "applicationMetaData.publicationCategoryBag:"+quoteIfNeeded("Pre-Grant Publications - PGPub"))
+		query = withPendingExclusions(query)
 	}
+	return query
+}
 
-	if len(extra) == 0 {
-		return base
-	}
+// pendingExclusions are the query clauses --pending negates. A pending
+// application is one that is still alive: not granted, not abandoned, and not
+// a provisional that has run out.
+//
+//   - Granted: publicationCategoryBag lists every publication an application
+//     ever had, so a granted patent carries "Granted/Issued" whatever its
+//     status text has since become ("Patented Case", "Patent Expired Due to
+//     NonPayment of Maintenance Fees", ...).
+//   - Abandoned: every abandonment status contains the word, for example
+//     "Abandoned  --  Failure to Respond to an Office Action" and "Expressly
+//     Abandoned  --  During Examination".
+//   - "Provisional Application Expired" is the terminal status of a
+//     provisional; it is neither granted nor abandoned, and not alive.
+//
+// The previous implementation filtered on publicationCategoryBag =
+// "Pre-Grant Publications - PGPub", which means "was published before
+// grant" and therefore matched most granted patents as well.
+var pendingExclusions = []string{
+	`applicationMetaData.publicationCategoryBag:"Granted/Issued"`,
+	`applicationMetaData.applicationStatusDescriptionText:Abandon*`,
+	`applicationMetaData.applicationStatusDescriptionText:Expressly*`,
+	`applicationMetaData.applicationStatusDescriptionText:"Provisional Application Expired"`,
+}
 
-	suffix := strings.Join(extra, " AND ")
-	if base != "" {
-		return base + " AND " + suffix
+// withPendingExclusions appends the --pending exclusions to a query. The
+// caller's query is parenthesised so an OR inside it cannot capture them.
+//
+// With no other terms the result is purely negative ("NOT a AND NOT b
+// ..."). ODP accepts that and subtracts the exclusions from everything the
+// range filters allow: checked live on 2026-11-13, filed 2022-01-03 to
+// 2022-01-07 counted 8,970 without --pending and 1,114 with it. So no
+// match-all term is needed in front.
+func withPendingExclusions(query string) string {
+	clauses := make([]string, 0, len(pendingExclusions))
+	for _, c := range pendingExclusions {
+		clauses = append(clauses, "NOT "+c)
 	}
-	return suffix
+	exclusions := strings.Join(clauses, " AND ")
+	if strings.TrimSpace(query) == "" {
+		return exclusions
+	}
+	return "(" + query + ") AND " + exclusions
 }
 
 // buildGetSort formats the --sort flag for the GET endpoint.

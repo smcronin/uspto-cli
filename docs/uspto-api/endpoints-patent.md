@@ -46,6 +46,16 @@ Search with query parameters.
 
 **Response**: `PatentDataResponse` (200, 400, 403, 404, 413, 500)
 
+### Result limit
+
+USPTO's documentation of the Search endpoint states:
+
+> The Search API has a maximum of 10,000 results. If you need more, please refine your search.
+>
+> Search results are sorted by relevance by default, but you can sort by any field.
+
+`count` in the response is the full number of matches, but `offset`/`limit` paging reaches only the first 10,000 of them. This is why the CLI's `--all` stops at 10,000 results (and says so), and why `--download` exports at most 10,000 rows. To retrieve more, split the query, for example by filing-date range.
+
 ---
 
 ## 2. Download Search Results
@@ -57,6 +67,8 @@ Same as search POST body, plus `format` field (`"json"` or `"csv"`).
 ### GET `/api/v1/patent/applications/search/download`
 
 Same as search GET parameters, plus `format` query parameter.
+
+The download endpoints page like the search endpoints: `limit` defaults to 25, so a request without it returns the first 25 rows, not the whole result set. A larger `limit` is honoured (observed 2026-11-13: `limit=254` on a query matching 254 records returned 254 CSV rows; larger values were not tested). The CLI's `--download` therefore counts the matches first and sends `limit = min(count, 10000)` unless `--limit` is given.
 
 ---
 

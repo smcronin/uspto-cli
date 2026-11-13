@@ -54,9 +54,9 @@
 - Use download endpoint with pagination instead
 
 ### 429 Too Many Requests
-- Implement exponential backoff
-- Respect rate limits: 60/min peak, 120/min off-peak
-- PDF/ZIP downloads have stricter limits: 4/min peak, 12/min off-peak
+- Wait at least 5 seconds before retrying (longer if `Retry-After` says so)
+- Respect the ODP limits: one request at a time per API key (burst 1), with weekly quotas of 5M metadata calls and 1.2M document calls; see [rate-limits.md](./rate-limits.md)
+- The per-minute tiers (60/120 requests, 4/12 PDF/ZIP downloads) are TSDR trademark API limits and do not apply here; see [../tsdr-api/operations.md](../tsdr-api/operations.md)
 
 ### 500 Internal Server Error
 - Retry after a delay

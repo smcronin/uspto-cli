@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -285,8 +286,30 @@ func WithTimeout(timeout time.Duration) ClientOption {
 	return func(c *Client) { c.timeout = timeout }
 }
 
+// WithDownloadTimeout sets the total time allowed for one PDF, ZIP, image or
+// other artifact download. Zero (or a negative value) removes the limit. The
+// default is 10 minutes.
 func WithDownloadTimeout(timeout time.Duration) ClientOption {
-	return func(c *Client) { c.downloadTimeout = timeout }
+	return func(c *Client) {
+		if timeout < 0 {
+			timeout = 0
+		}
+		c.downloadTimeout = timeout
+	}
+}
+
+// DownloadTimeout reports the artifact download limit; zero means none.
+func (c *Client) DownloadTimeout() time.Duration {
+	return c.downloadTimeout
+}
+
+// withTimeout is context.WithTimeout, except that a zero or negative timeout
+// means no deadline instead of one that has already passed.
+func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 // WithoutRateLimit is intended for tests and private mock servers.
@@ -437,7 +460,7 @@ func (c *Client) openRequestURL(ctx context.Context, method, fullURL, accept, co
 		if err := c.rl.wait(ctx, download); err != nil {
 			return nil, err
 		}
-		reqCtx, cancel := context.WithTimeout(ctx, timeout)
+		reqCtx, cancel := withTimeout(ctx, timeout)
 		var requestBody io.Reader
 		if len(body) > 0 {
 			requestBody = bytes.NewReader(body)
@@ -462,6 +485,11 @@ func (c *Client) openRequestURL(ctx context.Context, method, fullURL, accept, co
 			if errors.As(err, &redirectErr) {
 				return nil, fmt.Errorf("executing TSDR request: %w", redirectErr)
 			}
+			if download && c.isDownloadTimeout(err) {
+				// The whole download budget is spent: retrying would only
+				// spend it again.
+				return nil, fmt.Errorf("executing TSDR request: %w", c.downloadTimeoutHint(err))
+			}
 			if attempt < maxRetries {
 				wait := time.Duration(attempt+1) * 250 * time.Millisecond
 				select {
@@ -475,8 +503,12 @@ func (c *Client) openRequestURL(ctx context.Context, method, fullURL, accept, co
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			c.debugf("Response: %d (%s, content-length %d)", resp.StatusCode, resp.Header.Get("Content-Type"), resp.ContentLength)
+			respBody := resp.Body
+			if download {
+				respBody = &downloadTimeoutReader{ReadCloser: resp.Body, client: c}
+			}
 			return &StreamResponse{
-				Body: resp.Body, ContentType: resp.Header.Get("Content-Type"), URL: resp.Request.URL.String(),
+				Body: respBody, ContentType: resp.Header.Get("Content-Type"), URL: resp.Request.URL.String(),
 				StatusCode: resp.StatusCode, ContentLength: resp.ContentLength, cancel: cancel,
 			}, nil
 		}
@@ -986,7 +1018,7 @@ func (c *Client) PublicAssetStream(ctx context.Context, rawURL string) (*StreamR
 	if err := c.rl.wait(ctx, true); err != nil {
 		return nil, err
 	}
-	reqCtx, cancel := context.WithTimeout(ctx, c.downloadTimeout)
+	reqCtx, cancel := withTimeout(ctx, c.downloadTimeout)
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		cancel()
@@ -1007,7 +1039,7 @@ func (c *Client) PublicAssetStream(ctx context.Context, rawURL string) (*StreamR
 	resp, err := publicClient.Do(req)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("retrieving public USPTO asset: %w", err)
+		return nil, fmt.Errorf("retrieving public USPTO asset: %w", c.downloadTimeoutHint(err))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, readErr := readBoundedBody(resp.Body, maxErrorBody)
@@ -1027,9 +1059,50 @@ func (c *Client) PublicAssetStream(ctx context.Context, rawURL string) (*StreamR
 		return nil, &APIError{StatusCode: resp.StatusCode, Message: http.StatusText(resp.StatusCode), Body: text, RetryAfter: retryDelay}
 	}
 	return &StreamResponse{
-		Body: resp.Body, ContentType: resp.Header.Get("Content-Type"), URL: resp.Request.URL.String(),
+		Body:        &downloadTimeoutReader{ReadCloser: resp.Body, client: c},
+		ContentType: resp.Header.Get("Content-Type"), URL: resp.Request.URL.String(),
 		StatusCode: resp.StatusCode, ContentLength: resp.ContentLength, cancel: cancel,
 	}, nil
+}
+
+// isDownloadTimeout reports whether err was caused by the download timeout:
+// a deadline or network timeout while a download limit is in force.
+func (c *Client) isDownloadTimeout(err error) bool {
+	if err == nil || c.downloadTimeout <= 0 {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// downloadTimeoutHint adds the limit, and the flag that changes it, to an
+// error caused by the download timeout, in the same words as the ODP client.
+// Without it a trademark PDF, ZIP or image that runs out of time fails with
+// a bare "context deadline exceeded".
+func (c *Client) downloadTimeoutHint(err error) error {
+	if !c.isDownloadTimeout(err) {
+		return err
+	}
+	return fmt.Errorf("%w (the download did not finish within the %s download timeout; raise it with --download-timeout, 0 = no limit)",
+		err, c.downloadTimeout)
+}
+
+// downloadTimeoutReader is the body of a download response. A read that
+// fails because the download timeout ran out mid-transfer carries the hint.
+type downloadTimeoutReader struct {
+	io.ReadCloser
+	client *Client
+}
+
+func (r *downloadTimeoutReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if err != nil && err != io.EOF {
+		err = r.client.downloadTimeoutHint(err)
+	}
+	return n, err
 }
 
 func parsePublicAssetURL(rawURL string) (*url.URL, error) {

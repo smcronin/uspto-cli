@@ -1796,3 +1796,110 @@ func TestDownloadDocument_SuccessReplacesExistingAndLeavesNoTempFile(t *testing.
 		t.Errorf("output directory should hold only doc.pdf, has %d entries", len(entries))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Download timeout
+// ---------------------------------------------------------------------------
+
+// trickleServer sends its headers at once and then the body in two halves
+// with a pause in between, like a large file on a slow link.
+func trickleServer(pause time.Duration) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "10")
+		w.Write([]byte("first"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		select {
+		case <-time.After(pause):
+		case <-r.Context().Done():
+			return
+		}
+		w.Write([]byte("-rest"))
+	}))
+}
+
+func TestNewClient_DownloadTimeoutDefaultAndOption(t *testing.T) {
+	if got := NewClient("k").DownloadTimeout(); got != 600*time.Second {
+		t.Errorf("default download timeout = %s, want 10m0s", got)
+	}
+	if got := NewClient("k", WithDownloadTimeout(45*time.Minute)).DownloadTimeout(); got != 45*time.Minute {
+		t.Errorf("WithDownloadTimeout(45m) = %s", got)
+	}
+	if got := NewClient("k", WithDownloadTimeout(0)).DownloadTimeout(); got != 0 {
+		t.Errorf("WithDownloadTimeout(0) = %s, want 0 (no limit)", got)
+	}
+	if got := NewClient("k", WithDownloadTimeout(-time.Second)).DownloadTimeout(); got != 0 {
+		t.Errorf("a negative download timeout = %s, want 0 (no limit)", got)
+	}
+	// --timeout is the metadata limit and must not leak into downloads.
+	if got := NewClient("k", WithTimeout(5*time.Second)).DownloadTimeout(); got != 600*time.Second {
+		t.Errorf("WithTimeout changed the download timeout to %s", got)
+	}
+}
+
+// The download timeout covers the body. A transfer that outlasts it fails,
+// leaves nothing behind, and says which flag raises the limit.
+func TestDownloadDocument_DownloadTimeoutCutsOffSlowBody(t *testing.T) {
+	ts := trickleServer(2 * time.Second)
+	defer ts.Close()
+
+	dir := t.TempDir()
+	outputPath := filepath.Join(dir, "big.zip")
+	c := newTestClient(ts)
+	c.downloadTimeout = 80 * time.Millisecond
+
+	start := time.Now()
+	_, err := c.DownloadDocument(context.Background(), "/big.zip", outputPath)
+	if err == nil {
+		t.Fatal("DownloadDocument() should fail when the body outlasts the download timeout")
+	}
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Errorf("gave up after %s, want about the 80ms timeout (and no retry)", elapsed)
+	}
+	if !strings.Contains(err.Error(), "--download-timeout") || !strings.Contains(err.Error(), "80ms") {
+		t.Errorf("error should name the limit and the flag, got: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("output directory should be empty after a timed-out transfer, has %d entries", len(entries))
+	}
+}
+
+func TestDownloadDocument_GenerousOrNoDownloadTimeoutCompletes(t *testing.T) {
+	for name, timeout := range map[string]time.Duration{"generous": 30 * time.Second, "no limit": 0} {
+		t.Run(name, func(t *testing.T) {
+			ts := trickleServer(150 * time.Millisecond)
+			defer ts.Close()
+
+			outputPath := filepath.Join(t.TempDir(), "big.zip")
+			c := newTestClient(ts)
+			c.downloadTimeout = timeout
+			// The metadata timeout is far shorter than the transfer. It must
+			// not apply to file downloads.
+			c.httpClient.Timeout = 20 * time.Millisecond
+
+			if _, err := c.DownloadDocument(context.Background(), "/big.zip", outputPath); err != nil {
+				t.Fatalf("DownloadDocument() error: %v", err)
+			}
+			if data, _ := os.ReadFile(outputPath); string(data) != "first-rest" {
+				t.Errorf("file content = %q, want first-rest", data)
+			}
+		})
+	}
+}
+
+func TestFetchDocumentBytes_DownloadTimeoutNamesTheFlag(t *testing.T) {
+	ts := trickleServer(2 * time.Second)
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	c.downloadTimeout = 80 * time.Millisecond
+
+	_, err := c.FetchDocumentBytes(context.Background(), "/doc.tar")
+	if err == nil {
+		t.Fatal("FetchDocumentBytes() should fail when the body outlasts the download timeout")
+	}
+	if !strings.Contains(err.Error(), "--download-timeout") {
+		t.Errorf("error should name the flag, got: %v", err)
+	}
+}

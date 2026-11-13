@@ -230,20 +230,27 @@ uspto search --cpc-group H01M --granted-after 2024-01-01 --limit 10
 uspto search --assignee "Apple" --granted --sort filingDate:desc
 uspto search --publication-number US20190095759A1 --limit 1
 
+# Granted patents only, or applications still pending
+uspto search --assignee "Apple" --granted --count-only -f json -q
+uspto search --assignee "Apple" --pending --count-only -f json -q
+
 # Assignor / reel-frame (assignment records)
 uspto search --assignor "Samsung" --limit 20
 uspto search --reel-frame "012345/0001"
 
-# Auto-paginate all results (up to 10,000)
+# Auto-paginate all results (up to 10,000; a longer result set is cut there, with a warning on stderr)
 uspto search --examiner "RILEY" --all -f ndjson
 uspto search --assignee "Tesla" --granted --all -f csv > tesla_all.csv
 
 # Count matches only (lightweight sizing call for agents)
 uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
 
-# Download all results server-side (single request, supports CSV)
-uspto search --title "battery" --download csv > batteries.csv
+# Export every matching result server-side as raw JSON or CSV.
+# Without --limit the CLI counts first, then exports all rows (at most 10,000).
+uspto search --title "bicycle saddle" --download csv > saddles.csv
 uspto search --assignee "Tesla" --download json > tesla.json
+# An explicit --limit exports exactly that many rows and skips the count
+uspto search --title "battery" --download csv --limit 500 > batteries_500.csv
 # With filters/ranges, --download automatically uses POST body syntax
 uspto search --granted --filed-after 2024-01-01 --filter "applicationTypeLabelName=Utility" --download csv > granted_utility.csv
 
@@ -255,7 +262,22 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - Uses `POST /search` when `--filter`, `--facets`, date ranges, or `--granted/--pending` are present.
 - Uses `GET /search` for simple query-only cases.
 - For `--download`, it uses `POST /search/download` when those advanced parameters are present; otherwise `GET /search/download`.
+
+`--download json|csv` (on `search` and on `ptab search`, `decisions`, `docs`, `appeals`, `interferences`):
+- The download endpoints page like the search endpoints and return 25 rows unless told otherwise. So when `--limit` is not given, the CLI sends one count request, then exports `min(total, 10000)` rows and prints `Exporting N of TOTAL results.` on stderr. If the total is above 10,000 it prints a warning instead, even under `-q`; split the query (for example by date range) to get the rest. When the count is 0 (or `--offset` is past the end) no export is requested: stdout gets `[]` for `json` and nothing for `csv`, and stderr says `Exporting 0 of 0 results.`
+- An explicit `--limit` is sent as given, with no count request. `--offset` moves the start of the export.
+- `--all` together with `--download` means the same full export (and overrides `--limit`).
+- The value must be `json` or `csv`; anything else is a usage error (exit 2).
+- The export is raw server output on stdout, not the CLI envelope. It runs under `--timeout` (30 s by default); raise it for exports of several thousand rows.
+- `--dry-run` sends nothing: it prints the count request, then the download request with a placeholder where the counted limit would go.
 - `--all -f csv` performs client-side page concatenation for CSV export UX (useful when you need paged search semantics instead of `--download csv`).
+
+`--all` and the 10,000-result ceiling: USPTO search pages through at most 10,000 results per query. When a query matches more, `--all` returns the first 10,000 and always prints `Warning: returned 10000 of N results; ...` on stderr, in every output format and under `-q`. With `-f json` the envelope also has `"truncated": true` inside `pagination` and the same text in `warnings`. The exit code stays 0. Split the query (for example by filing-date range) and combine the parts to get everything. If a page comes back empty before the reported total is reached and below 10,000, the warning says so instead (`returned N of M results; the API sent an empty page at offset X ...`) and `truncated` is not set, because the ceiling was not the cause.
+
+`--granted` and `--pending`:
+- `--granted` keeps records whose publication categories include `Granted/Issued`.
+- `--pending` keeps applications that are still alive: it excludes every record with a `Granted/Issued` publication category, every status that starts with `Abandon` or `Expressly` (the abandonment statuses), and `Provisional Application Expired`. It does not require a pre-grant publication. PCT international-phase records (for example `PCT - International Search Report Mailed to IB`) are neither granted nor abandoned and remain in the results; add `--filter` or `--status` terms to narrow further.
+- The two flags cannot be combined. A search with neither returns everything, including abandoned applications.
 
 **All search flags:**
 `--title`, `--inventor`, `--assignee`, `--examiner`, `--applicant`, `--assignor`,
@@ -303,7 +325,7 @@ uspto app get <appNumber>              # Full application data
 uspto app meta <appNumber>             # Metadata only
 uspto app docs <appNumber>             # File wrapper documents
 uspto app docs <appNumber> --sort date:asc
-uspto app text <appNumber> [index|documentIdentifier]     # Extract one document's text from XML/DOCX
+uspto app text <appNumber> [documentIdentifier|index]     # Extract one document's text from XML/DOCX
 uspto app text-all <appNumber> --codes office-action      # Extract all matching readable document texts
 uspto app transactions <appNumber>     # Prosecution history
 uspto app continuity <appNumber>       # Parent/child continuity
@@ -314,7 +336,7 @@ uspto app foreign-priority <appNumber> # Foreign priority claims
 uspto app associated-docs <appNumber>  # Associated XML document metadata
 
 # Document downloads
-uspto app download <appNumber> [index|documentIdentifier] # Download a specific document file
+uspto app download <appNumber> [documentIdentifier|index] # Download a specific document file
 uspto app download-all <appNumber>     # Download all document files for one format
 
 # Patent XML extraction (grant + pgpub fallback)
@@ -325,15 +347,40 @@ uspto app description <appNumber>      # Full specification text
 uspto app fulltext <appNumber>         # Everything: meta + abstract + claims + citations + description
 ```
 
-The XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse official patent XML to extract structured data. They prefer grant XML and fall back to pgpub XML for pending applications when available. `fulltext` is the most comprehensive single-command view.
-For pending applications, these commands automatically fall back to pgpub XML when available.
+The XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse official patent XML to extract structured data. They prefer grant XML and fall back to the pre-grant publication (pgpub) XML when the application has no grant XML, which is the normal case for a pending application. `fulltext` is the most comprehensive single-command view.
+
+Every result says which one it used in `source`:
+
+| `source` | Meaning | Identifying fields |
+| --- | --- | --- |
+| `grant` | Parsed from the grant: claims and text as granted | `patentNumber` (and `grantDate` in `fulltext`); `publicationNumber`/`publicationDate` name the earlier publication when the grant lists one |
+| `pgpub` | Parsed from the pre-grant publication: claims and text **as published, not as granted** | `publicationNumber`, `publicationDate`; `patentNumber` is empty and `grantDate` is absent |
+
+`citations` (and the citation fields of `fulltext`) need the grant: a publication does not list what was cited. With `source: "pgpub"` they return an empty list, `ok: true`, and a `warnings` entry saying that citations are only available from the grant and none exists. Do not read that as "nothing was cited". In table mode the title shows `(Pub. …)` instead of `(Pat. …)` plus a `Source:` line.
+
 For older patents (especially pre-2010), citation completeness can vary depending on legacy XML structure and source data availability.
 
 `app docs` now surfaces both available formats and the CLI's preferred direct-text source (`xml` or `docx`) for each file-wrapper entry.
 For file-wrapper office actions and similar documents, `app text` is the text-first command. It reads the XML archive directly when available, falls back to DOCX, and avoids the separate download-then-open workflow that agents otherwise need.
 Use `app text-all` when you want the CLI to emit every matching readable document in one pass rather than selecting them one at a time.
 
-Document code filters (`app docs --codes`, `app dl --codes`, `app dl-all --codes`) support aliases:
+**Selecting a document.** Every file-wrapper document has a `documentIdentifier`: the `Document ID` column of the `app docs` table and `documentIdentifier` in its JSON. It is the stable handle, and `app download` and `app text` accept it with no other flags:
+
+```bash
+uspto app docs 16123456 --codes CTNF,CTFR,NOA --sort date:desc
+uspto app download 16123456 LMGEU99FGREENX5 -o office-action.pdf
+uspto app text 16123456 LMGEU99FGREENX5
+```
+
+The 1-based index (`#`) still works, but it is a position in one listing, not a property of the document. `app docs`, `app download` and `app text` take the same `--codes`, `--from`, `--to` and `--sort` flags and number documents the same way, so an index is valid only when the second command repeats the flags of the first:
+
+```bash
+uspto app docs 16123456 --codes CTNF,CTFR,NOA --sort date:desc       # row 2 is ...
+uspto app download 16123456 2 --codes CTNF,CTFR,NOA --sort date:desc # ... this document
+uspto app download 16123456 2                                        # NOT the same document
+```
+
+Document code filters (`app docs --codes`, `app dl --codes`, `app text --codes`, `app dl-all --codes`) support aliases:
 - `rejection` -> `CTNF,CTFR`
 - `allowance` -> `NOA`
 - `claims` -> `CLM`
@@ -362,6 +409,26 @@ uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
 
 `family` JSON includes relationship-aware `allApplicationNumbers` entries so CON/DIV/CIP links are explicit in the flat member list.
+
+`summary` reads ownership from the assignment records:
+
+- `currentAssignee` is the first-named assignee of the latest recorded conveyance that transfers title: an assignment (including nunc pro tunc, confirmatory and corrective assignments), a merger, a change of name or an entity conversion. Two records with the same recorded date are ordered by reel, then frame. Security interests, liens, mortgages, pledges, changes of a lender's agent (notice of succession of agency, successor or administrative agent), licences, government interest agreements and releases are skipped, so a security agreement recorded after the last assignment no longer names the lender as owner.
+- `currentAssigneeSource` is `assignment` when the name comes from such a record, with its text in `currentAssigneeConveyance` and its date in `currentAssigneeRecordedDate`. It is `applicant` when no title conveyance is recorded; `currentAssignee` is then the applicant from the metadata, and the conveyance fields are absent.
+- `securityInterests` lists each recorded encumbrance, including changes of a lender's agent (`holder`, `conveyance`, `recordedDate`, `reelFrame`), oldest first. Releases are not matched against them; read `uspto app assignments` for the full chain.
+- `unclassifiedConveyances` lists records whose conveyance text is not recognised as any of the above (`assignee`, `conveyance`, `recordedDate`, `reelFrame`). They are never used as the owner; when the list is present, read it, because one of them may change the answer.
+- Recording order is not chain order. A corrective or nunc pro tunc assignment recorded years later to fix an early link becomes the latest title record and names that early assignee, even if the patent was sold on since. The summary does not reconstruct the chain; check `uspto app assignments` when ownership matters.
+
+The classification goes by the words of the conveyance text. It is a reading aid, not a title opinion.
+
+Commands that make several requests (`summary`, `family`, `app download-all`, `app text-all`, `patent bundle`) report failure in two ways:
+
+- **Nothing worked** (unknown application, bad key, every download refused): the command fails with `ok: false`, the first error, and its typed exit code. It no longer returns an empty result with exit 0.
+- **The identifying step failed**: `summary` fails the same way when its metadata request fails, even if other requests succeeded, because without metadata there is no title, status, applicant or inventor to report. `family` fails when both the metadata and the continuity of the root application fail.
+- **Part of it failed**: exit code 0 and `ok: true`, and the JSON envelope adds `"partial": true` plus a `warnings` array naming each failed step. `-q` does not remove them. With `-f table`, `csv` or `ndjson` the same warnings are printed on stderr, also under `-q`.
+
+```bash
+uspto summary 16123456 -f json -q | jq '{partial, warnings}'
+```
 
 ### PTAB (Patent Trial and Appeal Board)
 
@@ -394,9 +461,10 @@ uspto ptab interferences [query]
 uspto ptab interference <documentId>
 uspto ptab interferences-for <interferenceId> # All decisions for an interference
 
-# Bulk download of search results (single request)
-uspto ptab search --type IPR --download csv > ipr_proceedings.csv
-uspto ptab decisions --download json > decisions.json
+# Export search results as raw CSV/JSON: counts first, then exports all rows (at most 10,000)
+uspto ptab search --type IPR --petitioner "Apple" --download csv > apple_iprs.csv
+uspto ptab decisions --trial IPR2020-00388 --download json > decisions.json
+uspto ptab search --type IPR --download csv --limit 200 > first_200_iprs.csv
 ```
 
 ### Petition Decisions
@@ -422,6 +490,7 @@ uspto bulk get PTGRXML --include-files --latest --type Data
 # List and download files
 uspto bulk files PTFWPRE --limit 10
 uspto bulk download PTGRXML ipg240102.zip -o ./data/
+uspto bulk download PTGRXML ipg240102.zip -o ./data/ --download-timeout 2h   # large file or slow link
 ```
 
 ### Status Codes
@@ -470,15 +539,15 @@ If your agent runtime loads skills from a user directory (for example `~/.claude
 
 Built for AI agents and automation:
 
-- **Structured JSON envelope** with `ok`, `command`, `commandPath`, `provider`, `pagination`, `results`, `facets`, `version`
-- **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error
+- **Structured JSON envelope** with `ok`, `command`, `commandPath`, `provider`, `pagination`, `results`, `facets`, `warnings`, `partial`, `version` (`warnings` and `partial` appear only when there is something to report)
+- **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error. Exit 2 (`error.type` `INVALID_ARGUMENTS`) covers every input the caller has to fix: unknown commands, subcommands and flags, flag values that do not parse, failed validation (dates, application numbers, `--limit 0`, conflicting flags) and unknown `-f` formats
 - **`--dry-run`** shows the API request without executing (all commands)
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
-- **`--all`** auto-paginates up to 10,000 results
+- **`--all`** auto-paginates up to 10,000 results and never truncates silently: a warning on stderr (also under `-q`) plus `pagination.truncated` in JSON
 - **`--count-only`** returns just total matches for fast landscape sizing
-- **`--download`** server-side bulk export (json or csv) in a single request
+- **`--download`** server-side export (json or csv) of every matching row, up to 10,000: one count request, then one export; `--limit` exports fewer
 - **`--facets`** returns aggregated counts alongside results
-- **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command
+- **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command, and mark an incomplete result with `partial: true` and `warnings`
 - **NDJSON** format for streaming large result sets
 - **Grant XML extraction** (`claims`, `citations`, `abstract`, `description`, `fulltext`) for structured patent text
 - **Typed trademark identifiers** prevent silent serial/registration/Madrid namespace mistakes
@@ -489,6 +558,24 @@ Built for AI agents and automation:
 - **Same-origin raw access** rejects absolute URLs so a TSDR credential cannot be sent to another host
 
 A strong agent workflow is: run a narrow `trademark search`; retain source/provenance and candidate IDs; deduplicate; run `case status` or `batch`; then request full case JSON, document metadata, and only the binary artifacts needed for selected records. Use `--dry-run` to inspect planned routes and `-f json --minify -q` for machine-readable calls.
+
+## Timeouts
+
+Two global flags, for two kinds of request:
+
+| Flag | Applies to | Default |
+| --- | --- | --- |
+| `--timeout <seconds>` | Metadata and search requests on every service, including `--download` exports of search results | 30 |
+| `--download-timeout <seconds or duration>` | One file download, start to finish: file-wrapper documents, grant/pgpub XML, bulk data files, and trademark PDFs, ZIPs and images | 10 minutes for patent (ODP) files and for trademark (TSDR) files |
+
+`--download-timeout` takes seconds (`1800`) or a duration (`30m`, `2h`); `0` removes the limit. The limit covers the whole transfer, so a multi-gigabyte bulk file on a slow link needs more than the default:
+
+```bash
+uspto bulk download PTGRXML ipg240102.zip -o ./data/ --download-timeout 2h
+uspto app download-all 16123456 -o ./wrapper/ --download-timeout 0
+```
+
+A download that runs out of time fails without leaving a partial file, and the error names the flag. `--timeout` no longer limits trademark downloads (it used to cut them off at 30 seconds).
 
 ## Rate Limiting
 

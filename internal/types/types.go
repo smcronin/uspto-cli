@@ -26,8 +26,14 @@ type CLIResponse struct {
 	Pagination  *PaginationMeta         `json:"pagination,omitempty"`
 	Results     any                     `json:"results"`
 	Facets      map[string][]FacetValue `json:"facets,omitempty"`
-	Version     string                  `json:"version"`
-	Error       *CLIError               `json:"error,omitempty"`
+	// Warnings lists what the caller should know about an ok:true result:
+	// sub-requests that failed, truncation, a fallback data source.
+	Warnings []string `json:"warnings,omitempty"`
+	// Partial is true when at least one sub-request of a compound command
+	// failed, so Results is incomplete.
+	Partial bool      `json:"partial,omitempty"`
+	Version string    `json:"version"`
+	Error   *CLIError `json:"error,omitempty"`
 }
 
 // PaginationMeta contains offset-based pagination metadata for the CLI envelope.
@@ -36,6 +42,10 @@ type PaginationMeta struct {
 	Limit   int  `json:"limit"`
 	Total   int  `json:"total"`
 	HasMore bool `json:"hasMore"`
+	// Truncated is true when an auto-paginated run (--all) stopped before the
+	// end of the result set because USPTO search pages through at most
+	// 10,000 results. Results then holds fewer records than Total.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // CLIError is the structured error payload for JSON-mode error output.
@@ -1340,8 +1350,17 @@ type XMLAbstract struct {
 
 // CitationResult is the structured output for the citations command.
 type CitationResult struct {
-	ApplicationNumber      string         `json:"applicationNumber"`
-	PatentNumber           string         `json:"patentNumber"`
+	ApplicationNumber string `json:"applicationNumber"`
+	// Source is the XML the result was parsed from: "grant", or "pgpub" when
+	// the application has no grant XML and the pre-grant publication was used
+	// instead. A pgpub result is the application as published, not as
+	// granted; PatentNumber is then empty and PublicationNumber and
+	// PublicationDate identify the publication.
+	Source            string `json:"source"`
+	PatentNumber      string `json:"patentNumber"`
+	PublicationNumber string `json:"publicationNumber,omitempty"`
+	PublicationDate   string `json:"publicationDate,omitempty"`
+
 	TotalCitations         int            `json:"totalCitations"`
 	PatentCitationCount    int            `json:"patentCitationCount"`
 	NPLCitationCount       int            `json:"nplCitationCount"`
@@ -1370,10 +1389,19 @@ type NPLCitRef struct {
 
 // ClaimsResult is the structured output for the claims command.
 type ClaimsResult struct {
-	ApplicationNumber string      `json:"applicationNumber"`
-	PatentNumber      string      `json:"patentNumber"`
-	TotalClaims       int         `json:"totalClaims"`
-	Claims            []ClaimText `json:"claims"`
+	ApplicationNumber string `json:"applicationNumber"`
+	// Source is the XML the result was parsed from: "grant", or "pgpub" when
+	// the application has no grant XML and the pre-grant publication was used
+	// instead. A pgpub result is the application as published, not as
+	// granted; PatentNumber is then empty and PublicationNumber and
+	// PublicationDate identify the publication.
+	Source            string `json:"source"`
+	PatentNumber      string `json:"patentNumber"`
+	PublicationNumber string `json:"publicationNumber,omitempty"`
+	PublicationDate   string `json:"publicationDate,omitempty"`
+
+	TotalClaims int         `json:"totalClaims"`
+	Claims      []ClaimText `json:"claims"`
 }
 
 // ClaimText is a single claim with its number and text.
@@ -1385,14 +1413,30 @@ type ClaimText struct {
 // AbstractResult is the structured output for the abstract command.
 type AbstractResult struct {
 	ApplicationNumber string `json:"applicationNumber"`
+	// Source is the XML the result was parsed from: "grant", or "pgpub" when
+	// the application has no grant XML and the pre-grant publication was used
+	// instead. A pgpub result is the application as published, not as
+	// granted; PatentNumber is then empty and PublicationNumber and
+	// PublicationDate identify the publication.
+	Source            string `json:"source"`
 	PatentNumber      string `json:"patentNumber"`
+	PublicationNumber string `json:"publicationNumber,omitempty"`
+	PublicationDate   string `json:"publicationDate,omitempty"`
 	Abstract          string `json:"abstract"`
 }
 
 // DescriptionResult is the structured output for the description command.
 type DescriptionResult struct {
 	ApplicationNumber string `json:"applicationNumber"`
+	// Source is the XML the result was parsed from: "grant", or "pgpub" when
+	// the application has no grant XML and the pre-grant publication was used
+	// instead. A pgpub result is the application as published, not as
+	// granted; PatentNumber is then empty and PublicationNumber and
+	// PublicationDate identify the publication.
+	Source            string `json:"source"`
 	PatentNumber      string `json:"patentNumber"`
+	PublicationNumber string `json:"publicationNumber,omitempty"`
+	PublicationDate   string `json:"publicationDate,omitempty"`
 	Description       string `json:"description"`
 	WordCount         int    `json:"wordCount"`
 }
@@ -1409,7 +1453,14 @@ type DrawingInfo struct {
 
 // FullTextResult is the comprehensive output from the fulltext command.
 type FullTextResult struct {
-	ApplicationNumber  string         `json:"applicationNumber"`
+	ApplicationNumber string `json:"applicationNumber"`
+	// Source is the XML the result was parsed from: "grant", or "pgpub" when
+	// the application has no grant XML and the pre-grant publication was used
+	// instead. A pgpub result is the application as published, not as
+	// granted; PatentNumber is then empty and PublicationNumber and
+	// PublicationDate identify the publication.
+	Source string `json:"source"`
+
 	PatentNumber       string         `json:"patentNumber"`
 	Title              string         `json:"title"`
 	Abstract           string         `json:"abstract"`
@@ -1437,5 +1488,9 @@ type FullTextResult struct {
 	Drawings           []DrawingInfo  `json:"drawings,omitempty"`
 	Description        string         `json:"description"`
 	DescriptionWords   int            `json:"descriptionWords"`
-	PublicationNumber  string         `json:"publicationNumber,omitempty"`
+	// PublicationNumber and PublicationDate identify the pre-grant
+	// publication: the related publication of a grant, or the document itself
+	// when Source is "pgpub" (GrantDate is then empty).
+	PublicationNumber string `json:"publicationNumber,omitempty"`
+	PublicationDate   string `json:"publicationDate,omitempty"`
 }

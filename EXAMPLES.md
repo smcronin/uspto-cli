@@ -202,7 +202,9 @@ Record the service, identifier namespace, retrieval time, requested/returned IDs
 Pull every patent application filed by a company and export it to a spreadsheet:
 
 ```bash
-# Export all of Google's recent filings to CSV
+# Export all of Google's recent filings to CSV. --download counts the matches,
+# then exports every row in one request (the USPTO ceiling is 10,000; the CLI
+# warns on stderr if the query matches more, so narrow the date range then)
 uspto search --assignee "Google" --filed-within 1y --download csv > google_filings.csv
 
 # See what Apple is patenting in machine learning (CPC class G06N)
@@ -242,6 +244,8 @@ uspto app fulltext 16123456
 uspto app citations 16123456
 ```
 
+For an application that has not been granted, these commands read the pre-grant publication instead and say so: the JSON has `"source": "pgpub"` with `publicationNumber`/`publicationDate` (no `patentNumber`), and the table shows `(Pub. …)` and a `Source:` line. The claims are then the claims as published. Citations exist only on the grant, so `app citations` returns an empty list with a warning for such an application.
+
 ## Download Every Document in a Patent's File History
 
 Get all the PDFs — office actions, responses, drawings, everything the USPTO has on file:
@@ -256,11 +260,11 @@ uspto app text-all 16123456 --codes office-action -f json -q
 # Download the entire file wrapper (all PDFs)
 uspto app download-all 16123456
 
-# Or just see what documents are available first
+# Or just see what documents are available first (note the "Document ID" column)
 uspto app docs 16123456
 
-# Download a specific document by index
-uspto app download 16123456 3
+# Download a specific document by its documentIdentifier
+uspto app download 16123456 LMGEU99FGREENX5
 ```
 
 ## Trace a Patent Family Tree
@@ -280,7 +284,9 @@ uspto app continuity 16123456
 One command pulls together metadata, prosecution history, assignments, continuity, and documents:
 
 ```bash
-# Full application summary (makes 7 API calls, returns unified view)
+# Full application summary (makes 7 API calls, returns unified view).
+# currentAssignee is the owner of record: lenders with a security interest
+# are listed separately under securityInterests
 uspto summary 16123456
 
 # Who owns it? Check assignment/transfer history
@@ -301,8 +307,8 @@ uspto ptab search --type IPR --patent 9876543
 # Get details on a specific proceeding
 uspto ptab get IPR2023-00001
 
-# Download all IPR decisions to a file
-uspto ptab decisions --download csv > ipr_decisions.csv
+# Export every decision of one trial to a file (all matches, up to 10,000 rows)
+uspto ptab decisions --trial IPR2020-00388 --download csv > ipr_decisions.csv
 
 # Check appeal decisions
 uspto ptab appeals "artificial intelligence"
@@ -321,6 +327,10 @@ uspto bulk files PTGRXML
 
 # Download a specific weekly file
 uspto bulk download PTGRXML ipg260101.zip -o ./data/
+
+# A file download gets 10 minutes in total. Give a large file more time
+# (seconds or a duration; 0 = no limit)
+uspto bulk download PTGRXML ipg260101.zip -o ./data/ --download-timeout 2h
 ```
 
 ## Export Data for Spreadsheets and Dashboards
@@ -328,7 +338,8 @@ uspto bulk download PTGRXML ipg260101.zip -o ./data/
 Every command can output to CSV for Excel, Google Sheets, or any data tool:
 
 ```bash
-# CSV export for spreadsheet analysis
+# CSV export for spreadsheet analysis. --all pages through at most 10,000
+# results; if the query matches more, a warning on stderr says so
 uspto search --assignee "Tesla" --all -f csv > tesla_portfolio.csv
 
 # Get filing counts by technology area

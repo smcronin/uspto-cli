@@ -48,11 +48,39 @@ func outputResult(cmd *cobra.Command, data interface{}, pagination *types.Pagina
 }
 
 func outputResultWithFacets(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue) {
+	outputResultWithNotes(cmd, data, pagination, facets, resultNotes{})
+}
+
+// resultNotes is what an ok:true result has to say about itself besides the
+// data: warnings, and whether a sub-request failed and left the data
+// incomplete.
+type resultNotes struct {
+	Warnings []string
+	Partial  bool
+}
+
+// reportWarnings prints warnings on stderr. Table, CSV and NDJSON output has
+// no envelope to carry them, so there they are printed even under --quiet. In
+// JSON the envelope has them (see outputResultWithNotes), where --quiet cannot
+// hide them, and --quiet silences only the stderr copy.
+func reportWarnings(warnings []string) {
+	if flagFormat == "json" && flagQuiet {
+		return
+	}
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "Warning: "+w)
+	}
+}
+
+// outputResultWithNotes is outputResultWithFacets for a result that carries
+// warnings or is partial. The notes appear in the JSON envelope only; callers
+// pair it with reportWarnings so the other formats see them on stderr.
+func outputResultWithNotes(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue, notes resultNotes) {
 	opts := getOutputOptions()
 
 	switch opts.Format {
 	case "json":
-		writeJSON(cmd, data, pagination, facets, opts)
+		writeJSON(cmd, data, pagination, facets, notes, opts)
 	case "ndjson":
 		writeNDJSON(cmd, data, opts)
 	case "csv":
@@ -66,7 +94,7 @@ func outputResultWithFacets(cmd *cobra.Command, data interface{}, pagination *ty
 }
 
 // writeJSON outputs the standardized JSON envelope to stdout.
-func writeJSON(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue, opts OutputOptions) {
+func writeJSON(cmd *cobra.Command, data interface{}, pagination *types.PaginationMeta, facets map[string][]types.FacetValue, notes resultNotes, opts OutputOptions) {
 	env := types.CLIResponse{
 		OK:          true,
 		Command:     cmd.Name(),
@@ -75,6 +103,8 @@ func writeJSON(cmd *cobra.Command, data interface{}, pagination *types.Paginatio
 		Pagination:  pagination,
 		Results:     data,
 		Facets:      facets,
+		Warnings:    notes.Warnings,
+		Partial:     notes.Partial,
 		Version:     version,
 	}
 

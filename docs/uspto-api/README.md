@@ -23,7 +23,7 @@ Complete reference for the USPTO Open Data Portal REST API at `api.uspto.gov`.
 
 - **Base URL**: `https://api.uspto.gov`
 - **Auth Header**: `X-API-KEY: <your-key>`
-- **Rate Limit**: 60 req/min (peak), 120 req/min (off-peak)
+- **Rate Limit**: per API key, one request at a time (burst 1), no peak/off-peak distinction; 5M metadata calls and 1.2M document calls per week. See [rate-limits.md](./rate-limits.md). (The 60/120 requests-per-minute tiers belong to the separate TSDR trademark API, not to ODP.)
 - **Total Endpoints**: 53 method+path combinations
 - **Data Coverage**: Applications filed on or after 2001-01-01
 - **Max Response**: 6 MB payload limit

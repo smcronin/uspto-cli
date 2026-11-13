@@ -51,6 +51,7 @@ var (
 	appTextCodesFlag  string
 	appTextFromFlag   string
 	appTextToFlag     string
+	appTextSortFlag   string
 	appTextAsFlag     string
 	appTextLatestFlag bool
 
@@ -61,13 +62,18 @@ var (
 )
 
 var appTextCmd = &cobra.Command{
-	Use:     "text <appNumber> [docIndex|documentIdentifier]",
+	Use:     "text <appNumber> [documentIdentifier|docIndex]",
 	Aliases: []string{"read"},
 	Short:   "Extract terminal-readable text from a file-wrapper document",
 	Long: `Extract terminal-readable text from an application's file-wrapper document.
 
 The command fetches the selected document directly from the USPTO API and
 extracts text in-memory, without requiring a separate download-and-read step.
+
+Select the document by its documentIdentifier (the "Document ID" column of
+"app docs"), which names the same document whatever filters are in use. A
+1-based docIndex also works, but it is a position in the listing: it is only
+valid with the same --codes, --from, --to and --sort given to "app docs".
 
 By default it prefers XML when available, then falls back to DOCX. PDF text
 extraction is intentionally not attempted here; use "app download --as pdf"
@@ -83,23 +89,25 @@ Examples:
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
-		if err := validateDateRange("--from", appTextFromFlag, "--to", appTextToFlag); err != nil {
+		// An index is resolved against the listing these flags describe,
+		// exactly as "app docs" numbers it; a documentIdentifier is looked up
+		// in the whole file wrapper.
+		listing := documentListing{codes: appTextCodesFlag, from: appTextFromFlag, to: appTextToFlag, sort: appTextSortFlag}
+		if err := listing.validate(); err != nil {
 			return err
 		}
 		if err := validateTextFormatRequest(appTextAsFlag); err != nil {
 			return err
 		}
 		if appTextLatestFlag && len(args) > 1 {
-			return fmt.Errorf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
+			return usageErrorf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
+		}
+		if len(args) > 1 {
+			listing = listing.forSelector(args[1])
 		}
 
-		docOpts := types.DocumentOptions{
-			DocumentCodes:    normalizeDocumentCodes(appTextCodesFlag),
-			OfficialDateFrom: appTextFromFlag,
-			OfficialDateTo:   appTextToFlag,
-		}
 		if flagDryRun {
-			printDryRunDocuments(appNumber, docOpts)
+			printDryRunDocuments(appNumber, listing.options())
 			switch {
 			case len(args) > 1:
 				fmt.Fprintf(os.Stderr, "Then: GET <XML or DOCX downloadUrl of document %s> and extract its text\n", args[1])
@@ -110,22 +118,22 @@ Examples:
 			}
 			return nil
 		}
-		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
+		docs, err := listing.fetch(context.Background(), appNumber)
 		if err != nil {
 			return err
 		}
-		if len(docResp.DocumentBag) == 0 {
+		if len(docs) == 0 {
 			return fmt.Errorf("no documents found for application %s", appNumber)
 		}
 
-		docIndex, doc, autoPicked, err := selectDocumentForText(docResp.DocumentBag, args[1:], appTextLatestFlag)
+		docIndex, doc, autoPicked, err := selectDocumentForText(docs, args[1:], appTextLatestFlag)
 		if err != nil {
 			return err
 		}
 		if doc == nil {
-			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a docIndex (1-%d), a documentIdentifier, or use --latest.\n",
-				len(docResp.DocumentBag), len(docResp.DocumentBag))
-			writeDocumentChoices(docResp.DocumentBag)
+			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a documentIdentifier, a docIndex (1-%d) with these same filters, or use --latest.\n",
+				len(docs), len(docs))
+			writeDocumentChoices(docs)
 			return nil
 		}
 		if autoPicked && !flagQuiet {
@@ -208,24 +216,51 @@ Examples:
 			Skipped:           make([]AppDocumentTextSkip, 0),
 		}
 
+		// A document with no XML or DOCX rendition is skipped by design. A
+		// document that has one but could not be fetched or parsed is a
+		// failure: it is still listed under skipped, and also reported as a
+		// warning so the caller knows the batch is incomplete.
+		var warnings []string
+		var firstErr error
+		skip := func(index int, doc *types.Document, reason error) {
+			result.Skipped = append(result.Skipped, AppDocumentTextSkip{
+				DocumentIndex:      index,
+				DocumentIdentifier: doc.DocumentIdentifier,
+				DocumentCode:       doc.DocumentCode,
+				Description:        doc.DocumentCodeDescriptionText,
+				AvailableFormats:   availableFormatList(doc),
+				Reason:             reason.Error(),
+			})
+		}
+
 		ctx := context.Background()
 		for i, doc := range docResp.DocumentBag {
+			if _, _, _, fmtErr := resolveTextFormat(&doc, appTextAllAsFlag); fmtErr != nil {
+				skip(i+1, &doc, fmtErr)
+				continue
+			}
 			textResult, textErr := fetchAppDocumentText(ctx, appNumber, i+1, &doc, appTextAllAsFlag)
 			if textErr != nil {
-				result.Skipped = append(result.Skipped, AppDocumentTextSkip{
-					DocumentIndex:      i + 1,
-					DocumentIdentifier: doc.DocumentIdentifier,
-					DocumentCode:       doc.DocumentCode,
-					Description:        doc.DocumentCodeDescriptionText,
-					AvailableFormats:   availableFormatList(&doc),
-					Reason:             textErr.Error(),
-				})
+				skip(i+1, &doc, textErr)
+				if firstErr == nil {
+					firstErr = textErr
+				}
+				warnings = append(warnings, fmt.Sprintf("document %d (%s, %s) could not be read: %v",
+					i+1, doc.DocumentCode, doc.OfficialDate, textErr))
 				continue
 			}
 			result.Documents = append(result.Documents, *textResult)
 		}
 		result.ExtractedCount = len(result.Documents)
 		result.SkippedCount = len(result.Skipped)
+
+		// Every readable document failed: that is a failure with the first
+		// error's typed exit code, not an empty batch.
+		if result.ExtractedCount == 0 && firstErr != nil {
+			return fmt.Errorf("could not read any of the %d readable document(s): %w", len(warnings), firstErr)
+		}
+		notes := resultNotes{Warnings: warnings, Partial: len(warnings) > 0}
+		reportWarnings(notes.Warnings)
 
 		if result.ExtractedCount == 0 && !flagQuiet {
 			fmt.Fprintf(os.Stderr, "No matching documents exposed direct XML/DOCX text. %d document(s) skipped.\n", result.SkippedCount)
@@ -238,7 +273,7 @@ Examples:
 			return nil
 		}
 
-		outputResult(cmd, result, nil)
+		outputResultWithNotes(cmd, result, nil, nil, notes)
 		return nil
 	},
 }
@@ -250,6 +285,7 @@ func init() {
 	appTextCmd.Flags().StringVar(&appTextCodesFlag, "codes", "", "Comma-separated document codes/aliases to filter by")
 	appTextCmd.Flags().StringVar(&appTextFromFlag, "from", "", "Filter documents from this date (YYYY-MM-DD)")
 	appTextCmd.Flags().StringVar(&appTextToFlag, "to", "", "Filter documents to this date (YYYY-MM-DD)")
+	appTextCmd.Flags().StringVar(&appTextSortFlag, "sort", "", "Sort the docIndex is counted in (date:asc or date:desc, as in app docs)")
 	appTextCmd.Flags().StringVar(&appTextAsFlag, "as", "auto", "Preferred source format: auto, xml, or docx")
 	appTextCmd.Flags().BoolVar(&appTextLatestFlag, "latest", false, "Read the latest document after filtering")
 
@@ -289,10 +325,10 @@ func validateTextFormatRequest(requested string) error {
 	}
 	mimeType, _, _, err := resolveDownloadFormat(req)
 	if err != nil {
-		return fmt.Errorf("unknown text format %q (valid: auto, xml, docx)", requested)
+		return usageErrorf("unknown text format %q (valid: auto, xml, docx)", requested)
 	}
 	if mimeType == "PDF" {
-		return fmt.Errorf("pdf text extraction is not supported; choose auto, xml, or docx")
+		return usageErrorf("pdf text extraction is not supported; choose auto, xml, or docx")
 	}
 	return nil
 }
@@ -313,10 +349,10 @@ func resolveTextFormat(doc *types.Document, requested string) (mimeType string, 
 
 	mimeType, _, label, err = resolveDownloadFormat(req)
 	if err != nil {
-		return "", "", "", fmt.Errorf("unknown text format %q (valid: auto, xml, docx)", requested)
+		return "", "", "", usageErrorf("unknown text format %q (valid: auto, xml, docx)", requested)
 	}
 	if mimeType == "PDF" {
-		return "", "", "", fmt.Errorf("pdf text extraction is not supported; choose xml or docx when available")
+		return "", "", "", usageErrorf("pdf text extraction is not supported; choose xml or docx when available")
 	}
 
 	downloadURL = findDownloadOption(doc, mimeType)

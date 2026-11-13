@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -39,24 +41,78 @@ type ForeignPrioritySummary struct {
 	FilingDate        string `json:"filingDate"`
 }
 
+// SecurityInterestSummary is a recorded conveyance that encumbers the
+// application without transferring title: a security agreement, lien,
+// mortgage, pledge or collateral assignment.
+type SecurityInterestSummary struct {
+	Holder       string `json:"holder"`
+	Conveyance   string `json:"conveyance"`
+	RecordedDate string `json:"recordedDate,omitempty"`
+	ReelFrame    string `json:"reelFrame,omitempty"`
+}
+
+// UnclassifiedConveyanceSummary is a recorded conveyance whose text the
+// summary does not recognise as a title transfer, an encumbrance or another
+// known kind of record. It is not used for CurrentAssignee.
+type UnclassifiedConveyanceSummary struct {
+	Assignee     string `json:"assignee,omitempty"`
+	Conveyance   string `json:"conveyance"`
+	RecordedDate string `json:"recordedDate,omitempty"`
+	ReelFrame    string `json:"reelFrame,omitempty"`
+}
+
+// Values of AppSummary.CurrentAssigneeSource.
+const (
+	// assigneeFromAssignment: the assignee of the latest recorded conveyance
+	// that transfers title.
+	assigneeFromAssignment = "assignment"
+	// assigneeFromApplicant: no title conveyance is recorded, so the name is
+	// the applicant from the application metadata.
+	assigneeFromApplicant = "applicant"
+)
+
 // AppSummary is the flattened, agent-friendly summary of a patent application.
 type AppSummary struct {
-	ApplicationNumber    string                   `json:"applicationNumber"`
-	PatentNumber         string                   `json:"patentNumber,omitempty"`
-	Title                string                   `json:"title"`
-	Status               string                   `json:"status"`
-	FilingDate           string                   `json:"filingDate"`
-	GrantDate            string                   `json:"grantDate,omitempty"`
-	Applicant            string                   `json:"applicant"`
-	Inventors            []string                 `json:"inventors"`
-	Examiner             string                   `json:"examiner,omitempty"`
-	ArtUnit              string                   `json:"artUnit,omitempty"`
-	CPC                  []string                 `json:"cpc,omitempty"`
-	EntityStatus         string                   `json:"entityStatus,omitempty"`
-	PTADays              int                      `json:"ptaDays"`
-	Parents              []ContinuitySummary      `json:"parents,omitempty"`
-	Children             []ContinuitySummary      `json:"children,omitempty"`
-	CurrentAssignee      string                   `json:"currentAssignee,omitempty"`
+	ApplicationNumber string              `json:"applicationNumber"`
+	PatentNumber      string              `json:"patentNumber,omitempty"`
+	Title             string              `json:"title"`
+	Status            string              `json:"status"`
+	FilingDate        string              `json:"filingDate"`
+	GrantDate         string              `json:"grantDate,omitempty"`
+	Applicant         string              `json:"applicant"`
+	Inventors         []string            `json:"inventors"`
+	Examiner          string              `json:"examiner,omitempty"`
+	ArtUnit           string              `json:"artUnit,omitempty"`
+	CPC               []string            `json:"cpc,omitempty"`
+	EntityStatus      string              `json:"entityStatus,omitempty"`
+	PTADays           int                 `json:"ptaDays"`
+	Parents           []ContinuitySummary `json:"parents,omitempty"`
+	Children          []ContinuitySummary `json:"children,omitempty"`
+
+	// CurrentAssignee is the assignee of the latest recorded conveyance that
+	// transfers title (an assignment, merger, change of name or conversion;
+	// a recorded-date tie goes to the higher reel, then frame). Security
+	// interests, liens, changes of a lender's agent, licences, government
+	// interests and releases are not ownership and are skipped, and so are
+	// conveyances not recognised at all (listed in UnclassifiedConveyances).
+	// CurrentAssigneeSource says where the name came from ("assignment", or
+	// "applicant" when no title conveyance is recorded). For "assignment"
+	// the conveyance text and recorded date of that record are given so the
+	// basis can be checked. Recording order is not chain order: a corrective
+	// or nunc pro tunc assignment recorded late for an early link can name a
+	// former owner, so check `app assignments` when it matters.
+	CurrentAssignee             string `json:"currentAssignee,omitempty"`
+	CurrentAssigneeSource       string `json:"currentAssigneeSource,omitempty"`
+	CurrentAssigneeConveyance   string `json:"currentAssigneeConveyance,omitempty"`
+	CurrentAssigneeRecordedDate string `json:"currentAssigneeRecordedDate,omitempty"`
+	// SecurityInterests lists the recorded encumbrances, oldest first. A
+	// later release is not matched against them: check `app assignments`.
+	SecurityInterests []SecurityInterestSummary `json:"securityInterests,omitempty"`
+	// UnclassifiedConveyances lists the recorded conveyances whose text is
+	// not recognised, oldest first. They were skipped when choosing
+	// CurrentAssignee, so one of them may change the answer: read them.
+	UnclassifiedConveyances []UnclassifiedConveyanceSummary `json:"unclassifiedConveyances,omitempty"`
+
 	RecentEvents         []EventSummary           `json:"recentEvents,omitempty"`
 	ForeignPriority      []ForeignPrioritySummary `json:"foreignPriority,omitempty"`
 	ForeignPriorityCount int                      `json:"foreignPriorityCount"`
@@ -152,6 +208,227 @@ func recentEventSummaries(events []types.EventData, n int) []EventSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Ownership from assignment records
+// ---------------------------------------------------------------------------
+
+// ownership is what the assignment records say about who owns an application.
+type ownership struct {
+	// Assignee, Conveyance and RecordedDate describe the latest recorded
+	// conveyance that transfers title. Assignee is empty when there is none.
+	Assignee     string
+	Conveyance   string
+	RecordedDate string
+	// SecurityInterests are the recorded encumbrances, oldest first.
+	SecurityInterests []SecurityInterestSummary
+	// Unclassified are the records whose conveyance text is not recognised
+	// as anything, oldest first. They were not used for the assignee.
+	Unclassified []UnclassifiedConveyanceSummary
+}
+
+// Words and phrases that classify a conveyance. Words are matched as whole
+// words of the conveyance text, so "LIEN" does not match "CLIENT"; phrases
+// are matched as whole-word sequences.
+var (
+	// encumbranceWords: the assignee takes a security interest, not title,
+	// or the record moves the role of a lender's agent (a successor or
+	// newly appointed administrative or collateral agent), which concerns
+	// the encumbrance and leaves title where it was.
+	encumbranceWords = []string{"SECURITY", "SECURED", "LIEN", "LIENS", "MORTGAGE", "COLLATERAL", "PLEDGE", "AGENT", "AGENTS", "AGENCY"}
+	// releaseWords: an earlier encumbrance is being lifted; the assignee is
+	// whoever it is released to, which is not a transfer of title either.
+	releaseWords = []string{"RELEASE", "RELEASES", "DISCHARGE", "TERMINATION"}
+	// licenceWords: a licence leaves title where it was.
+	licenceWords = []string{"LICENSE", "LICENCE", "SUBLICENSE"}
+	// otherNonTitlePhrases: recognised records that are neither title nor
+	// encumbrance. A government interest agreement records the government's
+	// licence rights; a change of address moves nothing.
+	otherNonTitlePhrases = []string{"GOVERNMENT INTEREST", "CHANGE OF ADDRESS"}
+	// titleWords and titlePhrases are the allow-list of title conveyances:
+	// assignments of the assignors' interest (including nunc pro tunc,
+	// confirmatory and corrective assignments), mergers, changes of name and
+	// entity conversions. They name the owner in their assignee.
+	titleWords   = []string{"ASSIGNMENT", "ASSIGNMENTS", "MERGER", "MERGERS", "CONVERSION"}
+	titlePhrases = []string{"ASSIGNORS INTEREST", "ASSIGNOR S INTEREST", "NUNC PRO TUNC", "CHANGE OF NAME", "NAME CHANGE"}
+)
+
+// conveyanceKind classifies an assignment record by its conveyance text.
+type conveyanceKind int
+
+const (
+	conveysTitle         conveyanceKind = iota // assignment, merger, change of name, conversion
+	conveysEncumbrance                         // security interest, lien, mortgage, pledge, lender's agent
+	conveysOtherNonTitle                       // release, licence, government interest, change of address
+	conveysUnrecognised                        // none of the above: not used, but reported
+)
+
+// classifyConveyance decides whether a recorded conveyance transfers title.
+// Title is an allow-list: a conveyance counts as title only when its text is
+// recognisably an assignment, merger, change of name or conversion, and
+// carries no word of an encumbrance, release or licence. Anything that is
+// not recognised is conveysUnrecognised, so an unexpected kind of record can
+// never name the owner.
+func classifyConveyance(text string) conveyanceKind {
+	fields := strings.FieldsFunc(strings.ToUpper(text), func(r rune) bool { return r < 'A' || r > 'Z' })
+	words := map[string]bool{}
+	for _, w := range fields {
+		words[w] = true
+	}
+	joined := " " + strings.Join(fields, " ") + " "
+	hasWord := func(list []string) bool {
+		for _, w := range list {
+			if words[w] {
+				return true
+			}
+		}
+		return false
+	}
+	hasPhrase := func(list []string) bool {
+		for _, p := range list {
+			if strings.Contains(joined, " "+p+" ") {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case hasWord(releaseWords):
+		// "RELEASE OF SECURITY INTEREST" has both; the release decides.
+		return conveysOtherNonTitle
+	case hasWord(encumbranceWords):
+		return conveysEncumbrance
+	case hasWord(licenceWords), hasPhrase(otherNonTitlePhrases):
+		return conveysOtherNonTitle
+	case hasWord(titleWords), hasPhrase(titlePhrases):
+		return conveysTitle
+	}
+	return conveysUnrecognised
+}
+
+// reelFrame returns an assignment's reel and frame numbers, from the numeric
+// fields or else from the "reel/frame" text. ok is false when neither gives
+// both numbers.
+func reelFrame(a *types.Assignment) (reel, frame int, ok bool) {
+	if a.ReelNumber > 0 {
+		return a.ReelNumber, a.FrameNumber, true
+	}
+	r, f, found := strings.Cut(strings.TrimSpace(a.ReelAndFrameNumber), "/")
+	if !found {
+		return 0, 0, false
+	}
+	reel, errR := strconv.Atoi(strings.TrimSpace(r))
+	frame, errF := strconv.Atoi(strings.TrimSpace(f))
+	if errR != nil || errF != nil {
+		return 0, 0, false
+	}
+	return reel, frame, true
+}
+
+// recordedLater reports whether a was recorded after b: a later recorded
+// date, or on the same date a higher reel, then a higher frame (reels and
+// frames are assigned in recording order). A record without a usable
+// reel/frame never wins a tie.
+func recordedLater(a, b *types.Assignment, dateA, dateB string) bool {
+	if dateA != dateB {
+		return dateA > dateB
+	}
+	reelA, frameA, okA := reelFrame(a)
+	reelB, frameB, okB := reelFrame(b)
+	if !okA || !okB {
+		return false
+	}
+	if reelA != reelB {
+		return reelA > reelB
+	}
+	return frameA > frameB
+}
+
+// ownershipFrom reads the current assignee and the security interests out of
+// an application's assignment records.
+//
+// The current assignee is the first-named assignee of the title conveyance
+// recorded last: latest recorded date (received date when the recorded date
+// is missing), then highest reel and frame. The latest record of any kind
+// used to be taken, so a security agreement recorded after the last
+// assignment named the lender as owner.
+//
+// Known limitation: recording order is not chain order. A corrective or nunc
+// pro tunc assignment recorded years later to fix an early link of the chain
+// becomes the latest title record and names that early assignee, even if
+// the patent has since been sold on. Reconstructing the chain would need the
+// assignors and execution dates of every link; it is not attempted here.
+func ownershipFrom(assignments []types.Assignment) ownership {
+	var own ownership
+	var latest *types.Assignment
+	latestDate := ""
+
+	for i := range assignments {
+		a := &assignments[i]
+		date := a.AssignmentRecordedDate
+		if date == "" {
+			date = a.AssignmentReceivedDate
+		}
+		holder := ""
+		if len(a.AssigneeBag) > 0 {
+			holder = a.AssigneeBag[0].AssigneeNameText
+		}
+
+		switch classifyConveyance(a.ConveyanceText) {
+		case conveysEncumbrance:
+			own.SecurityInterests = append(own.SecurityInterests, SecurityInterestSummary{
+				Holder:       holder,
+				Conveyance:   a.ConveyanceText,
+				RecordedDate: date,
+				ReelFrame:    a.ReelAndFrameNumber,
+			})
+		case conveysUnrecognised:
+			own.Unclassified = append(own.Unclassified, UnclassifiedConveyanceSummary{
+				Assignee:     holder,
+				Conveyance:   a.ConveyanceText,
+				RecordedDate: date,
+				ReelFrame:    a.ReelAndFrameNumber,
+			})
+		case conveysTitle:
+			if holder == "" {
+				continue
+			}
+			if latest == nil || recordedLater(a, latest, date, latestDate) {
+				latest, latestDate = a, date
+				own.Assignee, own.Conveyance, own.RecordedDate = holder, a.ConveyanceText, date
+			}
+		}
+	}
+
+	sort.SliceStable(own.SecurityInterests, func(i, j int) bool {
+		return own.SecurityInterests[i].RecordedDate < own.SecurityInterests[j].RecordedDate
+	})
+	sort.SliceStable(own.Unclassified, func(i, j int) bool {
+		return own.Unclassified[i].RecordedDate < own.Unclassified[j].RecordedDate
+	})
+	return own
+}
+
+// applyOwnership writes the ownership reading into the summary. When no
+// title conveyance is recorded (a direct filing by the owner, or records
+// that hold only security interests) it falls back to the applicant from the
+// metadata and says so in CurrentAssigneeSource, instead of naming a lender
+// or leaving the reader to guess.
+func applyOwnership(summary *AppSummary, own ownership) {
+	summary.SecurityInterests = own.SecurityInterests
+	summary.UnclassifiedConveyances = own.Unclassified
+	if own.Assignee != "" {
+		summary.CurrentAssignee = own.Assignee
+		summary.CurrentAssigneeSource = assigneeFromAssignment
+		summary.CurrentAssigneeConveyance = own.Conveyance
+		summary.CurrentAssigneeRecordedDate = own.RecordedDate
+		return
+	}
+	if summary.Applicant != "" {
+		summary.CurrentAssignee = summary.Applicant
+		summary.CurrentAssigneeSource = assigneeFromApplicant
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Run function
 // ---------------------------------------------------------------------------
 
@@ -177,55 +454,64 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		ApplicationNumber: appNumber,
 	}
 
-	// Track partial failures so we can still return what we got.
+	// Track failures of the other sub-requests so we can still return what
+	// we got, marked partial.
 	var warnings []string
+	failed := func(what string, err error) {
+		warnings = append(warnings, fmt.Sprintf("failed to fetch %s: %v", what, err))
+	}
 
-	// 1. Metadata
+	// 1. Metadata. It is the only source of the application's identity
+	// (title, status, dates, applicant, inventors), so without it there is
+	// no summary to report, whatever the other endpoints would say: return
+	// the error (ok:false and the typed exit code) without asking them.
 	progress("Fetching metadata...")
 	metaResp, err := client.GetMetadata(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("metadata: %v", err))
-	} else if len(metaResp.PatentFileWrapperDataBag) > 0 {
-		fw := metaResp.PatentFileWrapperDataBag[0]
-		md := fw.ApplicationMetaData
+		return err
+	}
+	if len(metaResp.PatentFileWrapperDataBag) == 0 {
+		return &api.UsptoAPIError{StatusCode: http.StatusNotFound, Message: "no metadata found for application " + appNumber}
+	}
+	fw := metaResp.PatentFileWrapperDataBag[0]
+	md := fw.ApplicationMetaData
 
-		summary.Title = md.InventionTitle
-		summary.PatentNumber = md.PatentNumber
-		summary.Status = md.ApplicationStatusDescriptionText
-		summary.FilingDate = md.FilingDate
-		summary.GrantDate = md.GrantDate
-		summary.Examiner = md.ExaminerNameText
-		summary.ArtUnit = md.GroupArtUnitNumber
-		summary.CPC = md.CpcClassificationBag
-		summary.EntityStatus = md.EntityStatusData.BusinessEntityStatusCategory
-		summary.LastUpdated = fw.LastIngestionDateTime
+	summary.Title = md.InventionTitle
+	summary.PatentNumber = md.PatentNumber
+	summary.Status = md.ApplicationStatusDescriptionText
+	summary.FilingDate = md.FilingDate
+	summary.GrantDate = md.GrantDate
+	summary.Examiner = md.ExaminerNameText
+	summary.ArtUnit = md.GroupArtUnitNumber
+	summary.CPC = md.CpcClassificationBag
+	summary.EntityStatus = md.EntityStatusData.BusinessEntityStatusCategory
+	summary.LastUpdated = fw.LastIngestionDateTime
 
-		// Applicant
-		if md.FirstApplicantName != "" {
-			summary.Applicant = md.FirstApplicantName
-		} else if len(md.ApplicantBag) > 0 {
-			a := md.ApplicantBag[0]
-			if a.ApplicantNameText != "" {
-				summary.Applicant = a.ApplicantNameText
-			} else if a.PreferredName != "" {
-				summary.Applicant = a.PreferredName
-			}
+	// Applicant
+	if md.FirstApplicantName != "" {
+		summary.Applicant = md.FirstApplicantName
+	} else if len(md.ApplicantBag) > 0 {
+		a := md.ApplicantBag[0]
+		if a.ApplicantNameText != "" {
+			summary.Applicant = a.ApplicantNameText
+		} else if a.PreferredName != "" {
+			summary.Applicant = a.PreferredName
 		}
+	}
 
-		// Inventors
-		for _, inv := range md.InventorBag {
-			name := inventorName(inv)
-			if name != "" {
-				summary.Inventors = append(summary.Inventors, name)
-			}
+	// Inventors
+	for _, inv := range md.InventorBag {
+		name := inventorName(inv)
+		if name != "" {
+			summary.Inventors = append(summary.Inventors, name)
 		}
+	}
 
-		// PTA, if this response happens to carry it. The meta-data endpoint
-		// documents ApplicationMetaData only, so the adjustment call below is
-		// the authoritative source.
-		if fw.PatentTermAdjustmentData != nil {
-			summary.PTADays = fw.PatentTermAdjustmentData.AdjustmentTotalQuantity
-		}
+	// PTA, if this response happens to carry it. The meta-data endpoint
+	// documents ApplicationMetaData only, so the adjustment call below is
+	// the authoritative source.
+	if fw.PatentTermAdjustmentData != nil {
+		summary.PTADays = fw.PatentTermAdjustmentData.AdjustmentTotalQuantity
 	}
 
 	// 1b. Patent term adjustment. An application without PTA data (pending,
@@ -235,7 +521,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	ptaResp, err := client.GetAdjustment(ctx, appNumber)
 	if err != nil {
 		if !isNotFoundAPIError(err) {
-			warnings = append(warnings, fmt.Sprintf("patent term adjustment: %v", err))
+			failed("patent term adjustment", err)
 		}
 	} else if len(ptaResp.PatentFileWrapperDataBag) > 0 {
 		if pta := ptaResp.PatentFileWrapperDataBag[0].PatentTermAdjustmentData; pta != nil {
@@ -247,7 +533,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching continuity...")
 	contResp, err := client.GetContinuity(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("continuity: %v", err))
+		failed("continuity", err)
 	} else if len(contResp.PatentFileWrapperDataBag) > 0 {
 		fw := contResp.PatentFileWrapperDataBag[0]
 
@@ -278,34 +564,20 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching assignments...")
 	assignResp, err := client.GetAssignment(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("assignment: %v", err))
-	} else if len(assignResp.PatentFileWrapperDataBag) > 0 {
-		fw := assignResp.PatentFileWrapperDataBag[0]
-
-		// Find the most recent assignment by recorded date.
-		var latestAssignment *types.Assignment
-		latestDate := ""
-		for i := range fw.AssignmentBag {
-			a := &fw.AssignmentBag[i]
-			date := a.AssignmentRecordedDate
-			if date == "" {
-				date = a.AssignmentReceivedDate
-			}
-			if latestDate == "" || date > latestDate {
-				latestDate = date
-				latestAssignment = a
-			}
+		failed("assignment", err)
+	} else {
+		var assignments []types.Assignment
+		if len(assignResp.PatentFileWrapperDataBag) > 0 {
+			assignments = assignResp.PatentFileWrapperDataBag[0].AssignmentBag
 		}
-		if latestAssignment != nil && len(latestAssignment.AssigneeBag) > 0 {
-			summary.CurrentAssignee = latestAssignment.AssigneeBag[0].AssigneeNameText
-		}
+		applyOwnership(&summary, ownershipFrom(assignments))
 	}
 
 	// 4. Transactions (10 most recent)
 	progress("Fetching transactions...")
 	txResp, err := client.GetTransactions(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("transactions: %v", err))
+		failed("transactions", err)
 	} else if len(txResp.PatentFileWrapperDataBag) > 0 {
 		fw := txResp.PatentFileWrapperDataBag[0]
 		summary.RecentEvents = recentEventSummaries(fw.EventDataBag, recentEventCount)
@@ -315,7 +587,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching foreign priority...")
 	fpResp, err := client.GetForeignPriority(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("foreign priority: %v", err))
+		failed("foreign priority", err)
 	} else if len(fpResp.PatentFileWrapperDataBag) > 0 {
 		fw := fpResp.PatentFileWrapperDataBag[0]
 		summary.ForeignPriorityCount = len(fw.ForeignPriorityBag)
@@ -332,7 +604,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching documents...")
 	docResp, err := client.GetDocuments(ctx, appNumber, types.DocumentOptions{})
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("documents: %v", err))
+		failed("documents", err)
 	} else {
 		summary.DocumentCount = len(docResp.DocumentBag)
 
@@ -350,12 +622,10 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Print warnings for partial failures.
-	for _, w := range warnings {
-		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "Warning: failed to fetch %s\n", w)
-		}
-	}
+	// Some sub-requests failed. The rest of the summary is still useful, so
+	// the command succeeds, but the result says that it is incomplete.
+	notes := resultNotes{Warnings: warnings, Partial: len(warnings) > 0}
+	reportWarnings(notes.Warnings)
 
 	if len(warnings) > 0 {
 		progress(fmt.Sprintf("Completed with %d warning(s).", len(warnings)))
@@ -370,7 +640,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	outputResult(cmd, summary, nil)
+	outputResultWithNotes(cmd, summary, nil, nil, notes)
 	return nil
 }
 
@@ -403,7 +673,32 @@ func writeKeyValueSummary(s AppSummary) {
 	if s.PTADays > 0 {
 		kv("PTA Days", fmt.Sprintf("%d", s.PTADays))
 	}
-	kv("Current Assignee", s.CurrentAssignee)
+	switch s.CurrentAssigneeSource {
+	case assigneeFromAssignment:
+		basis := s.CurrentAssigneeConveyance
+		if s.CurrentAssigneeRecordedDate != "" {
+			basis += ", recorded " + s.CurrentAssigneeRecordedDate
+		}
+		kv("Current Assignee", fmt.Sprintf("%s (%s)", s.CurrentAssignee, strings.TrimPrefix(basis, ", ")))
+	case assigneeFromApplicant:
+		kv("Current Assignee", s.CurrentAssignee+" (the applicant; no title assignment is recorded)")
+	default:
+		kv("Current Assignee", s.CurrentAssignee)
+	}
+	for _, si := range s.SecurityInterests {
+		line := fmt.Sprintf("%s (%s", si.Holder, si.Conveyance)
+		if si.RecordedDate != "" {
+			line += ", recorded " + si.RecordedDate
+		}
+		kv("Security Interest", line+")")
+	}
+	for _, uc := range s.UnclassifiedConveyances {
+		line := fmt.Sprintf("%s (assignee %s", uc.Conveyance, safeStr(uc.Assignee, "-"))
+		if uc.RecordedDate != "" {
+			line += ", recorded " + uc.RecordedDate
+		}
+		kv("Not Classified", line+"; skipped for Current Assignee)")
+	}
 	if s.ForeignPriorityCount > 0 {
 		kv("Foreign Priority", fmt.Sprintf("%d claim(s)", s.ForeignPriorityCount))
 	}

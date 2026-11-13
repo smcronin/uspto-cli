@@ -321,6 +321,10 @@ func TestRunSearch_DownloadWithFiltersUsesPostEndpoint(t *testing.T) {
 		if !ok || len(ranges) == 0 {
 			t.Fatalf("rangeFilters missing from POST body: %#v", body["rangeFilters"])
 		}
+		pagination, _ := body["pagination"].(map[string]interface{})
+		if got, _ := pagination["limit"].(float64); got != 10 {
+			t.Fatalf("pagination.limit = %v, want the explicit --limit 10", pagination["limit"])
+		}
 
 		w.Header().Set("Content-Type", "text/csv")
 		fmt.Fprint(w, "applicationNumberText\n16123456\n")
@@ -329,10 +333,16 @@ func TestRunSearch_DownloadWithFiltersUsesPostEndpoint(t *testing.T) {
 
 	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
 
+	// An explicit --limit is sent as given, with no count request first (the
+	// handler above fails the test on any path but /search/download).
 	cmd := &cobra.Command{}
 	cmd.Flags().String("download", "", "")
+	cmd.Flags().Int("limit", 25, "")
 	if err := cmd.Flags().Set("download", "csv"); err != nil {
 		t.Fatalf("set download flag: %v", err)
+	}
+	if err := cmd.Flags().Set("limit", "10"); err != nil {
+		t.Fatalf("set limit flag: %v", err)
 	}
 
 	oldStdout := os.Stdout
@@ -523,6 +533,284 @@ func TestValidateSearchInputs_FilterNeedsFieldAndValue(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("validateSearchInputs() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// --pending means "still alive": not granted, not abandoned, not an expired
+// provisional. It used to filter on the PGPub publication category, which
+// most granted patents carry too.
+func TestBuildPostBody_PendingExcludesGrantedAndAbandoned(t *testing.T) {
+	orig := searchFlags
+	defer func() { searchFlags = orig }()
+
+	const exclusions = `NOT applicationMetaData.publicationCategoryBag:"Granted/Issued"` +
+		` AND NOT applicationMetaData.applicationStatusDescriptionText:Abandon*` +
+		` AND NOT applicationMetaData.applicationStatusDescriptionText:Expressly*` +
+		` AND NOT applicationMetaData.applicationStatusDescriptionText:"Provisional Application Expired"`
+
+	tests := []struct {
+		name  string
+		query string
+		setup func()
+		wantQ string
+	}{
+		{name: "free text", query: "battery", wantQ: "(battery) AND " + exclusions},
+		{name: "no other terms", query: "", wantQ: exclusions},
+		{
+			name:  "OR in the caller's query stays grouped",
+			query: "battery OR capacitor",
+			wantQ: "(battery OR capacitor) AND " + exclusions,
+		},
+		{
+			name:  "shorthand flag",
+			setup: func() { searchFlags.assignee = "Tesla" },
+			wantQ: "(assignmentBag.assigneeBag.assigneeNameText:Tesla) AND " + exclusions,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetSearchFlagsForTest()
+			searchFlags.pending = true
+			if tt.setup != nil {
+				tt.setup()
+			}
+			if !needsPostEndpoint() {
+				t.Fatal("--pending must use the POST endpoint")
+			}
+
+			body := buildPostBody(tt.query, 25, 0)
+
+			if body.Q != tt.wantQ {
+				t.Errorf("q =\n  %s\nwant\n  %s", body.Q, tt.wantQ)
+			}
+			for _, f := range body.Filters {
+				if f.Name == "applicationMetaData.publicationCategoryBag" {
+					t.Errorf("--pending still sends a publicationCategoryBag filter: %+v", f)
+				}
+			}
+			// The GET builder must agree, should the routing ever change.
+			if got := buildGetQueryWithDates(tt.query); got != tt.wantQ {
+				t.Errorf("GET query =\n  %s\nwant\n  %s", got, tt.wantQ)
+			}
+		})
+	}
+}
+
+// --pending with nothing but a date range sends a purely negative q (no
+// match-all term) and the dates as a range filter. ODP accepts that query
+// and applies the exclusions (checked live 2026-11-13; see
+// withPendingExclusions), so no match-all term is prepended.
+func TestBuildPostBody_PendingWithOnlyADateRangeIsPurelyNegative(t *testing.T) {
+	orig := searchFlags
+	defer func() { searchFlags = orig }()
+	resetSearchFlagsForTest()
+	searchFlags.pending = true
+	searchFlags.filedAfter, searchFlags.filedBefore = "2022-01-03", "2022-01-07"
+
+	body := buildPostBody("", 1, 0)
+
+	if !strings.HasPrefix(body.Q, "NOT ") || strings.Contains(body.Q, "*:*") || strings.Contains(body.Q, "(") {
+		t.Errorf("q = %q, want only the NOT clauses", body.Q)
+	}
+	if len(body.RangeFilters) != 1 || body.RangeFilters[0].Field != "applicationMetaData.filingDate" ||
+		body.RangeFilters[0].ValueFrom != "2022-01-03" || body.RangeFilters[0].ValueTo != "2022-01-07" {
+		t.Errorf("rangeFilters = %+v, want the filing-date range", body.RangeFilters)
+	}
+}
+
+func TestBuildPostBody_GrantedIsUnchangedAndNotPending(t *testing.T) {
+	orig := searchFlags
+	defer func() { searchFlags = orig }()
+	resetSearchFlagsForTest()
+	searchFlags.granted = true
+
+	body := buildPostBody("battery", 25, 0)
+
+	if body.Q != "battery" {
+		t.Errorf("q = %q, want the caller's query untouched", body.Q)
+	}
+	if len(body.Filters) != 1 || body.Filters[0].Name != "applicationMetaData.publicationCategoryBag" ||
+		len(body.Filters[0].Value) != 1 || body.Filters[0].Value[0] != "Granted/Issued" {
+		t.Errorf("filters = %+v, want the Granted/Issued filter", body.Filters)
+	}
+}
+
+// truncatedSearchServer reports total matches and serves full pages of
+// pageSize records for whatever offset is asked for.
+func truncatedSearchServer(t *testing.T, total, pageSize int) (*httptest.Server, *[]string) {
+	t.Helper()
+	var offsets []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		offsets = append(offsets, r.URL.Query().Get("offset"))
+		resp := types.PatentDataResponse{Count: total}
+		for i := 0; i < pageSize; i++ {
+			resp.PatentFileWrapperDataBag = append(resp.PatentFileWrapperDataBag, types.PatentFileWrapper{
+				ApplicationNumberText: fmt.Sprintf("A%s-%03d", r.URL.Query().Get("offset"), i),
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(ts.Close)
+	return ts, &offsets
+}
+
+// allPagesHarness runs --all against ts with a small cap (300) and page
+// size (100) so the 10,000-result ceiling can be reached in three requests.
+func allPagesHarness(t *testing.T, ts *httptest.Server, format string) {
+	t.Helper()
+	origFlags, origDryRun, origClient := searchFlags, flagDryRun, api.DefaultClient
+	origFormat, origQuiet, origMinify := flagFormat, flagQuiet, flagMinify
+	origLimit, origSize := autoPageLimit, autoPageSize
+	t.Cleanup(func() {
+		searchFlags, flagDryRun, api.DefaultClient = origFlags, origDryRun, origClient
+		flagFormat, flagQuiet, flagMinify = origFormat, origQuiet, origMinify
+		autoPageLimit, autoPageSize = origLimit, origSize
+	})
+	resetSearchFlagsForTest()
+	searchFlags.all = true
+	flagDryRun, flagFormat, flagQuiet, flagMinify = false, format, true, true
+	autoPageLimit, autoPageSize = 300, 100
+	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
+}
+
+// --all stops at USPTO's 10,000-result ceiling. That used to be visible only
+// in a progress line -q hides; it is now reported in every format.
+func TestRunSearchAllPages_TruncationIsReportedInEveryFormatWhenQuiet(t *testing.T) {
+	const wantLine = "Warning: returned 300 of 25000 results; USPTO search stops at 300."
+
+	for _, format := range []string{"json", "ndjson", "csv", "table"} {
+		t.Run(format, func(t *testing.T) {
+			ts, offsets := truncatedSearchServer(t, 25000, 100)
+			allPagesHarness(t, ts, format)
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			})
+			if err != nil {
+				t.Fatalf("runSearch() error: %v (truncation must not change the exit code)", err)
+			}
+			if got := strings.Join(*offsets, ","); got != ",100,200" {
+				t.Errorf("requested offsets %q, want three pages", got)
+			}
+			if !strings.Contains(stderr, wantLine) {
+				t.Errorf("stderr lacks the truncation line under -q:\n%s", stderr)
+			}
+			if strings.Count(stderr, "Warning:") != 1 {
+				t.Errorf("want exactly one warning line on stderr:\n%s", stderr)
+			}
+
+			switch format {
+			case "json":
+				var env struct {
+					OK         bool     `json:"ok"`
+					Warnings   []string `json:"warnings"`
+					Pagination struct {
+						Total     int  `json:"total"`
+						HasMore   bool `json:"hasMore"`
+						Truncated bool `json:"truncated"`
+					} `json:"pagination"`
+					Results []json.RawMessage `json:"results"`
+				}
+				if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+					t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, stdout)
+				}
+				if !env.OK || !env.Pagination.Truncated || !env.Pagination.HasMore || env.Pagination.Total != 25000 {
+					t.Errorf("envelope = ok %v pagination %+v, want ok with truncated and hasMore", env.OK, env.Pagination)
+				}
+				if len(env.Results) != 300 {
+					t.Errorf("results = %d, want 300", len(env.Results))
+				}
+				if len(env.Warnings) != 1 || !strings.Contains(env.Warnings[0], "returned 300 of 25000 results") {
+					t.Errorf("warnings = %q, want the truncation warning", env.Warnings)
+				}
+			case "ndjson":
+				if got := strings.Count(strings.TrimSpace(stdout), "\n") + 1; got != 300 {
+					t.Errorf("ndjson lines = %d, want 300", got)
+				}
+			case "csv":
+				if got := strings.Count(strings.TrimSpace(stdout), "\n"); got != 300 {
+					t.Errorf("csv data rows = %d, want 300", got)
+				}
+			}
+		})
+	}
+}
+
+func TestRunSearchAllPages_CompleteRunHasNoTruncationMarker(t *testing.T) {
+	for _, format := range []string{"json", "csv"} {
+		t.Run(format, func(t *testing.T) {
+			ts, _ := truncatedSearchServer(t, 200, 100)
+			allPagesHarness(t, ts, format)
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			})
+			if err != nil {
+				t.Fatalf("runSearch() error: %v", err)
+			}
+			if stderr != "" {
+				t.Errorf("a complete --all run under -q should leave stderr empty, got %q", stderr)
+			}
+			if strings.Contains(stdout, "truncated") || strings.Contains(stdout, `"warnings"`) {
+				t.Errorf("a complete run should carry no truncation marker:\n%.300s", stdout)
+			}
+		})
+	}
+}
+
+// An --all run that meets an empty page below the ceiling is short for a
+// different reason: it is reported, but not as the 10,000-result ceiling,
+// and not as truncated.
+func TestRunSearchAllPages_EarlyEmptyPageIsNotCalledTheCeiling(t *testing.T) {
+	for _, format := range []string{"json", "csv"} {
+		t.Run(format, func(t *testing.T) {
+			// 250 reported, but only the first page has rows.
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := types.PatentDataResponse{Count: 250}
+				if r.URL.Query().Get("offset") == "" {
+					for i := 0; i < 100; i++ {
+						resp.PatentFileWrapperDataBag = append(resp.PatentFileWrapperDataBag, types.PatentFileWrapper{ApplicationNumberText: fmt.Sprintf("A%03d", i)})
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(resp)
+			}))
+			t.Cleanup(ts.Close)
+			allPagesHarness(t, ts, format)
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			})
+			if err != nil {
+				t.Fatalf("runSearch() error: %v", err)
+			}
+			if !strings.Contains(stderr, "Warning: returned 100 of 250 results; the API sent an empty page at offset 100") {
+				t.Errorf("stderr lacks the early-stop warning:\n%s", stderr)
+			}
+			if strings.Contains(stderr, "stops at") {
+				t.Errorf("an early empty page must not be blamed on the ceiling:\n%s", stderr)
+			}
+			if format != "json" {
+				return
+			}
+			var env struct {
+				Warnings   []string `json:"warnings"`
+				Pagination struct {
+					HasMore   bool `json:"hasMore"`
+					Truncated bool `json:"truncated"`
+				} `json:"pagination"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+				t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, stdout)
+			}
+			if env.Pagination.Truncated || !env.Pagination.HasMore {
+				t.Errorf("pagination = %+v, want hasMore without truncated", env.Pagination)
+			}
+			if len(env.Warnings) != 1 || !strings.Contains(env.Warnings[0], "empty page") {
+				t.Errorf("warnings = %q, want the early-stop warning", env.Warnings)
 			}
 		})
 	}

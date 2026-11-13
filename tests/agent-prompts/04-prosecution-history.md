@@ -15,7 +15,8 @@
 - summary command for the overview timeline
 - app txn for full prosecution transaction history
 - app docs --codes "CTNF,CTFR,NOA" for filtered document list
-- app dl for downloading a specific PDF by index
+- app dl for downloading a specific PDF by its `documentIdentifier` (the
+  `Document ID` column of `app docs`, `documentIdentifier` in its JSON)
 - Agent's ability to read transaction codes and construct a prosecution narrative
 
 ## Expected Behavior
@@ -24,7 +25,9 @@
 2. Runs summary for the timeline overview
 3. Pulls full transaction history and identifies key prosecution events
 4. Filters documents to office actions and NOA
-5. Downloads the first office action PDF
+5. Downloads the first office action PDF, selected by its
+   `documentIdentifier` (an index is only stable when `app dl` gets the
+   same --codes/--from/--to/--sort flags as the `app docs` listing)
 6. Presents a chronological prosecution narrative
 
 ## Pass Criteria
@@ -32,6 +35,8 @@
 - Agent finds the application and its filing/grant dates
 - Transaction history is presented chronologically
 - Office action documents are identified by code (CTNF/CTFR/NOA)
-- At least one PDF is downloaded to disk
+- At least one PDF is downloaded to disk, and it is the document the agent
+  meant (selected by `documentIdentifier`, or by an index under identical
+  listing flags)
 - Agent provides a narrative, not just a raw event list
 

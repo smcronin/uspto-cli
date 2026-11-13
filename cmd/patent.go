@@ -69,6 +69,10 @@ type patentBundleDownloadResult struct {
 	Path         string `json:"path,omitempty"`
 	RenamedFrom  string `json:"renamedFrom,omitempty"`
 	Error        string `json:"error,omitempty"`
+
+	// err keeps the typed download error behind Error, so a bundle in which
+	// every download failed can exit with that error's code.
+	err error
 }
 
 type patentBundleGrantResult struct {
@@ -133,7 +137,7 @@ func init() {
 func runPatentBundle(cmd *cobra.Command, args []string) error {
 	inputID := strings.TrimSpace(args[0])
 	if inputID == "" {
-		return fmt.Errorf("id cannot be empty")
+		return usageErrorf("id cannot be empty")
 	}
 
 	inputType, err := normalizeBundleIDType(patentBundleIDType)
@@ -209,11 +213,27 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 	}
 	artifacts["documents"] = docsPath
 
+	// warnings is everything worth noting and goes into the bundle README and
+	// the result. failures is the subset where a step was attempted and did
+	// not work; it marks the result partial. filesSaved and firstFileErr
+	// decide whether every file download failed.
+	var failures []string
+	var firstFileErr error
+	filesSaved := 0
+	fail := func(msg string, err error) {
+		warnings = append(warnings, msg)
+		failures = append(failures, msg)
+		if firstFileErr == nil && err != nil {
+			firstFileErr = err
+		}
+	}
+
 	grantXMLPath := filepath.Join(outDir, "xml", "grant.xml")
 	if pfwAssoc.GrantDocumentMetaData != nil && pfwAssoc.GrantDocumentMetaData.FileLocationURI != "" {
 		if _, err := api.DefaultClient.DownloadDocument(ctx, pfwAssoc.GrantDocumentMetaData.FileLocationURI, grantXMLPath); err != nil {
-			warnings = append(warnings, "grant XML download failed: "+err.Error())
+			fail("grant XML download failed: "+err.Error(), err)
 		} else {
+			filesSaved++
 			artifacts["grantXML"] = grantXMLPath
 		}
 	} else {
@@ -223,8 +243,9 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 	pgpubXMLPath := filepath.Join(outDir, "xml", "pgpub.xml")
 	if pfwAssoc.PgpubDocumentMetaData != nil && pfwAssoc.PgpubDocumentMetaData.FileLocationURI != "" {
 		if _, err := api.DefaultClient.DownloadDocument(ctx, pfwAssoc.PgpubDocumentMetaData.FileLocationURI, pgpubXMLPath); err != nil {
-			warnings = append(warnings, "pgpub XML download failed: "+err.Error())
+			fail("pgpub XML download failed: "+err.Error(), err)
 		} else {
+			filesSaved++
 			artifacts["pgpubXML"] = pgpubXMLPath
 		}
 	} else {
@@ -234,7 +255,8 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 	if _, ok := artifacts["grantXML"]; ok {
 		fulltextPath := filepath.Join(outDir, "02_fulltext.json")
 		if err := writeBundleFulltext(grantXMLPath, fulltextPath, resolution.ApplicationNumber); err != nil {
-			warnings = append(warnings, "fulltext extraction failed: "+err.Error())
+			// Not a download: it never counts towards "every download failed".
+			fail("fulltext extraction failed: "+err.Error(), nil)
 		} else {
 			artifacts["fulltext"] = fulltextPath
 		}
@@ -246,6 +268,17 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	artifacts["pdfResults"] = downloadPath
+	filesSaved += downloaded
+	if failed > 0 {
+		var firstPDFErr error
+		for _, r := range pdfResults {
+			if r.err != nil {
+				firstPDFErr = r.err
+				break
+			}
+		}
+		fail(fmt.Sprintf("%d of %d file-wrapper PDF downloads failed (see 04_download-all.json)", failed, downloaded+failed), firstPDFErr)
+	}
 
 	readmePath := filepath.Join(outDir, "README.md")
 	summary := patentBundleSummary{
@@ -269,8 +302,20 @@ func runPatentBundle(cmd *cobra.Command, args []string) error {
 	artifacts["readme"] = readmePath
 	summary.Artifacts = artifacts
 
+	// Every file download failed: the directory holds only the JSON indexes
+	// and a README that says so. That is a failure with the first error's
+	// typed exit code, not a bundle.
+	if filesSaved == 0 && firstFileErr != nil {
+		return fmt.Errorf("no XML or PDF file could be downloaded (indexes and README are in %s): %w", absOutDir, firstFileErr)
+	}
+
+	// Some steps failed. What did arrive is on disk, so the command succeeds,
+	// but the result says the bundle is incomplete.
+	notes := resultNotes{Warnings: failures, Partial: len(failures) > 0}
+	reportWarnings(notes.Warnings)
+
 	if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
-		outputResult(cmd, summary, nil)
+		outputResultWithNotes(cmd, summary, nil, nil, notes)
 		return nil
 	}
 
@@ -340,7 +385,7 @@ func resolvePatentBundle(ctx context.Context, inputID, idType string) (*patentBu
 	case idTypePatent:
 		return resolvePatentBundleFromSearch(ctx, inputID, idTypePatent, "applicationMetaData.patentNumber")
 	default:
-		return nil, nil, fmt.Errorf("unsupported id type %q", idType)
+		return nil, nil, usageErrorf("unsupported id type %q", idType)
 	}
 }
 
@@ -502,6 +547,7 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 				DocumentCode: doc.DocumentCode,
 				OfficialDate: doc.OfficialDate,
 				Error:        "creating pdf output directory: " + err.Error(),
+				err:          err,
 			})
 		}
 		return results, downloaded, skipped, failed
@@ -529,6 +575,7 @@ func downloadBundlePDFs(ctx context.Context, appNumber string, docs []types.Docu
 				DocumentCode: doc.DocumentCode,
 				OfficialDate: doc.OfficialDate,
 				Error:        dlErr.Error(),
+				err:          dlErr,
 			})
 			continue
 		}
@@ -630,7 +677,7 @@ func normalizeBundleIDType(v string) (string, error) {
 	case idTypeAuto, idTypeApp, idTypePublication, idTypePatent:
 		return normalized, nil
 	default:
-		return "", fmt.Errorf("invalid --id-type %q: expected auto, app, publication, or patent", v)
+		return "", usageErrorf("invalid --id-type %q: expected auto, app, publication, or patent", v)
 	}
 }
 

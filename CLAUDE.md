@@ -42,14 +42,14 @@ internal/
   tmsearch/                - Trademark Search client and request/response types
   tsdr/                    - TSDR client, identifiers, document lists, ST.96 XML parsing
 skills/uspto/              - Agent skill (SKILL.md + references/trademarks.md); canonical copy
-docs/                      - API documentation and analysis
+docs/                      - API documentation (uspto-api/, tsdr-api/) and the API key setup guide
 tests/
   integration/             - Integration tests (shell out to binary against live API)
   agent-prompts/           - Agent evaluation prompts and runner
 ```
 
 ## Key Conventions
-- All commands support `-f json` (envelope: `{ok, command, commandPath, provider, pagination, results, facets, version, error}`)
+- All commands support `-f json` (envelope: `{ok, command, commandPath, provider, pagination, results, facets, warnings, partial, version, error}`)
 - Additional formats: `-f csv`, `-f ndjson`, `-f table` (default)
 - ODP key from `--api-key`, `USPTO_API_KEY`, or the config file; TSDR uses a separate key (`--tsdr-api-key`, `USPTO_TSDR_API_KEY`); trademark search needs none
 - ODP rate limiter: sequential requests (burst=1) within one process, 100 ms minimum gap. The last-request timestamp file is read once at start-up, so separate `uspto` processes are not coordinated (the TSDR client does coordinate across processes with lock files)
