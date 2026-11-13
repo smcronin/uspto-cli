@@ -42,7 +42,7 @@ internal/
   tmsearch/                - Trademark Search client and request/response types
   tsdr/                    - TSDR client, identifiers, document lists, ST.96 XML parsing
 skills/uspto/              - Agent skill (SKILL.md + references/trademarks.md); canonical copy
-docs/                      - API documentation and analysis
+docs/                      - API documentation (uspto-api/, tsdr-api/) and the API key setup guide
 tests/
   integration/             - Integration tests (shell out to binary against live API)
   agent-prompts/           - Agent evaluation prompts and runner
