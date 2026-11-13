@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"encoding/xml"
+	"strings"
 	"testing"
 )
 
@@ -1411,5 +1412,49 @@ func TestPetitionDecisionResponse_JSONUnmarshal(t *testing.T) {
 	dtFacets := resp.Facets["decisionTypeCode"]
 	if len(dtFacets) != 2 {
 		t.Fatalf("expected 2 decision type facets, got %d", len(dtFacets))
+	}
+}
+
+// Live petition records send decisionPetitionTypeCode as a string ("533"),
+// which failed the whole response when the field was an int. Either form must
+// decode and re-encode unchanged, and the outcome fields must survive.
+func TestPetitionDecision_LiveShapeDecodes(t *testing.T) {
+	for _, code := range []string{`"533"`, `533`} {
+		jsonData := `{"count":1,"petitionDecisionDataBag":[{
+			"petitionDecisionRecordIdentifier":"472a0d25-4dfb-53a9-93a0-86c98dcf4f01",
+			"customerNumber":97207,
+			"decisionPetitionTypeCode":` + code + `,
+			"decidedPetitionTypeCode":"A",
+			"decidedPetitionTypeCodeDescriptionText":"GRANTED",
+			"finalPetitionDecisionIndicator":false,
+			"decisionMailDate":"2026-11-12",
+			"applicationStatusDescriptionText":"Patented Case",
+			"applicationStatusDate":"2026-11-12"}]}`
+
+		var resp PetitionDecisionResponse
+		if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
+			t.Fatalf("decisionPetitionTypeCode %s: json.Unmarshal() error: %v", code, err)
+		}
+		d := resp.PetitionDecisionDataBag[0]
+		if string(d.DecisionPetitionTypeCode) != code {
+			t.Errorf("DecisionPetitionTypeCode = %s, want %s", d.DecisionPetitionTypeCode, code)
+		}
+		if d.DecidedPetitionTypeCodeDescriptionText != "GRANTED" || d.DecidedPetitionTypeCode != "A" {
+			t.Errorf("decided outcome = %q/%q, want A/GRANTED", d.DecidedPetitionTypeCode, d.DecidedPetitionTypeCodeDescriptionText)
+		}
+		if d.DecisionMailDate != "2026-11-12" || d.ApplicationStatusDescriptionText != "Patented Case" {
+			t.Errorf("mail date / status = %q / %q", d.DecisionMailDate, d.ApplicationStatusDescriptionText)
+		}
+
+		out, err := json.Marshal(d)
+		if err != nil {
+			t.Fatalf("json.Marshal() error: %v", err)
+		}
+		if !strings.Contains(string(out), `"decisionPetitionTypeCode":`+code) {
+			t.Errorf("re-encoded record lost the code's form %s: %s", code, out)
+		}
+		if strings.Contains(string(out), `"decisionTypeCodeDescriptionText"`) {
+			t.Errorf("empty legacy decisionTypeCodeDescriptionText should be omitted: %s", out)
+		}
 	}
 }
