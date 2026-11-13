@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -72,7 +71,8 @@ func runBulkSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagDryRun {
-		return dryRunBulkSearch(query, opts)
+		printDryRunGET("/api/v1/datasets/products/search", searchOptionsToParams(query, opts))
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchBulkData(context.Background(), query, opts)
@@ -95,28 +95,6 @@ func runBulkSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	outputResult(cmd, resp.BulkDataProductBag, pagination)
-	return nil
-}
-
-// dryRunBulkSearch prints the request that would be sent without executing it.
-func dryRunBulkSearch(query string, opts types.SearchOptions) error {
-	fmt.Fprintln(os.Stderr, "GET /api/v1/datasets/products/search")
-
-	var params []string
-	if query != "" {
-		params = append(params, "q="+query)
-	}
-	if opts.Limit > 0 {
-		params = append(params, "limit="+strconv.Itoa(opts.Limit))
-	}
-	if opts.Offset > 0 {
-		params = append(params, "offset="+strconv.Itoa(opts.Offset))
-	}
-
-	if len(params) > 0 {
-		fmt.Fprintf(os.Stderr, "  ?%s\n", strings.Join(params, "&"))
-	}
-
 	return nil
 }
 
@@ -150,17 +128,14 @@ func runBulkGet(cmd *cobra.Command, args []string) error {
 	includeFiles := bulkGetFlags.includeFiles || strings.TrimSpace(bulkGetFlags.fileType) != ""
 
 	if flagDryRun {
-		fmt.Fprintf(os.Stderr, "GET /api/v1/datasets/products/%s\n", productID)
-		var params []string
+		params := map[string]string{}
 		if includeFiles {
-			params = append(params, "includeFiles=true")
+			params["includeFiles"] = "true"
 		}
 		if bulkGetFlags.latest {
-			params = append(params, "latest=true")
+			params["latest"] = "true"
 		}
-		if len(params) > 0 {
-			fmt.Fprintf(os.Stderr, "  ?%s\n", strings.Join(params, "&"))
-		}
+		printDryRunGET("/api/v1/datasets/products/"+productID, params)
 		return nil
 	}
 
@@ -207,8 +182,7 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 	productID := args[0]
 
 	if flagDryRun {
-		fmt.Fprintf(os.Stderr, "GET /api/v1/datasets/products/%s\n", productID)
-		fmt.Fprintln(os.Stderr, "  ?includeFiles=true")
+		printDryRunGET("/api/v1/datasets/products/"+productID, map[string]string{"includeFiles": "true"})
 		return nil
 	}
 
@@ -220,11 +194,21 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 	}
 
 	files := product.ProductFileBag.FileDataBag
+	// The total is the product's full file count, not the number left after
+	// --limit, so callers can tell a truncated listing from a complete one.
+	total := len(files)
+	if product.ProductFileBag.Count > total {
+		total = product.ProductFileBag.Count
+	}
 	if bulkFilesLimit > 0 && bulkFilesLimit < len(files) {
 		files = files[:bulkFilesLimit]
 	}
 	if !flagQuiet {
-		fmt.Fprintf(os.Stderr, "%d files available for %s\n", len(files), productID)
+		if len(files) < total {
+			fmt.Fprintf(os.Stderr, "%d files available for %s (showing %d)\n", total, productID, len(files))
+		} else {
+			fmt.Fprintf(os.Stderr, "%d files available for %s\n", len(files), productID)
+		}
 	}
 
 	var pagination *types.PaginationMeta
@@ -232,8 +216,8 @@ func runBulkFiles(cmd *cobra.Command, args []string) error {
 		pagination = &types.PaginationMeta{
 			Offset:  0,
 			Limit:   len(files),
-			Total:   len(files),
-			HasMore: false,
+			Total:   total,
+			HasMore: len(files) < total,
 		}
 	}
 

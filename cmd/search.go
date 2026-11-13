@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -261,6 +259,10 @@ func runSearchCountOnly(ctx context.Context, cmd *cobra.Command, freeTextQuery s
 	if err != nil {
 		return err
 	}
+	if flagDryRun {
+		// The request was printed; there is no result to report.
+		return nil
+	}
 
 	if !flagQuiet {
 		fmt.Fprintf(os.Stderr, "%d total results\n", resp.Count)
@@ -282,6 +284,11 @@ func runSearchSinglePage(ctx context.Context, cmd *cobra.Command, freeTextQuery 
 	resp, err := executeSearch(ctx, freeTextQuery, usePost, searchFlags.limit, searchFlags.offset)
 	if err != nil {
 		return err
+	}
+	if flagDryRun {
+		// The request was printed; emitting an empty envelope here would read
+		// as "zero results".
+		return nil
 	}
 
 	pagination := &types.PaginationMeta{
@@ -317,6 +324,10 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		resp, err := executeSearch(ctx, freeTextQuery, usePost, pageSize, offset)
 		if err != nil {
 			return err
+		}
+		if flagDryRun {
+			printDryRunAllPagesNote(pageSize)
+			return nil
 		}
 
 		if totalCount == 0 {
@@ -359,7 +370,6 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 	totalCount := 0
 
 	var rows []map[string]string
-	headerSet := make(map[string]bool)
 
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, "Using client-side CSV concat flow (--all + -f csv).")
@@ -370,6 +380,10 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		if err != nil {
 			return err
 		}
+		if flagDryRun {
+			printDryRunAllPagesNote(pageSize)
+			return nil
+		}
 
 		if totalCount == 0 {
 			totalCount = resp.Count
@@ -379,11 +393,7 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		}
 
 		for _, item := range resp.PatentFileWrapperDataBag {
-			flat := flattenToMap(item)
-			rows = append(rows, flat)
-			for k := range flat {
-				headerSet[k] = true
-			}
+			rows = append(rows, flattenToMap(item))
 		}
 
 		if !flagQuiet {
@@ -396,27 +406,13 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		}
 	}
 
-	if len(rows) == 0 {
-		return nil
-	}
-
-	headers := make([]string, 0, len(headerSet))
-	for h := range headerSet {
-		headers = append(headers, h)
-	}
-	sortStrings(headers)
-
-	w := csv.NewWriter(os.Stdout)
-	_ = w.Write(headers)
-	for _, row := range rows {
-		record := make([]string, len(headers))
-		for i, h := range headers {
-			record[i] = row[h]
-		}
-		_ = w.Write(record)
-	}
-	w.Flush()
+	writeCSVRows(rows)
 	return nil
+}
+
+// printDryRunAllPagesNote explains what --all does after the first request.
+func printDryRunAllPagesNote(pageSize int) {
+	fmt.Fprintf(os.Stderr, "Then: repeat with offset increased by %d until all results (at most %d) are fetched\n", pageSize, autoPageLimit)
 }
 
 // executeSearch runs a single search API call using either GET or POST.
@@ -563,8 +559,17 @@ func validateSearchInputs() error {
 		return err
 	}
 	for _, expr := range searchFlags.filters {
-		if !strings.Contains(expr, "=") {
+		name, value, ok := strings.Cut(expr, "=")
+		if !ok {
 			return fmt.Errorf("invalid --filter %q: expected field=value", expr)
+		}
+		// An empty side used to be dropped silently, which ran the search
+		// without the filter the caller asked for.
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("invalid --filter %q: missing field name before '='", expr)
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("invalid --filter %q: missing value after '='", expr)
 		}
 	}
 	return nil
@@ -931,53 +936,4 @@ func resolveRelativeDate(s string) (string, error) {
 	}
 
 	return result.Format("2006-01-02"), nil
-}
-
-// ---------------------------------------------------------------------------
-// Dry-run helpers
-// ---------------------------------------------------------------------------
-
-// dryRunPost prints the POST request that would be sent without executing it.
-func dryRunPost(body types.SearchRequest) (*types.PatentDataResponse, error) {
-	fmt.Fprintln(os.Stderr, "POST /api/v1/patent/applications/search")
-
-	out, err := json.MarshalIndent(body, "  ", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  body: (marshal error: %v)\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  body:\n  %s\n", string(out))
-	}
-
-	return &types.PatentDataResponse{}, nil
-}
-
-// dryRunGet prints the GET request that would be sent without executing it.
-func dryRunGet(query string, opts types.SearchOptions) (*types.PatentDataResponse, error) {
-	fmt.Fprintln(os.Stderr, "GET /api/v1/patent/applications/search")
-
-	var params []string
-	if query != "" {
-		params = append(params, "q="+query)
-	}
-	if opts.Limit > 0 {
-		params = append(params, "limit="+strconv.Itoa(opts.Limit))
-	}
-	if opts.Offset > 0 {
-		params = append(params, "offset="+strconv.Itoa(opts.Offset))
-	}
-	if opts.Sort != "" {
-		params = append(params, "sort="+opts.Sort)
-	}
-	if opts.Fields != "" {
-		params = append(params, "fields="+opts.Fields)
-	}
-	if opts.Facets != "" {
-		params = append(params, "facets="+opts.Facets)
-	}
-
-	if len(params) > 0 {
-		fmt.Fprintf(os.Stderr, "  ?%s\n", strings.Join(params, "&"))
-	}
-
-	return &types.PatentDataResponse{}, nil
 }

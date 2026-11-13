@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/smcronin/uspto-cli/internal/api"
 	"github.com/smcronin/uspto-cli/internal/config"
+	"github.com/smcronin/uspto-cli/internal/types"
 )
 
 func TestResolveAPIKey_Precedence(t *testing.T) {
@@ -78,8 +82,8 @@ func TestResolveAPIKey_Precedence(t *testing.T) {
 	})
 }
 
-func TestIsNonAPICommand(t *testing.T) {
-	if !isNonAPICommand(rootCmd) {
+func TestProviderForCommand_NonAPICommands(t *testing.T) {
+	if providerForCommand(rootCmd) != providerNone {
 		t.Fatal("root command should be treated as non-API")
 	}
 
@@ -87,7 +91,7 @@ func TestIsNonAPICommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(config show): %v", err)
 	}
-	if !isNonAPICommand(cfgCmd) {
+	if providerForCommand(cfgCmd) != providerNone {
 		t.Fatal("config subcommand should be treated as non-API")
 	}
 
@@ -95,7 +99,7 @@ func TestIsNonAPICommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(update): %v", err)
 	}
-	if !isNonAPICommand(updateCmd) {
+	if providerForCommand(updateCmd) != providerNone {
 		t.Fatal("update command should be treated as non-API")
 	}
 
@@ -103,7 +107,37 @@ func TestIsNonAPICommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(search): %v", err)
 	}
-	if isNonAPICommand(searchCmd) {
+	if providerForCommand(searchCmd) == providerNone {
 		t.Fatal("search command should be treated as API command")
+	}
+}
+
+func TestHandleError_ODPRateLimitReportsRetryAfter(t *testing.T) {
+	origFormat, origMinify := flagFormat, flagMinify
+	defer func() { flagFormat, flagMinify = origFormat, origMinify }()
+	flagFormat, flagMinify = "json", true
+
+	stdout, _, err := captureTrademarkOutput(t, func() error {
+		code := handleError(&api.UsptoAPIError{StatusCode: 429, Message: "Too Many Requests", RetryAfter: 90 * time.Second})
+		if code != types.ExitRateLimited {
+			t.Errorf("handleError() code = %d, want %d", code, types.ExitRateLimited)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		OK    bool `json:"ok"`
+		Error struct {
+			Type              string `json:"type"`
+			RetryAfterSeconds int64  `json:"retryAfterSeconds"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, stdout)
+	}
+	if envelope.OK || envelope.Error.Type != "RATE_LIMITED" || envelope.Error.RetryAfterSeconds != 90 {
+		t.Errorf("envelope = %+v, want RATE_LIMITED with retryAfterSeconds 90", envelope)
 	}
 }

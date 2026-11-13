@@ -264,61 +264,6 @@ func TestDecisions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Assignment.CorrespondenceAddresses()
-// ---------------------------------------------------------------------------
-
-func TestCorrespondenceAddresses(t *testing.T) {
-	tests := []struct {
-		name     string
-		raw      json.RawMessage
-		wantLen  int
-		wantName string
-	}{
-		{
-			name:     "single object",
-			raw:      json.RawMessage(`{"correspondentNameText":"Law Firm LLP"}`),
-			wantLen:  1,
-			wantName: "Law Firm LLP",
-		},
-		{
-			name:     "array of objects",
-			raw:      json.RawMessage(`[{"correspondentNameText":"Firm A"},{"correspondentNameText":"Firm B"}]`),
-			wantLen:  2,
-			wantName: "Firm A",
-		},
-		{
-			name:    "empty raw message",
-			raw:     nil,
-			wantLen: 0,
-		},
-		{
-			name:    "empty byte slice",
-			raw:     json.RawMessage(``),
-			wantLen: 0,
-		},
-		{
-			name:    "invalid JSON",
-			raw:     json.RawMessage(`not json`),
-			wantLen: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &Assignment{CorrespondenceAddress: tt.raw}
-			got := a.CorrespondenceAddresses()
-			if len(got) != tt.wantLen {
-				t.Errorf("CorrespondenceAddresses() len = %d, want %d", len(got), tt.wantLen)
-			}
-			if tt.wantName != "" && len(got) > 0 && got[0].CorrespondentNameText != tt.wantName {
-				t.Errorf("CorrespondenceAddresses()[0].CorrespondentNameText = %q, want %q",
-					got[0].CorrespondentNameText, tt.wantName)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
 // XML Unmarshaling — PatentGrantXML
 // ---------------------------------------------------------------------------
 
@@ -1156,13 +1101,6 @@ func TestZeroValueStructs(t *testing.T) {
 		var r TrialDocumentResponse
 		if got := r.Decisions(); got != nil {
 			t.Errorf("Decisions() = %v, want nil", got)
-		}
-	})
-
-	t.Run("empty Assignment CorrespondenceAddresses returns nil", func(t *testing.T) {
-		var a Assignment
-		if got := a.CorrespondenceAddresses(); got != nil {
-			t.Errorf("CorrespondenceAddresses() = %v, want nil", got)
 		}
 	})
 

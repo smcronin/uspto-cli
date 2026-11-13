@@ -44,9 +44,29 @@ func TestStripXMLTags(t *testing.T) {
 			want: `AT&T "Corp"`,
 		},
 		{
-			name: "unescaped angle brackets treated as tags",
+			name: "escaped angle brackets and ampersand are text",
 			in:   "1 &lt; 2 &amp; 3 &gt; 0",
-			want: "1 0",
+			want: "1 < 2 & 3 > 0",
+		},
+		{
+			name: "text after a lone escaped less-than survives",
+			in:   `<claim-text>wherein x &lt; 10,</claim-text><claim-text>and a second layer of copper.</claim-text>`,
+			want: "wherein x < 10, and a second layer of copper.",
+		},
+		{
+			name: "escaped comparison inside nested tags",
+			in:   `<claim-text>1. A device <claim-text>wherein the ratio is &lt; 5 and the thickness is &gt; 3 <i>nm</i>.</claim-text></claim-text>`,
+			want: "1. A device wherein the ratio is < 5 and the thickness is > 3 nm .",
+		},
+		{
+			name: "entity-encoded tag is kept as literal text",
+			in:   "<p>the &lt;b&gt;bold&lt;/b&gt; marker</p>",
+			want: "the <b>bold</b> marker",
+		},
+		{
+			name: "double-escaped entity decodes one level",
+			in:   "A &amp;lt; B",
+			want: "A &lt; B",
 		},
 		{
 			name: "handles numeric entities",
@@ -141,9 +161,14 @@ func TestStripXMLTagsPreserveParagraphs(t *testing.T) {
 			want: `AT&T "Corp"`,
 		},
 		{
-			name: "unescaped angle brackets treated as tags",
+			name: "entity-encoded tag is kept as literal text",
 			in:   "<p>&lt;Corp&gt; data</p>",
-			want: "data",
+			want: "<Corp> data",
+		},
+		{
+			name: "escaped comparisons and ampersand are text",
+			in:   "<p>where x &lt; 10 &amp; y &gt; 3.</p><p>Next <b>paragraph</b>.</p>",
+			want: "where x < 10 & y > 3.\n\nNext paragraph .",
 		},
 		{
 			name: "empty string",

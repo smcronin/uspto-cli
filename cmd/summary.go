@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -71,10 +72,11 @@ type AppSummary struct {
 var summaryCmd = &cobra.Command{
 	Use:   "summary <applicationNumber>",
 	Short: "One-shot complete application summary",
-	Long: `Fetches metadata, continuity, assignments, transactions, and documents
-for a patent application and combines them into a single flattened summary.
+	Long: `Fetches metadata, patent term adjustment, continuity, assignments,
+transactions, foreign priority, and documents for a patent application and
+combines them into a single flattened summary.
 
-This compound command makes 6 sequential API calls and returns a unified
+This compound command makes 7 sequential API calls and returns a unified
 view that is much easier for agents to parse than the raw nested API responses.
 
 Example:
@@ -120,6 +122,35 @@ func inventorName(inv types.Inventor) string {
 	return strings.Join(parts, " ")
 }
 
+// recentEventCount is how many prosecution events the summary keeps.
+const recentEventCount = 10
+
+// recentEventSummaries returns the n newest events in chronological order
+// (oldest of the kept events first, newest last). The transactions endpoint
+// returns events newest-first, so the selection is made by event date rather
+// than by position in the response.
+func recentEventSummaries(events []types.EventData, n int) []EventSummary {
+	if len(events) == 0 || n <= 0 {
+		return nil
+	}
+	sorted := append([]types.EventData(nil), events...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].EventDate < sorted[j].EventDate
+	})
+	if len(sorted) > n {
+		sorted = sorted[len(sorted)-n:]
+	}
+	out := make([]EventSummary, 0, len(sorted))
+	for _, ev := range sorted {
+		out = append(out, EventSummary{
+			Date:        ev.EventDate,
+			Code:        ev.EventCode,
+			Description: ev.EventDescriptionText,
+		})
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // Run function
 // ---------------------------------------------------------------------------
@@ -131,6 +162,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	}
 	if flagDryRun {
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/meta-data", nil)
+		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/adjustment", nil)
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/continuity", nil)
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/assignment", nil)
 		printDryRunGET("/api/v1/patent/applications/"+appNumber+"/transactions", nil)
@@ -188,9 +220,26 @@ func runSummary(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// PTA
+		// PTA, if this response happens to carry it. The meta-data endpoint
+		// documents ApplicationMetaData only, so the adjustment call below is
+		// the authoritative source.
 		if fw.PatentTermAdjustmentData != nil {
 			summary.PTADays = fw.PatentTermAdjustmentData.AdjustmentTotalQuantity
+		}
+	}
+
+	// 1b. Patent term adjustment. An application without PTA data (pending,
+	// abandoned, older grants) may answer 404; that is not a failure of the
+	// summary, so it is not reported as a warning.
+	progress("Fetching patent term adjustment...")
+	ptaResp, err := client.GetAdjustment(ctx, appNumber)
+	if err != nil {
+		if !isNotFoundAPIError(err) {
+			warnings = append(warnings, fmt.Sprintf("patent term adjustment: %v", err))
+		}
+	} else if len(ptaResp.PatentFileWrapperDataBag) > 0 {
+		if pta := ptaResp.PatentFileWrapperDataBag[0].PatentTermAdjustmentData; pta != nil {
+			summary.PTADays = pta.AdjustmentTotalQuantity
 		}
 	}
 
@@ -252,30 +301,16 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 4. Transactions (last 10)
+	// 4. Transactions (10 most recent)
 	progress("Fetching transactions...")
 	txResp, err := client.GetTransactions(ctx, appNumber)
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("transactions: %v", err))
 	} else if len(txResp.PatentFileWrapperDataBag) > 0 {
 		fw := txResp.PatentFileWrapperDataBag[0]
-
-		events := fw.EventDataBag
-		// Take the last 10 events (most recent).
-		start := 0
-		if len(events) > 10 {
-			start = len(events) - 10
-		}
-		for _, ev := range events[start:] {
-			summary.RecentEvents = append(summary.RecentEvents, EventSummary{
-				Date:        ev.EventDate,
-				Code:        ev.EventCode,
-				Description: ev.EventDescriptionText,
-			})
-		}
+		summary.RecentEvents = recentEventSummaries(fw.EventDataBag, recentEventCount)
 	}
 
-	// 5. Documents
 	// 5. Foreign priority
 	progress("Fetching foreign priority...")
 	fpResp, err := client.GetForeignPriority(ctx, appNumber)

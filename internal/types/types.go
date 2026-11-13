@@ -337,25 +337,6 @@ type Assignment struct {
 	DomesticRepresentative        *DomesticRepresentative `json:"domesticRepresentative,omitempty"`
 }
 
-// CorrespondenceAddresses parses the CorrespondenceAddress field which may
-// be either a JSON object or a JSON array in the API response.
-func (a *Assignment) CorrespondenceAddresses() []AssignmentCorrespondenceAddress {
-	if len(a.CorrespondenceAddress) == 0 {
-		return nil
-	}
-	// Try array first.
-	var arr []AssignmentCorrespondenceAddress
-	if json.Unmarshal(a.CorrespondenceAddress, &arr) == nil {
-		return arr
-	}
-	// Try single object.
-	var single AssignmentCorrespondenceAddress
-	if json.Unmarshal(a.CorrespondenceAddress, &single) == nil {
-		return []AssignmentCorrespondenceAddress{single}
-	}
-	return nil
-}
-
 // ---------------------------------------------------------------------------
 // Continuity Types
 // ---------------------------------------------------------------------------

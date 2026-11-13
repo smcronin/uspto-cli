@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/smcronin/uspto-cli/internal/types"
@@ -667,5 +668,103 @@ func TestCLIResponse_MarshalJSON_NilErrorOmitted(t *testing.T) {
 
 	if _, exists := raw["error"]; exists {
 		t.Error("error should be omitted when nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Number formatting in CSV/table cells
+// ---------------------------------------------------------------------------
+
+func TestFlattenToMap_NumbersNeverUseExponentNotation(t *testing.T) {
+	type sample struct {
+		Count    int      `json:"count"`
+		FileSize int64    `json:"fileSize"`
+		Huge     int64    `json:"huge"`
+		Negative int      `json:"negative"`
+		Small    int      `json:"small"`
+		Whole    float64  `json:"whole"`
+		Ratio    float64  `json:"ratio"`
+		Tiny     float64  `json:"tiny"`
+		Seq      *float64 `json:"seq"`
+	}
+	seq := 1234567.0
+	got := flattenToMap(sample{
+		Count:    4123456,
+		FileSize: 123456789,
+		Huge:     9007199254740993, // 2^53+1: not representable as float64
+		Negative: -2500000,
+		Small:    999999,
+		Whole:    16123456,
+		Ratio:    1.5,
+		Tiny:     0.000001234,
+		Seq:      &seq,
+	})
+
+	want := map[string]string{
+		"count":    "4123456",
+		"fileSize": "123456789",
+		"huge":     "9007199254740993",
+		"negative": "-2500000",
+		"small":    "999999",
+		"whole":    "16123456",
+		"ratio":    "1.5",
+		"tiny":     "1.234e-06", // fractional values keep fmt's default formatting
+		"seq":      "1234567",
+	}
+	for key, wantValue := range want {
+		if got[key] != wantValue {
+			t.Errorf("%s: got %q, want %q", key, got[key], wantValue)
+		}
+	}
+}
+
+func TestFlattenMap_FloatValues(t *testing.T) {
+	tests := []struct {
+		name string
+		in   interface{}
+		want string
+	}{
+		{name: "large whole float", in: float64(123456789), want: "123456789"},
+		{name: "one million", in: float64(1000000), want: "1000000"},
+		{name: "fraction", in: 2.75, want: "2.75"},
+		{name: "json number integer", in: json.Number("4123456"), want: "4123456"},
+		{name: "json number fraction", in: json.Number("2.75"), want: "2.75"},
+		{name: "json number whole in exponent form", in: json.Number("1e+06"), want: "1000000"},
+		{name: "beyond plain-integer range keeps default", in: float64(1e22), want: "1e+22"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := map[string]string{}
+			flattenMap("", map[string]interface{}{"v": tt.in}, out)
+			if out["v"] != tt.want {
+				t.Errorf("got %q, want %q", out["v"], tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteCSV_LargeIntegersStayIntegers(t *testing.T) {
+	stdout, _, err := captureTrademarkOutput(t, func() error {
+		writeCSV([]map[string]interface{}{{"fileName": "ipg240102.zip", "fileSize": int64(123456789)}}, OutputOptions{Format: "csv"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "fileName,fileSize\nipg240102.zip,123456789\n"; stdout != want {
+		t.Errorf("csv output = %q, want %q", stdout, want)
+	}
+}
+
+func TestWriteTable_LargeIntegersStayIntegers(t *testing.T) {
+	stdout, _, err := captureTrademarkOutput(t, func() error {
+		writeTable(map[string]int{"count": 4123456}, OutputOptions{Format: "table"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "4123456") || strings.Contains(stdout, "e+") {
+		t.Errorf("table output should show 4123456 without exponent notation:\n%s", stdout)
 	}
 }

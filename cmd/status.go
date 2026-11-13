@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
-	"unicode"
 
 	"github.com/smcronin/uspto-cli/internal/api"
 	"github.com/smcronin/uspto-cli/internal/types"
@@ -36,27 +33,13 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
-// isNumericQuery returns true if the string consists entirely of digits,
-// indicating a status code number rather than a description search.
-func isNumericQuery(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
-}
-
 func runStatus(cmd *cobra.Command, args []string) error {
 	var query string
 	if len(args) > 0 && args[0] != "" {
 		raw := args[0]
 		// If the query looks numeric, search by the code field.
 		// If it is text, search by description field.
-		if isNumericQuery(raw) {
+		if isNumeric(raw) {
 			query = fmt.Sprintf("applicationStatusCode:%s", raw)
 		} else {
 			query = fmt.Sprintf("applicationStatusDescriptionText:\"%s\"", raw)
@@ -69,7 +52,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagDryRun {
-		return dryRunStatus(query, opts)
+		printDryRunGET("/api/v1/patent/status-codes", searchOptionsToParams(query, opts))
+		return nil
 	}
 
 	resp, err := api.DefaultClient.SearchStatusCodes(context.Background(), query, opts)
@@ -92,27 +76,5 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	outputResult(cmd, resp.StatusCodeBag, pagination)
-	return nil
-}
-
-// dryRunStatus prints the request that would be sent without executing it.
-func dryRunStatus(query string, opts types.SearchOptions) error {
-	fmt.Fprintln(os.Stderr, "GET /api/v1/patent/status-codes")
-
-	var params []string
-	if query != "" {
-		params = append(params, "q="+query)
-	}
-	if opts.Limit > 0 {
-		params = append(params, "limit="+strconv.Itoa(opts.Limit))
-	}
-	if opts.Offset > 0 {
-		params = append(params, "offset="+strconv.Itoa(opts.Offset))
-	}
-
-	if len(params) > 0 {
-		fmt.Fprintf(os.Stderr, "  ?%s\n", strings.Join(params, "&"))
-	}
-
 	return nil
 }

@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -45,8 +47,19 @@ const (
 	// USPTO docs say "wait at least 5 seconds."
 	retryWait429 = 5 * time.Second
 
-	// maxRetries is the number of times to retry on 429 responses.
+	// maxRetries is the number of times to retry a request that failed with
+	// 429, a 5xx status, or a transport error.
 	maxRetries = 3
+
+	// retryBackoffStep is the unit of backoff for transient failures. A 5xx
+	// response waits attempt*step (1 s, 2 s, 3 s); a transport error waits a
+	// quarter of that. These mirror the TSDR client.
+	retryBackoffStep = 1 * time.Second
+
+	// maxRetryWait caps any single automatic wait. A Retry-After longer than
+	// this is returned to the caller instead of being slept through or
+	// retried early.
+	maxRetryWait = 30 * time.Second
 
 	// rateLimitFile is the name of the file used for cross-process rate
 	// limit state. It is stored in the OS temp directory.
@@ -64,6 +77,8 @@ type UsptoAPIError struct {
 	StatusCode int
 	Message    string
 	Body       string
+	// RetryAfter is the server's Retry-After delay, when it sent one.
+	RetryAfter time.Duration
 }
 
 func (e *UsptoAPIError) Error() string {
@@ -71,11 +86,6 @@ func (e *UsptoAPIError) Error() string {
 		return fmt.Sprintf("API error (%d): %s -- %s", e.StatusCode, e.Message, e.Body)
 	}
 	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Message)
-}
-
-// IsRetryable returns true for status codes that may succeed on retry.
-func (e *UsptoAPIError) IsRetryable() bool {
-	return e.StatusCode == 429 || e.StatusCode >= 500
 }
 
 // ---------------------------------------------------------------------------
@@ -169,11 +179,11 @@ func (rl *rateLimiter) markRequestComplete() {
 	rl.saveState()
 }
 
-// markRateLimited sets the retry-after timestamp to now + 5 s.
-func (rl *rateLimiter) markRateLimited() {
+// markRateLimited makes the next request wait at least the given duration.
+func (rl *rateLimiter) markRateLimited(wait time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	rl.retryAfter = time.Now().Add(retryWait429)
+	rl.retryAfter = time.Now().Add(wait)
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +198,11 @@ type Client struct {
 	debug      bool
 	timeout    time.Duration
 	rl         *rateLimiter
+
+	// Retry timing overrides; zero means the package defaults
+	// (retryWait429 and retryBackoffStep).
+	rateLimitWait time.Duration
+	backoffStep   time.Duration
 }
 
 // ClientOption configures a Client.
@@ -248,25 +263,6 @@ func (c *Client) GetBaseURL() string {
 	return c.baseURL
 }
 
-// DryRunURL constructs the full URL that would be sent for a request,
-// without actually executing it. Useful for --dry-run output.
-func (c *Client) DryRunURL(method, path, query string, opts types.SearchOptions) string {
-	params := make(map[string]string)
-	if query != "" {
-		params["q"] = query
-	}
-	if opts.Limit > 0 {
-		params["limit"] = fmt.Sprintf("%d", opts.Limit)
-	}
-	if opts.Offset > 0 {
-		params["offset"] = fmt.Sprintf("%d", opts.Offset)
-	}
-	if opts.Sort != "" {
-		params["sort"] = opts.Sort
-	}
-	return method + " " + c.buildURL(path, params)
-}
-
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -277,9 +273,14 @@ func (c *Client) debugf(format string, args ...interface{}) {
 	}
 }
 
-// setHeaders applies common headers to a request.
+// setHeaders applies common headers to a request. The API key is sent only to
+// the configured API origin: file downloads redirect to pre-signed storage
+// URLs on other hosts, and response JSON can carry absolute URLs, and neither
+// should receive the credential.
 func (c *Client) setHeaders(req *http.Request) {
-	req.Header.Set("X-API-KEY", c.apiKey)
+	if c.isAPIOrigin(req.URL) {
+		req.Header.Set("X-API-KEY", c.apiKey)
+	}
 	req.Header.Set("Accept", "application/json")
 	if req.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -305,35 +306,65 @@ func (c *Client) buildURL(path string, params map[string]string) string {
 	return u
 }
 
-// followRedirects performs the request and manually follows 301/302
-// redirects, re-applying the API key header on each hop (up to 10).
-func (c *Client) followRedirects(req *http.Request) (*http.Response, error) {
-	const maxRedirects = 10
-	for i := 0; i < maxRedirects; i++ {
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode != http.StatusMovedPermanently &&
-			resp.StatusCode != http.StatusFound &&
-			resp.StatusCode != http.StatusTemporaryRedirect &&
-			resp.StatusCode != http.StatusPermanentRedirect {
-			return resp, nil
-		}
-		loc := resp.Header.Get("Location")
-		resp.Body.Close()
-		if loc == "" {
-			return nil, fmt.Errorf("redirect with no Location header")
-		}
-		c.debugf("Following redirect -> %s", loc)
-		next, err := http.NewRequestWithContext(req.Context(), http.MethodGet, loc, nil)
-		if err != nil {
-			return nil, fmt.Errorf("building redirect request: %w", err)
-		}
-		c.setHeaders(next)
-		req = next
+// isAPIOrigin reports whether u has the same scheme, host and port as the
+// configured base URL.
+func (c *Client) isAPIOrigin(u *url.URL) bool {
+	if u == nil {
+		return false
 	}
-	return nil, fmt.Errorf("too many redirects (>%d)", maxRedirects)
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, base.Scheme) &&
+		strings.EqualFold(u.Hostname(), base.Hostname()) &&
+		effectivePort(u) == effectivePort(base)
+}
+
+func effectivePort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
+}
+
+// redactURL renders a URL for debug output without its query string, fragment
+// or userinfo. Redirect targets are pre-signed, so the query is a credential.
+func redactURL(u *url.URL) string {
+	if u == nil {
+		return "<invalid-url>"
+	}
+	clean := *u
+	clean.User = nil
+	clean.Fragment = ""
+	clean.RawFragment = ""
+	if clean.RawQuery == "" {
+		return clean.String()
+	}
+	clean.RawQuery = ""
+	clean.ForceQuery = false
+	return clean.String() + "?<redacted>"
+}
+
+// redactRawURL is redactURL for a URL that is still a string.
+func redactRawURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid-url>"
+	}
+	return redactURL(u)
+}
+
+// followRedirects performs the request with the default HTTP client and
+// manually follows redirects (up to 10).
+func (c *Client) followRedirects(req *http.Request) (*http.Response, error) {
+	return c.followRedirectsWithClient(c.httpClient, req)
 }
 
 // request performs a JSON API request with rate limiting, debug logging,
@@ -341,8 +372,7 @@ func (c *Client) followRedirects(req *http.Request) (*http.Response, error) {
 func (c *Client) request(ctx context.Context, method, path string, body interface{}, params map[string]string) ([]byte, error) {
 	fullURL := c.buildURL(path, params)
 
-	var attempt int
-	for {
+	for attempt := 0; ; attempt++ {
 		// Wait for a rate limit slot.
 		c.rl.waitForSlot()
 
@@ -370,6 +400,9 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 		resp, err := c.followRedirects(req)
 		c.rl.markRequestComplete()
 		if err != nil {
+			if retry, _ := c.retryAfterFailure(ctx, attempt, nil, err); retry {
+				continue
+			}
 			return nil, fmt.Errorf("executing request: %w", err)
 		}
 
@@ -383,11 +416,9 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 
 		// Handle non-2xx.
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			// On 429, retry up to maxRetries times.
-			if resp.StatusCode == 429 && attempt < maxRetries {
-				c.rl.markRateLimited()
-				attempt++
-				c.debugf("429 rate limited, retry %d/%d after %s", attempt, maxRetries, retryWait429)
+			// Retry 429 and 5xx up to maxRetries times.
+			retry, retryAfter := c.retryAfterFailure(ctx, attempt, resp, nil)
+			if retry {
 				continue
 			}
 
@@ -411,11 +442,117 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 				StatusCode: resp.StatusCode,
 				Message:    msg,
 				Body:       string(respBody),
+				RetryAfter: retryAfter,
 			}
 		}
 
 		return respBody, nil
 	}
+}
+
+// retryAfterFailure decides whether a failed attempt should be retried and,
+// if so, waits the appropriate time before returning true. Exactly one of
+// resp and err is set. It also returns the server's Retry-After delay (zero
+// when absent) so the caller can report it.
+//
+//   - 429: wait at least 5 s, or Retry-After when that is longer.
+//   - 5xx: wait attempt*1 s, or Retry-After when that is longer.
+//   - transport error: wait attempt*250 ms. Timeouts and cancelled contexts
+//     are not retried; repeating a request that already used its whole
+//     timeout would multiply the wait.
+//
+// A wait longer than maxRetryWait is never slept through: the failure is
+// returned so the caller can resume later.
+func (c *Client) retryAfterFailure(ctx context.Context, attempt int, resp *http.Response, err error) (bool, time.Duration) {
+	step := c.backoffStep
+	if step <= 0 {
+		step = retryBackoffStep
+	}
+
+	if err != nil {
+		if attempt >= maxRetries || ctx.Err() != nil || isTimeoutError(err) {
+			return false, 0
+		}
+		wait := time.Duration(attempt+1) * step / 4
+		c.debugf("request failed (%v), retry %d/%d after %s", err, attempt+1, maxRetries, wait)
+		return sleepContext(ctx, wait) == nil, 0
+	}
+
+	retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+	rateLimited := resp.StatusCode == http.StatusTooManyRequests
+	if (!rateLimited && resp.StatusCode < 500) || attempt >= maxRetries {
+		return false, retryAfter
+	}
+
+	var wait time.Duration
+	if rateLimited {
+		wait = c.rateLimitWait
+		if wait <= 0 {
+			wait = retryWait429
+		}
+	} else {
+		wait = time.Duration(attempt+1) * step
+	}
+	if retryAfter > wait {
+		wait = retryAfter
+	}
+	if wait > maxRetryWait {
+		c.debugf("HTTP %d; not retrying because the required wait %s exceeds the %s cap", resp.StatusCode, wait, maxRetryWait)
+		return false, retryAfter
+	}
+
+	c.debugf("HTTP %d, retry %d/%d after %s", resp.StatusCode, attempt+1, maxRetries, wait)
+	if rateLimited {
+		// The rate limiter holds the next request (from any caller) back.
+		c.rl.markRateLimited(wait)
+		return true, retryAfter
+	}
+	return sleepContext(ctx, wait) == nil, retryAfter
+}
+
+// isTimeoutError reports whether err is a deadline or network timeout.
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// sleepContext waits for d or until ctx is done, whichever comes first.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// parseRetryAfter reads a Retry-After header given as delay seconds or as an
+// HTTP date. It returns zero when the header is absent or unusable.
+func parseRetryAfter(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if at, err := http.ParseTime(raw); err == nil {
+		if delay := time.Until(at); delay > 0 {
+			return delay
+		}
+	}
+	return 0
 }
 
 // requestJSON is a typed wrapper around request that unmarshals the response
@@ -648,32 +785,11 @@ func (c *Client) fetchXMLByURI(ctx context.Context, fileLocationURI, kind string
 	// The file location URI points to the bulk data file endpoint which
 	// returns a redirect to a signed S3 URL. Use the standard request
 	// flow to follow redirects.
-	c.debugf("Fetching %s XML from %s", kind, fileLocationURI)
+	c.debugf("Fetching %s XML from %s", kind, redactRawURL(fileLocationURI))
 
-	xmlURL := fileLocationURI
-	if !strings.HasPrefix(xmlURL, "http") {
-		xmlURL = c.baseURL + "/" + strings.TrimLeft(xmlURL, "/")
-	}
-
-	// Use the download client with longer timeout since the file can be large.
-	dlClient := &http.Client{
-		Timeout: downloadTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	c.rl.waitForSlot()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, xmlURL, nil)
+	xmlResp, err := c.getFile(ctx, fileLocationURI)
 	if err != nil {
-		return nil, fmt.Errorf("building XML request: %w", err)
-	}
-	c.setHeaders(req)
-
-	xmlResp, err := c.followRedirectsWithClient(dlClient, req)
-	c.rl.markRequestComplete()
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s XML: %w", kind, err)
+		return nil, wrapFileError(err, "building XML request", fmt.Sprintf("fetching %s XML", kind))
 	}
 	defer xmlResp.Body.Close()
 
@@ -934,70 +1050,55 @@ func (c *Client) GetPetitionDecision(ctx context.Context, recordID string, inclu
 // in memory. It uses the same timeout, redirect, and retry behavior as
 // DownloadDocument, but does not write the payload to disk.
 func (c *Client) FetchDocumentBytes(ctx context.Context, rawURL string) ([]byte, error) {
-	// Resolve relative URLs.
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		rawURL = c.baseURL + "/" + strings.TrimLeft(rawURL, "/")
+	c.debugf("FETCH %s", redactRawURL(rawURL))
+
+	resp, err := c.getFile(ctx, rawURL)
+	if err != nil {
+		return nil, wrapFileError(err, "building fetch request", "executing fetch request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &UsptoAPIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("fetch failed: HTTP %d", resp.StatusCode),
+			Body:       string(body),
+			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
+		}
 	}
 
-	dlClient := &http.Client{
-		Timeout: downloadTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading fetched document: %w", err)
 	}
 
-	var attempt int
-	for {
-		c.rl.waitForSlot()
-
-		c.debugf("FETCH %s", rawURL)
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("building fetch request: %w", err)
-		}
-		c.setHeaders(req)
-
-		resp, err := c.followRedirectsWithClient(dlClient, req)
-		c.rl.markRequestComplete()
-		if err != nil {
-			return nil, fmt.Errorf("executing fetch request: %w", err)
-		}
-
-		if resp.StatusCode == 429 && attempt < maxRetries {
-			resp.Body.Close()
-			c.rl.markRateLimited()
-			attempt++
-			c.debugf("429 rate limited during fetch, retry %d/%d", attempt, maxRetries)
-			continue
-		}
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return nil, &UsptoAPIError{
-				StatusCode: resp.StatusCode,
-				Message:    fmt.Sprintf("fetch failed: HTTP %d", resp.StatusCode),
-				Body:       string(body),
-			}
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("reading fetched document: %w", err)
-		}
-
-		c.debugf("Fetch complete: %d bytes", len(body))
-		return body, nil
-	}
+	c.debugf("Fetch complete: %d bytes", len(body))
+	return body, nil
 }
 
-// DownloadDocument downloads a file from the given URL (which may be
-// absolute or relative to baseURL) and writes it to outputPath. It uses
-// the download timeout (600 s), follows redirects manually to re-apply
-// the API key header, and retries on 429.
-func (c *Client) DownloadDocument(ctx context.Context, rawURL, outputPath string) (string, error) {
+// buildRequestError marks a failure to construct a request, as opposed to a
+// failure to execute one, so callers can keep their distinct messages.
+type buildRequestError struct{ err error }
+
+func (e *buildRequestError) Error() string { return e.err.Error() }
+func (e *buildRequestError) Unwrap() error { return e.err }
+
+// wrapFileError prefixes an error from getFile with the caller's wording.
+func wrapFileError(err error, buildMsg, execMsg string) error {
+	var buildErr *buildRequestError
+	if errors.As(err, &buildErr) {
+		return fmt.Errorf("%s: %w", buildMsg, buildErr.err)
+	}
+	return fmt.Errorf("%s: %w", execMsg, err)
+}
+
+// getFile issues a GET for a document, XML or bulk file. rawURL may be
+// absolute or relative to baseURL. It applies the download timeout (600 s),
+// the rate limiter, manual redirect handling, and the same retry rules as
+// request, and returns the final response whatever its status. The caller
+// closes the body.
+func (c *Client) getFile(ctx context.Context, rawURL string) (*http.Response, error) {
 	// Resolve relative URLs.
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = c.baseURL + "/" + strings.TrimLeft(rawURL, "/")
@@ -1011,15 +1112,12 @@ func (c *Client) DownloadDocument(ctx context.Context, rawURL, outputPath string
 		},
 	}
 
-	var attempt int
-	for {
+	for attempt := 0; ; attempt++ {
 		c.rl.waitForSlot()
-
-		c.debugf("DOWNLOAD %s -> %s", rawURL, outputPath)
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
-			return "", fmt.Errorf("building download request: %w", err)
+			return nil, &buildRequestError{err: err}
 		}
 		c.setHeaders(req)
 
@@ -1027,58 +1125,101 @@ func (c *Client) DownloadDocument(ctx context.Context, rawURL, outputPath string
 		resp, err := c.followRedirectsWithClient(dlClient, req)
 		c.rl.markRequestComplete()
 		if err != nil {
-			return "", fmt.Errorf("executing download request: %w", err)
-		}
-
-		if resp.StatusCode == 429 && attempt < maxRetries {
-			resp.Body.Close()
-			c.rl.markRateLimited()
-			attempt++
-			c.debugf("429 rate limited during download, retry %d/%d", attempt, maxRetries)
-			continue
+			if retry, _ := c.retryAfterFailure(ctx, attempt, nil, err); retry {
+				continue
+			}
+			return nil, err
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return "", &UsptoAPIError{
-				StatusCode: resp.StatusCode,
-				Message:    fmt.Sprintf("download failed: HTTP %d", resp.StatusCode),
-				Body:       string(body),
-			}
-		}
-
-		// Ensure parent directory exists.
-		if dir := filepath.Dir(outputPath); dir != "" {
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if retry, _ := c.retryAfterFailure(ctx, attempt, resp, nil); retry {
 				resp.Body.Close()
-				return "", fmt.Errorf("creating output directory: %w", err)
+				continue
 			}
 		}
-
-		out, err := os.Create(outputPath)
-		if err != nil {
-			resp.Body.Close()
-			return "", fmt.Errorf("creating output file: %w", err)
-		}
-
-		_, copyErr := io.Copy(out, resp.Body)
-		resp.Body.Close()
-		closeErr := out.Close()
-		if copyErr != nil {
-			return "", fmt.Errorf("writing download to disk: %w", copyErr)
-		}
-		if closeErr != nil {
-			return "", fmt.Errorf("closing output file: %w", closeErr)
-		}
-
-		c.debugf("Download complete: %s", outputPath)
-		return outputPath, nil
+		return resp, nil
 	}
 }
 
-// followRedirectsWithClient is like followRedirects but uses a custom
-// http.Client (e.g. one with a longer timeout for downloads).
+// DownloadDocument downloads a file from the given URL (which may be
+// absolute or relative to baseURL) and writes it to outputPath. It uses
+// the download timeout (600 s), follows redirects manually to re-apply
+// the API key header, and retries on 429.
+func (c *Client) DownloadDocument(ctx context.Context, rawURL, outputPath string) (string, error) {
+	c.debugf("DOWNLOAD %s -> %s", redactRawURL(rawURL), outputPath)
+
+	resp, err := c.getFile(ctx, rawURL)
+	if err != nil {
+		return "", wrapFileError(err, "building download request", "executing download request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", &UsptoAPIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("download failed: HTTP %d", resp.StatusCode),
+			Body:       string(body),
+			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
+		}
+	}
+
+	// Ensure parent directory exists.
+	if dir := filepath.Dir(outputPath); dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", fmt.Errorf("creating output directory: %w", err)
+		}
+	}
+
+	// Write to a sibling temp file and rename it into place only after the
+	// whole body has arrived, so an interrupted transfer never leaves a
+	// truncated file (or clobbers an existing one) at outputPath.
+	out, err := createPartFile(outputPath)
+	if err != nil {
+		return "", fmt.Errorf("creating output file: %w", err)
+	}
+	partPath := out.Name()
+
+	_, copyErr := io.Copy(out, resp.Body)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(partPath)
+		return "", fmt.Errorf("writing download to disk: %w", copyErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(partPath)
+		return "", fmt.Errorf("closing output file: %w", closeErr)
+	}
+	if err := os.Rename(partPath, outputPath); err != nil {
+		_ = os.Remove(partPath)
+		return "", fmt.Errorf("moving download into place: %w", err)
+	}
+
+	c.debugf("Download complete: %s", outputPath)
+	return outputPath, nil
+}
+
+// createPartFile creates a uniquely named temporary file next to finalPath.
+// It uses the same permission bits as os.Create so the finished file keeps
+// the mode it had before downloads were written through a temp file.
+func createPartFile(finalPath string) (*os.File, error) {
+	dir, base := filepath.Dir(finalPath), filepath.Base(finalPath)
+	stamp := strconv.FormatInt(time.Now().UnixNano(), 36)
+	for i := 0; ; i++ {
+		name := filepath.Join(dir, fmt.Sprintf(".%s.%s-%d.part", base, stamp, i))
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
+		if err == nil {
+			return f, nil
+		}
+		if !os.IsExist(err) || i >= 100 {
+			return nil, err
+		}
+	}
+}
+
+// followRedirectsWithClient follows 301/302/307/308 redirects manually (up to
+// 10 hops) with the given http.Client, so headers are decided per hop:
+// setHeaders withholds the API key from any host other than the API origin.
 func (c *Client) followRedirectsWithClient(hc *http.Client, req *http.Request) (*http.Response, error) {
 	const maxRedirects = 10
 	for i := 0; i < maxRedirects; i++ {
@@ -1097,8 +1238,13 @@ func (c *Client) followRedirectsWithClient(hc *http.Client, req *http.Request) (
 		if loc == "" {
 			return nil, fmt.Errorf("redirect with no Location header")
 		}
-		c.debugf("Following download redirect -> %s", loc)
-		next, err := http.NewRequestWithContext(req.Context(), http.MethodGet, loc, nil)
+		// Location may be relative to the URL that issued the redirect.
+		target, err := req.URL.Parse(loc)
+		if err != nil {
+			return nil, fmt.Errorf("building redirect request: %w", err)
+		}
+		c.debugf("Following redirect -> %s", redactURL(target))
+		next, err := http.NewRequestWithContext(req.Context(), http.MethodGet, target.String(), nil)
 		if err != nil {
 			return nil, fmt.Errorf("building redirect request: %w", err)
 		}

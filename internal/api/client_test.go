@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/smcronin/uspto-cli/internal/types"
 )
@@ -20,8 +21,8 @@ import (
 // ---------------------------------------------------------------------------
 
 // newTestClient creates a Client whose baseURL points at the given test server.
-// It uses a fresh rate limiter with no file-based state and a very short
-// minRequestGap so tests don't sleep.
+// It uses a fresh rate limiter with no file-based state and millisecond retry
+// waits so tests don't sleep.
 func newTestClient(ts *httptest.Server) *Client {
 	c := &Client{
 		httpClient: &http.Client{
@@ -29,9 +30,11 @@ func newTestClient(ts *httptest.Server) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
-		apiKey:  "test-api-key",
-		baseURL: ts.URL,
-		rl:      &rateLimiter{}, // fresh, no file state
+		apiKey:        "test-api-key",
+		baseURL:       ts.URL,
+		rl:            &rateLimiter{}, // fresh, no file state
+		rateLimitWait: 5 * time.Millisecond,
+		backoffStep:   time.Millisecond,
 	}
 	return c
 }
@@ -118,7 +121,7 @@ func TestSearchParams(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSetHeaders(t *testing.T) {
-	c := &Client{apiKey: "my-secret-key"}
+	c := &Client{apiKey: "my-secret-key", baseURL: "http://example.com"}
 
 	t.Run("GET request without body", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
@@ -154,6 +157,40 @@ func TestSetHeaders(t *testing.T) {
 		}
 		if got := req.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q, want %q", got, "application/json")
+		}
+	})
+
+	t.Run("API key goes only to the API origin", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			baseURL string
+			target  string
+			wantKey bool
+		}{
+			{name: "same origin", baseURL: "https://api.uspto.gov", target: "https://api.uspto.gov/api/v1/download/x.pdf", wantKey: true},
+			{name: "same origin, explicit default port", baseURL: "https://api.uspto.gov", target: "https://api.uspto.gov:443/x", wantKey: true},
+			{name: "same origin, host case differs", baseURL: "https://api.uspto.gov", target: "https://API.USPTO.GOV/x", wantKey: true},
+			{name: "signed storage host", baseURL: "https://api.uspto.gov", target: "https://bucket.s3.amazonaws.com/x.pdf?X-Amz-Signature=abc", wantKey: false},
+			{name: "sibling uspto host", baseURL: "https://api.uspto.gov", target: "https://data.uspto.gov/x", wantKey: false},
+			{name: "scheme downgrade", baseURL: "https://api.uspto.gov", target: "http://api.uspto.gov/x", wantKey: false},
+			{name: "different port", baseURL: "https://api.uspto.gov", target: "https://api.uspto.gov:8443/x", wantKey: false},
+			{name: "lookalike suffix", baseURL: "https://api.uspto.gov", target: "https://api.uspto.gov.example.com/x", wantKey: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				client := &Client{apiKey: "my-secret-key", baseURL: tt.baseURL}
+				req, err := http.NewRequest(http.MethodGet, tt.target, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				client.setHeaders(req)
+				if got := req.Header.Get("X-API-KEY") != ""; got != tt.wantKey {
+					t.Errorf("X-API-KEY sent = %v, want %v", got, tt.wantKey)
+				}
+				if got := req.Header.Get("Accept"); got != "application/json" {
+					t.Errorf("Accept = %q, want application/json on every request", got)
+				}
+			})
 		}
 	})
 }
@@ -873,28 +910,6 @@ func TestUsptoAPIError_Error(t *testing.T) {
 	})
 }
 
-func TestUsptoAPIError_IsRetryable(t *testing.T) {
-	tests := []struct {
-		statusCode int
-		want       bool
-	}{
-		{429, true},
-		{500, true},
-		{502, true},
-		{503, true},
-		{400, false},
-		{401, false},
-		{403, false},
-		{404, false},
-	}
-	for _, tc := range tests {
-		e := &UsptoAPIError{StatusCode: tc.statusCode}
-		if got := e.IsRetryable(); got != tc.want {
-			t.Errorf("IsRetryable() for %d = %v, want %v", tc.statusCode, got, tc.want)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // followRedirects — follows 301/302 and re-applies headers
 // ---------------------------------------------------------------------------
@@ -905,10 +920,11 @@ func TestFollowRedirects(t *testing.T) {
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&requestCount, 1)
 
-		// Verify API key is present on every hop.
+		// Every hop here stays on the API origin, so every hop carries the key.
+		// Hops to another host must not; see the cross-origin tests below.
 		if got := r.Header.Get("X-API-KEY"); got != "test-api-key" {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("missing API key on redirect hop"))
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("missing API key on same-origin redirect hop"))
 			return
 		}
 
@@ -1211,25 +1227,572 @@ func TestDownloadDocument_ErrorStatus(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DryRunURL
+// API key scope: redirects and absolute URLs on other hosts
 // ---------------------------------------------------------------------------
 
-func TestDryRunURL(t *testing.T) {
-	c := &Client{baseURL: "https://api.uspto.gov"}
+// keyRecorder is a second test server standing in for signed file storage.
+// It records the X-API-KEY header of every request it receives.
+type keyRecorder struct {
+	*httptest.Server
+	keys []string
+}
 
-	got := c.DryRunURL("GET", "/api/v1/patent/applications/search", "widget",
-		types.SearchOptions{Limit: 10, Offset: 20, Sort: "filingDate desc"})
+func newKeyRecorder(t *testing.T, body string) *keyRecorder {
+	t.Helper()
+	rec := &keyRecorder{}
+	rec.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.keys = append(rec.keys, r.Header.Get("X-API-KEY"))
+		w.Write([]byte(body))
+	}))
+	t.Cleanup(rec.Close)
+	return rec
+}
 
-	if !strings.HasPrefix(got, "GET https://api.uspto.gov/api/v1/patent/applications/search?") {
-		t.Errorf("DryRunURL() = %q, want it to start with 'GET https://api.uspto.gov/api/v1/patent/applications/search?'", got)
+func (rec *keyRecorder) assertNoKey(t *testing.T, wantRequests int) {
+	t.Helper()
+	if len(rec.keys) != wantRequests {
+		t.Fatalf("storage host received %d requests, want %d", len(rec.keys), wantRequests)
 	}
-	if !strings.Contains(got, "q=widget") {
-		t.Errorf("DryRunURL() = %q, want it to contain 'q=widget'", got)
+	for i, key := range rec.keys {
+		if key != "" {
+			t.Errorf("storage request %d carried X-API-KEY; the key must stay on the API origin", i+1)
+		}
 	}
-	if !strings.Contains(got, "limit=10") {
-		t.Errorf("DryRunURL() = %q, want it to contain 'limit=10'", got)
+}
+
+func TestDownloadDocument_CrossOriginRedirectDropsAPIKey(t *testing.T) {
+	storage := newKeyRecorder(t, "file-bytes")
+
+	var apiKeys []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiKeys = append(apiKeys, r.Header.Get("X-API-KEY"))
+		w.Header().Set("Location", storage.URL+"/signed/doc.pdf?X-Amz-Signature=SECRETSIG")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer api.Close()
+
+	c := newTestClient(api)
+	outputPath := filepath.Join(t.TempDir(), "doc.pdf")
+	if _, err := c.DownloadDocument(context.Background(), "/api/v1/download/doc.pdf", outputPath); err != nil {
+		t.Fatalf("DownloadDocument() error: %v", err)
 	}
-	if !strings.Contains(got, "offset=20") {
-		t.Errorf("DryRunURL() = %q, want it to contain 'offset=20'", got)
+
+	if len(apiKeys) != 1 || apiKeys[0] != "test-api-key" {
+		t.Errorf("API origin keys = %q, want one request carrying the key", apiKeys)
+	}
+	storage.assertNoKey(t, 1)
+	if data, _ := os.ReadFile(outputPath); string(data) != "file-bytes" {
+		t.Errorf("downloaded content = %q, want %q", data, "file-bytes")
+	}
+}
+
+func TestAbsoluteURLOnOtherHostGetsNoAPIKey(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request to the API origin: %s", r.URL.Path)
+	}))
+	defer api.Close()
+
+	t.Run("DownloadDocument", func(t *testing.T) {
+		storage := newKeyRecorder(t, "pdf")
+		c := newTestClient(api)
+		if _, err := c.DownloadDocument(context.Background(), storage.URL+"/doc.pdf", filepath.Join(t.TempDir(), "doc.pdf")); err != nil {
+			t.Fatalf("DownloadDocument() error: %v", err)
+		}
+		storage.assertNoKey(t, 1)
+	})
+
+	t.Run("FetchDocumentBytes", func(t *testing.T) {
+		storage := newKeyRecorder(t, "docx")
+		c := newTestClient(api)
+		if _, err := c.FetchDocumentBytes(context.Background(), storage.URL+"/doc.docx"); err != nil {
+			t.Fatalf("FetchDocumentBytes() error: %v", err)
+		}
+		storage.assertNoKey(t, 1)
+	})
+
+	t.Run("fetchXMLByURI", func(t *testing.T) {
+		storage := newKeyRecorder(t, "<us-patent-grant/>")
+		c := newTestClient(api)
+		if _, err := c.fetchXMLByURI(context.Background(), storage.URL+"/grant.xml", "grant"); err != nil {
+			t.Fatalf("fetchXMLByURI() error: %v", err)
+		}
+		storage.assertNoKey(t, 1)
+	})
+}
+
+func TestFollowRedirects_KeyReturnsOnlyForAPIOrigin(t *testing.T) {
+	// API -> storage -> API: the key is withheld from the storage hop and
+	// sent again when the chain comes back to the API origin.
+	var api *httptest.Server
+	var storageKeys, apiKeys []string
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		storageKeys = append(storageKeys, r.Header.Get("X-API-KEY"))
+		w.Header().Set("Location", api.URL+"/final")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer storage.Close()
+	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiKeys = append(apiKeys, r.Header.Get("X-API-KEY"))
+		if r.URL.Path == "/final" {
+			w.Write([]byte("done"))
+			return
+		}
+		w.Header().Set("Location", storage.URL+"/hop")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer api.Close()
+
+	c := newTestClient(api)
+	req, err := http.NewRequest(http.MethodGet, api.URL+"/start", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.setHeaders(req)
+	resp, err := c.followRedirects(req)
+	if err != nil {
+		t.Fatalf("followRedirects() error: %v", err)
+	}
+	resp.Body.Close()
+
+	if len(storageKeys) != 1 || storageKeys[0] != "" {
+		t.Errorf("storage hop keys = %q, want one request without the key", storageKeys)
+	}
+	if len(apiKeys) != 2 || apiKeys[0] != "test-api-key" || apiKeys[1] != "test-api-key" {
+		t.Errorf("API hop keys = %q, want the key on both API requests", apiKeys)
+	}
+}
+
+func TestFollowRedirects_RelativeLocation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/a/start" {
+			w.Header().Set("Location", "../b/final?x=1")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+		if r.URL.Path != "/b/final" || r.URL.Query().Get("x") != "1" {
+			t.Errorf("redirect target = %s, want /b/final?x=1", r.URL.String())
+		}
+		if r.Header.Get("X-API-KEY") != "test-api-key" {
+			t.Errorf("same-origin relative redirect lost the API key")
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/a/start", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.setHeaders(req)
+	resp, err := c.followRedirects(req)
+	if err != nil {
+		t.Fatalf("followRedirects() with a relative Location error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+// captureStderr runs fn with os.Stderr redirected and returns what was written.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	original := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	done := make(chan string, 1)
+	go func() {
+		data, _ := io.ReadAll(reader)
+		done <- string(data)
+	}()
+	fn()
+	writer.Close()
+	os.Stderr = original
+	out := <-done
+	reader.Close()
+	return out
+}
+
+func TestDebugOutput_RedactsSignedRedirectURL(t *testing.T) {
+	storage := newKeyRecorder(t, "file-bytes")
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", storage.URL+"/signed/doc.pdf?X-Amz-Credential=CREDVALUE&X-Amz-Signature=SECRETSIG")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer api.Close()
+
+	c := newTestClient(api)
+	c.debug = true
+	outputPath := filepath.Join(t.TempDir(), "doc.pdf")
+
+	stderr := captureStderr(t, func() {
+		if _, err := c.DownloadDocument(context.Background(), "/api/v1/download/doc.pdf?token=QUERYSECRET", outputPath); err != nil {
+			t.Errorf("DownloadDocument() error: %v", err)
+		}
+	})
+
+	for _, secret := range []string{"SECRETSIG", "CREDVALUE", "X-Amz-Signature"} {
+		if strings.Contains(stderr, secret) {
+			t.Errorf("debug output leaked %q:\n%s", secret, stderr)
+		}
+	}
+	if !strings.Contains(stderr, "Following redirect -> "+storage.URL+"/signed/doc.pdf?<redacted>") {
+		t.Errorf("debug output should name the redirect host and path with a redacted query:\n%s", stderr)
+	}
+}
+
+func TestRedactURL(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "https://api.uspto.gov/api/v1/download/doc.pdf", want: "https://api.uspto.gov/api/v1/download/doc.pdf"},
+		{in: "https://bucket.s3.amazonaws.com/k/doc.pdf?X-Amz-Signature=abc&X-Amz-Expires=60", want: "https://bucket.s3.amazonaws.com/k/doc.pdf?<redacted>"},
+		{in: "https://user:pass@host.example/p?q=1#frag", want: "https://host.example/p?<redacted>"},
+		{in: "/relative/path?sig=abc", want: "/relative/path?<redacted>"},
+		{in: "://bad", want: "<invalid-url>"},
+	}
+	for _, tt := range tests {
+		if got := redactRawURL(tt.in); got != tt.want {
+			t.Errorf("redactRawURL(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Retries: 5xx, transport errors, Retry-After
+// ---------------------------------------------------------------------------
+
+func TestRequest_RetriesServerErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		statuses  []int // one per call; the last repeats
+		wantCalls int32
+		wantErr   int // 0 = success
+	}{
+		{name: "503 twice then success", statuses: []int{503, 503, 200}, wantCalls: 3},
+		{name: "500 once then success", statuses: []int{500, 200}, wantCalls: 2},
+		{name: "502 exhausts retries", statuses: []int{502}, wantCalls: int32(maxRetries + 1), wantErr: 502},
+		{name: "404 is not retried", statuses: []int{404}, wantCalls: 1, wantErr: 404},
+		{name: "403 is not retried", statuses: []int{403}, wantCalls: 1, wantErr: 403},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				n := int(atomic.AddInt32(&calls, 1))
+				if n > len(tt.statuses) {
+					n = len(tt.statuses)
+				}
+				status := tt.statuses[n-1]
+				if status != http.StatusOK {
+					w.WriteHeader(status)
+				}
+				w.Write([]byte(`{}`))
+			}))
+			defer ts.Close()
+
+			c := newTestClient(ts)
+			_, err := c.request(context.Background(), http.MethodGet, "/test", nil, nil)
+
+			if got := atomic.LoadInt32(&calls); got != tt.wantCalls {
+				t.Errorf("request count = %d, want %d", got, tt.wantCalls)
+			}
+			if tt.wantErr == 0 {
+				if err != nil {
+					t.Fatalf("request() error: %v", err)
+				}
+				return
+			}
+			apiErr, ok := err.(*UsptoAPIError)
+			if !ok || apiErr.StatusCode != tt.wantErr {
+				t.Fatalf("request() error = %v, want UsptoAPIError %d", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// dropFirstConnections closes the first n connections without answering, then
+// serves normally.
+func dropFirstConnections(t *testing.T, n int32, body string) (*httptest.Server, *int32) {
+	t.Helper()
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) <= n {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			conn.Close()
+			return
+		}
+		w.Write([]byte(body))
+	}))
+	return ts, &calls
+}
+
+func TestRequest_RetriesTransportErrors(t *testing.T) {
+	t.Run("dropped connection then success", func(t *testing.T) {
+		ts, calls := dropFirstConnections(t, 2, `{}`)
+		defer ts.Close()
+
+		c := newTestClient(ts)
+		// POST: net/http never replays these itself, so the retry is ours.
+		if _, err := c.request(context.Background(), http.MethodPost, "/test", map[string]string{"q": "x"}, nil); err != nil {
+			t.Fatalf("request() error after transport retries: %v", err)
+		}
+		if got := atomic.LoadInt32(calls); got != 3 {
+			t.Errorf("request count = %d, want 3", got)
+		}
+	})
+
+	t.Run("gives up after maxRetries", func(t *testing.T) {
+		ts, calls := dropFirstConnections(t, 100, `{}`)
+		defer ts.Close()
+
+		c := newTestClient(ts)
+		_, err := c.request(context.Background(), http.MethodPost, "/test", map[string]string{"q": "x"}, nil)
+		if err == nil || !strings.Contains(err.Error(), "executing request") {
+			t.Fatalf("request() error = %v, want an executing-request error", err)
+		}
+		if got := atomic.LoadInt32(calls); got != int32(maxRetries+1) {
+			t.Errorf("request count = %d, want %d", got, maxRetries+1)
+		}
+	})
+
+	t.Run("timeout is not retried", func(t *testing.T) {
+		var calls int32
+		release := make(chan struct{})
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&calls, 1)
+			<-release
+		}))
+		defer ts.Close()
+		defer close(release)
+
+		c := newTestClient(ts)
+		c.httpClient.Timeout = 50 * time.Millisecond
+		if _, err := c.request(context.Background(), http.MethodGet, "/slow", nil, nil); err == nil {
+			t.Fatal("request() should fail on timeout")
+		}
+		if got := atomic.LoadInt32(&calls); got != 1 {
+			t.Errorf("request count = %d, want 1 (a timed-out request must not be repeated)", got)
+		}
+	})
+
+	t.Run("cancelled context is not retried", func(t *testing.T) {
+		ts, calls := dropFirstConnections(t, 100, `{}`)
+		defer ts.Close()
+
+		c := newTestClient(ts)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := c.request(ctx, http.MethodGet, "/test", nil, nil); err == nil {
+			t.Fatal("request() should fail with a cancelled context")
+		}
+		if got := atomic.LoadInt32(calls); got > 1 {
+			t.Errorf("request count = %d, want at most 1", got)
+		}
+	})
+}
+
+func TestRequest_HonoursRetryAfterOn429(t *testing.T) {
+	t.Run("waits at least Retry-After", func(t *testing.T) {
+		var calls int32
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if atomic.AddInt32(&calls, 1) == 1 {
+				w.Header().Set("Retry-After", "1")
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+			w.Write([]byte(`{}`))
+		}))
+		defer ts.Close()
+
+		c := newTestClient(ts) // rateLimitWait is 5 ms; Retry-After must win
+		start := time.Now()
+		if _, err := c.request(context.Background(), http.MethodGet, "/test", nil, nil); err != nil {
+			t.Fatalf("request() error: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed < 900*time.Millisecond {
+			t.Errorf("retried after %s, want at least the 1 s Retry-After", elapsed)
+		}
+		if got := atomic.LoadInt32(&calls); got != 2 {
+			t.Errorf("request count = %d, want 2", got)
+		}
+	})
+
+	t.Run("Retry-After beyond the cap is returned, not slept", func(t *testing.T) {
+		var calls int32
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&calls, 1)
+			w.Header().Set("Retry-After", "120")
+			w.WriteHeader(http.StatusTooManyRequests)
+		}))
+		defer ts.Close()
+
+		c := newTestClient(ts)
+		start := time.Now()
+		_, err := c.request(context.Background(), http.MethodGet, "/test", nil, nil)
+		apiErr, ok := err.(*UsptoAPIError)
+		if !ok || apiErr.StatusCode != 429 {
+			t.Fatalf("request() error = %v, want UsptoAPIError 429", err)
+		}
+		if apiErr.RetryAfter != 120*time.Second {
+			t.Errorf("RetryAfter = %s, want 2m0s", apiErr.RetryAfter)
+		}
+		if got := atomic.LoadInt32(&calls); got != 1 {
+			t.Errorf("request count = %d, want 1", got)
+		}
+		if elapsed := time.Since(start); elapsed > 5*time.Second {
+			t.Errorf("took %s; a 120 s Retry-After must not be slept through", elapsed)
+		}
+	})
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	tests := []struct {
+		in   string
+		want time.Duration
+	}{
+		{in: "", want: 0},
+		{in: "7", want: 7 * time.Second},
+		{in: " 30 ", want: 30 * time.Second},
+		{in: "0", want: 0},
+		{in: "-5", want: 0},
+		{in: "soon", want: 0},
+		{in: "Mon, 02 Jan 2006 15:04:05 GMT", want: 0}, // in the past
+	}
+	for _, tt := range tests {
+		if got := parseRetryAfter(tt.in); got != tt.want {
+			t.Errorf("parseRetryAfter(%q) = %s, want %s", tt.in, got, tt.want)
+		}
+	}
+	future := time.Now().Add(90 * time.Second).UTC().Format(http.TimeFormat)
+	if got := parseRetryAfter(future); got < 80*time.Second || got > 91*time.Second {
+		t.Errorf("parseRetryAfter(HTTP date 90 s ahead) = %s, want about 90s", got)
+	}
+}
+
+func TestDownloadDocument_RetriesServerErrorAndDroppedConnection(t *testing.T) {
+	t.Run("503 then success", func(t *testing.T) {
+		var calls int32
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if atomic.AddInt32(&calls, 1) == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.Write([]byte("pdf"))
+		}))
+		defer ts.Close()
+
+		c := newTestClient(ts)
+		outputPath := filepath.Join(t.TempDir(), "doc.pdf")
+		if _, err := c.DownloadDocument(context.Background(), "/doc.pdf", outputPath); err != nil {
+			t.Fatalf("DownloadDocument() error: %v", err)
+		}
+		if data, _ := os.ReadFile(outputPath); string(data) != "pdf" {
+			t.Errorf("content = %q, want %q", data, "pdf")
+		}
+	})
+
+	t.Run("dropped connection then success", func(t *testing.T) {
+		ts, calls := dropFirstConnections(t, 1, "docx")
+		defer ts.Close()
+
+		c := newTestClient(ts)
+		// An absolute URL on another origin would not be retried by net/http
+		// either; use the fetch path, which shares getFile.
+		data, err := c.FetchDocumentBytes(context.Background(), "/doc.docx")
+		if err != nil {
+			t.Fatalf("FetchDocumentBytes() error: %v", err)
+		}
+		if string(data) != "docx" || atomic.LoadInt32(calls) < 2 {
+			t.Errorf("content = %q after %d calls, want %q after a retry", data, atomic.LoadInt32(calls), "docx")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// DownloadDocument: temp file + rename
+// ---------------------------------------------------------------------------
+
+func TestDownloadDocument_FailedTransferLeavesNoPartialFile(t *testing.T) {
+	// The server promises 1000 bytes and sends 7, so the body copy fails.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.Write([]byte("partial"))
+	}))
+	defer ts.Close()
+
+	t.Run("no file at the final path", func(t *testing.T) {
+		dir := t.TempDir()
+		outputPath := filepath.Join(dir, "doc.pdf")
+
+		c := newTestClient(ts)
+		if _, err := c.DownloadDocument(context.Background(), "/doc.pdf", outputPath); err == nil {
+			t.Fatal("DownloadDocument() should fail when the body is cut short")
+		}
+		if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
+			t.Errorf("a file exists at the final path after a failed transfer (stat err = %v)", err)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("output directory should be empty after a failed transfer, has %d entries (%s)", len(entries), entries[0].Name())
+		}
+	})
+
+	t.Run("an existing file is left intact", func(t *testing.T) {
+		dir := t.TempDir()
+		outputPath := filepath.Join(dir, "doc.pdf")
+		if err := os.WriteFile(outputPath, []byte("previous complete download"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		c := newTestClient(ts)
+		if _, err := c.DownloadDocument(context.Background(), "/doc.pdf", outputPath); err == nil {
+			t.Fatal("DownloadDocument() should fail when the body is cut short")
+		}
+		if data, _ := os.ReadFile(outputPath); string(data) != "previous complete download" {
+			t.Errorf("existing file content = %q, want it untouched", data)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+			t.Errorf("output directory has %d entries, want only the existing file", len(entries))
+		}
+	})
+}
+
+func TestDownloadDocument_SuccessReplacesExistingAndLeavesNoTempFile(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("new content"))
+	}))
+	defer ts.Close()
+
+	dir := filepath.Join(t.TempDir(), "nested", "out")
+	outputPath := filepath.Join(dir, "doc.pdf")
+	c := newTestClient(ts)
+
+	// First download creates the directory and the file.
+	if _, err := c.DownloadDocument(context.Background(), "/doc.pdf", outputPath); err != nil {
+		t.Fatalf("DownloadDocument() error: %v", err)
+	}
+	// Overwrite behaviour is unchanged: a second download replaces the file.
+	if err := os.WriteFile(outputPath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.DownloadDocument(context.Background(), "/doc.pdf", outputPath); err != nil {
+		t.Fatalf("second DownloadDocument() error: %v", err)
+	}
+
+	if data, _ := os.ReadFile(outputPath); string(data) != "new content" {
+		t.Errorf("content = %q, want %q", data, "new content")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "doc.pdf" {
+		t.Errorf("output directory should hold only doc.pdf, has %d entries", len(entries))
 	}
 }

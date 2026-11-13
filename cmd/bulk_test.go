@@ -120,7 +120,12 @@ func TestRunBulkFiles_Limit(t *testing.T) {
 	}
 
 	var env struct {
-		OK      bool                     `json:"ok"`
+		OK         bool `json:"ok"`
+		Pagination struct {
+			Limit   int  `json:"limit"`
+			Total   int  `json:"total"`
+			HasMore bool `json:"hasMore"`
+		} `json:"pagination"`
 		Results []map[string]interface{} `json:"results"`
 	}
 	if err := json.Unmarshal(out, &env); err != nil {
@@ -128,5 +133,56 @@ func TestRunBulkFiles_Limit(t *testing.T) {
 	}
 	if len(env.Results) != 1 {
 		t.Fatalf("results len = %d, want 1", len(env.Results))
+	}
+	// --limit truncates the listing; the metadata must still describe the
+	// product's real file count.
+	if env.Pagination.Total != 2 || !env.Pagination.HasMore || env.Pagination.Limit != 1 {
+		t.Fatalf("pagination = %+v, want limit=1 total=2 hasMore=true", env.Pagination)
+	}
+}
+
+func TestRunBulkFiles_NoLimitReportsCompleteListing(t *testing.T) {
+	origClient := api.DefaultClient
+	origFormat := flagFormat
+	origQuiet := flagQuiet
+	origLimit := bulkFilesLimit
+	defer func() {
+		api.DefaultClient = origClient
+		flagFormat = origFormat
+		flagQuiet = origQuiet
+		bulkFilesLimit = origLimit
+	}()
+
+	flagFormat = "json"
+	flagQuiet = true
+	bulkFilesLimit = 0
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"count":1,"bulkDataProductBag":[{"productIdentifier":"PTGRXML","productFileBag":{"count":2,"fileDataBag":[{"fileName":"a.zip"},{"fileName":"b.zip"}]}}]}`))
+	}))
+	defer ts.Close()
+
+	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
+
+	stdout, _, runErr := captureTrademarkOutput(t, func() error {
+		return runBulkFiles(bulkFilesCmd, []string{"PTGRXML"})
+	})
+	if runErr != nil {
+		t.Fatalf("runBulkFiles error: %v", runErr)
+	}
+
+	var env struct {
+		Pagination struct {
+			Total   int  `json:"total"`
+			HasMore bool `json:"hasMore"`
+		} `json:"pagination"`
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("json.Unmarshal output: %v\noutput=%s", err, stdout)
+	}
+	if len(env.Results) != 2 || env.Pagination.Total != 2 || env.Pagination.HasMore {
+		t.Fatalf("results=%d pagination=%+v, want 2 results, total=2, hasMore=false", len(env.Results), env.Pagination)
 	}
 }
