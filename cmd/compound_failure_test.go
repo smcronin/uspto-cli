@@ -207,9 +207,118 @@ func TestRunSummary_PartialFailureIsMarkedEvenWhenQuiet(t *testing.T) {
 	})
 }
 
+// standAloneBody serves a granted application with no continuity, no
+// recorded assignment and no foreign priority, the way ODP answers for one:
+// checked live on 2026-11-13 against application 29932490, whose
+// /continuity, /assignment and /foreign-priority each returned 200 with one
+// file-wrapper record and no bag, not 404.
+func standAloneBody(path string) string {
+	switch {
+	case strings.HasSuffix(path, "/meta-data"):
+		return `{"count":1,"patentFileWrapperDataBag":[{"applicationNumberText":"16123456","applicationMetaData":{"inventionTitle":"Widget","firstApplicantName":"Solo Inventor"}}]}`
+	case strings.HasSuffix(path, "/documents"):
+		return `{"documentBag":[]}`
+	}
+	return emptyPFW
+}
+
+// A stand-alone application is a complete summary, not a partial one, and
+// with no title conveyance on record the applicant stands in as assignee.
+func TestRunSummary_StandAloneApplicationIsNotPartial(t *testing.T) {
+	ts := statusServer(func(path string) int {
+		// No PTA data: the one optional sub-request that answers 404.
+		if strings.HasSuffix(path, "/adjustment") {
+			return http.StatusNotFound
+		}
+		return http.StatusOK
+	}, standAloneBody)
+	defer ts.Close()
+	compoundHarness(t, ts, "json", true)
+
+	stdout, _, err := captureTrademarkOutput(t, func() error {
+		return runSummary(summaryCmd, []string{"16123456"})
+	})
+	if err != nil {
+		t.Fatalf("runSummary() error: %v", err)
+	}
+	env := decodeNotedEnvelope(t, stdout)
+	if !env.OK || env.Partial || len(env.Warnings) != 0 {
+		t.Errorf("ok=%v partial=%v warnings=%q, want ok with neither", env.OK, env.Partial, env.Warnings)
+	}
+	var summary AppSummary
+	if err := json.Unmarshal(env.Results, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.CurrentAssignee != "Solo Inventor" || summary.CurrentAssigneeSource != assigneeFromApplicant {
+		t.Errorf("currentAssignee = %q (source %q), want the applicant", summary.CurrentAssignee, summary.CurrentAssigneeSource)
+	}
+	if len(summary.Parents) != 0 || len(summary.Children) != 0 || summary.ForeignPriorityCount != 0 {
+		t.Errorf("parents=%v children=%v foreignPriority=%d, want none", summary.Parents, summary.Children, summary.ForeignPriorityCount)
+	}
+}
+
+// A 404 from /assignment is not how ODP reports "no assignments" (see
+// standAloneBody), so it stays a failure: the summary is partial and does not
+// name the applicant as owner on records it could not read.
+func TestRunSummary_AssignmentNotFoundIsPartialWithoutApplicantFallback(t *testing.T) {
+	ts := statusServer(func(path string) int {
+		if strings.HasSuffix(path, "/assignment") {
+			return http.StatusNotFound
+		}
+		return http.StatusOK
+	}, standAloneBody)
+	defer ts.Close()
+	compoundHarness(t, ts, "json", true)
+
+	stdout, _, err := captureTrademarkOutput(t, func() error {
+		return runSummary(summaryCmd, []string{"16123456"})
+	})
+	if err != nil {
+		t.Fatalf("runSummary() error: %v", err)
+	}
+	env := decodeNotedEnvelope(t, stdout)
+	if !env.OK || !env.Partial {
+		t.Errorf("ok=%v partial=%v, want true/true", env.OK, env.Partial)
+	}
+	wantWarning(t, env.Warnings, "assignment")
+	var summary AppSummary
+	if err := json.Unmarshal(env.Results, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.CurrentAssignee != "" || summary.CurrentAssigneeSource != "" {
+		t.Errorf("currentAssignee = %q (source %q), want none when the records could not be read",
+			summary.CurrentAssignee, summary.CurrentAssigneeSource)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // family
 // ---------------------------------------------------------------------------
+
+// A family walk from an application without relatives is one complete node.
+func TestRunFamily_StandAloneApplicationIsNotPartial(t *testing.T) {
+	ts := statusServer(func(string) int { return http.StatusOK }, standAloneBody)
+	defer ts.Close()
+	compoundHarness(t, ts, "json", true)
+
+	stdout, _, err := captureTrademarkOutput(t, func() error {
+		return runFamily(familyCmd, []string{"16123456"})
+	})
+	if err != nil {
+		t.Fatalf("runFamily() error: %v", err)
+	}
+	env := decodeNotedEnvelope(t, stdout)
+	if !env.OK || env.Partial || len(env.Warnings) != 0 {
+		t.Errorf("ok=%v partial=%v warnings=%q, want ok with neither", env.OK, env.Partial, env.Warnings)
+	}
+	var result FamilyResult
+	if err := json.Unmarshal(env.Results, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalMembers != 1 || result.Tree.Title != "Widget" {
+		t.Errorf("totalMembers=%d title=%q, want the root alone with its metadata", result.TotalMembers, result.Tree.Title)
+	}
+}
 
 // familyBody serves a root application (16123456) with one child (17000001).
 func familyBody(path string) string {
