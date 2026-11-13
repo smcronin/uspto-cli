@@ -34,7 +34,7 @@ var petitionSearchFlags struct {
 var petitionSearchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search petition decisions",
-	Long:  "Search petition decisions using USPTO simplified query syntax.\n\nExamples:\n  uspto petition search \"revival\"\n  uspto petition search --office \"OFFICE OF PETITIONS\" --decision DENIED\n  uspto petition search --app 16123456 --limit 10\n  uspto petition search --patent 10000000",
+	Long:  "Search petition decisions using USPTO simplified query syntax.\n\nExamples:\n  uspto petition search \"revival\"\n  uspto petition search --office \"OFFICE OF PETITIONS\" --decision DENIED\n  uspto petition search --app 15223202 --limit 10\n  uspto petition search --patent 10000000",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runPetitionSearch,
 }
