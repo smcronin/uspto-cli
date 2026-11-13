@@ -42,7 +42,17 @@ func runPtabExport(cmd *cobra.Command, e ptabExport) error {
 		return nil
 	}
 
-	limit, err := resolveExportLimit(ctx, cmd, e.opts.Limit, e.opts.Offset, e.count)
+	// The PTAB search endpoints answer 404 when nothing matches, and the
+	// plain search commands report that as an empty result. An export of
+	// no matches is likewise an empty export, not exit 4.
+	count := func(ctx context.Context) (int, error) {
+		n, err := e.count(ctx)
+		if isNotFoundAPIError(err) {
+			return 0, nil
+		}
+		return n, err
+	}
+	limit, err := resolveExportLimit(ctx, cmd, e.opts.Limit, e.opts.Offset, count)
 	if err != nil {
 		return err
 	}
@@ -54,6 +64,10 @@ func runPtabExport(cmd *cobra.Command, e ptabExport) error {
 
 	data, err := e.download(ctx, e.opts)
 	if err != nil {
+		if isNotFoundAPIError(err) {
+			writeEmptyExport(e.format)
+			return nil
+		}
 		return exportTimeoutHint(err)
 	}
 	writeDownloadResult(data)
@@ -128,8 +142,10 @@ func runPtabSearch(cmd *cobra.Command, args []string) error {
 
 	query := strings.Join(parts, " AND ")
 
-	limit, _ := cmd.Flags().GetInt("limit")
-	offset, _ := cmd.Flags().GetInt("offset")
+	limit, offset, err := ptabPaging(cmd)
+	if err != nil {
+		return err
+	}
 	sort, _ := cmd.Flags().GetString("sort")
 
 	opts := types.SearchOptions{
@@ -261,8 +277,10 @@ func runPtabDecisions(cmd *cobra.Command, args []string) error {
 
 	query := strings.Join(parts, " AND ")
 
-	limit, _ := cmd.Flags().GetInt("limit")
-	offset, _ := cmd.Flags().GetInt("offset")
+	limit, offset, err := ptabPaging(cmd)
+	if err != nil {
+		return err
+	}
 
 	opts := types.SearchOptions{
 		Limit:  limit,
@@ -419,8 +437,10 @@ func runPtabDocs(cmd *cobra.Command, args []string) error {
 
 	query := strings.Join(parts, " AND ")
 
-	limit, _ := cmd.Flags().GetInt("limit")
-	offset, _ := cmd.Flags().GetInt("offset")
+	limit, offset, err := ptabPaging(cmd)
+	if err != nil {
+		return err
+	}
 
 	opts := types.SearchOptions{
 		Limit:  limit,
@@ -568,8 +588,10 @@ func runPtabAppeals(cmd *cobra.Command, args []string) error {
 		query = args[0]
 	}
 
-	limit, _ := cmd.Flags().GetInt("limit")
-	offset, _ := cmd.Flags().GetInt("offset")
+	limit, offset, err := ptabPaging(cmd)
+	if err != nil {
+		return err
+	}
 
 	opts := types.SearchOptions{
 		Limit:  limit,
@@ -717,8 +739,10 @@ func runPtabInterferences(cmd *cobra.Command, args []string) error {
 		query = args[0]
 	}
 
-	limit, _ := cmd.Flags().GetInt("limit")
-	offset, _ := cmd.Flags().GetInt("offset")
+	limit, offset, err := ptabPaging(cmd)
+	if err != nil {
+		return err
+	}
 
 	opts := types.SearchOptions{
 		Limit:  limit,
@@ -880,6 +904,17 @@ func ptabApplicationQuery(app string) string {
 	app = strings.TrimSpace(app)
 	return fmt.Sprintf("(patentOwnerData.applicationNumberText:%s OR regularPetitionerData.applicationNumberText:%s OR respondentData.applicationNumberText:%s OR derivationPetitionerData.applicationNumberText:%s)",
 		app, app, app, app)
+}
+
+// ptabPaging returns the --limit and --offset of a PTAB search command. A
+// --limit of 0 or less is a usage error: it used to be sent as given.
+func ptabPaging(cmd *cobra.Command) (limit, offset int, err error) {
+	limit, _ = cmd.Flags().GetInt("limit")
+	offset, _ = cmd.Flags().GetInt("offset")
+	if limit <= 0 {
+		return 0, 0, usageErrorf("invalid --limit %d: must be > 0", limit)
+	}
+	return limit, offset, nil
 }
 
 func isNotFoundAPIError(err error) bool {

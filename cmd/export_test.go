@@ -555,3 +555,109 @@ func TestDryRun_DownloadPrintsCountThenExportWithoutSendingEither(t *testing.T) 
 		})
 	}
 }
+
+// ptabExportCommands are the five PTAB search commands that take --download.
+func ptabExportCommands() []struct {
+	cmd *cobra.Command
+	run func() error
+} {
+	return []struct {
+		cmd *cobra.Command
+		run func() error
+	}{
+		{ptabSearchCmd, func() error { return runPtabSearch(ptabSearchCmd, nil) }},
+		{ptabDecisionsCmd, func() error { return runPtabDecisions(ptabDecisionsCmd, nil) }},
+		{ptabDocsCmd, func() error { return runPtabDocs(ptabDocsCmd, nil) }},
+		{ptabAppealsCmd, func() error { return runPtabAppeals(ptabAppealsCmd, nil) }},
+		{ptabInterferencesCmd, func() error { return runPtabInterferences(ptabInterferencesCmd, nil) }},
+	}
+}
+
+// notFoundServer answers every request with 404, as the PTAB search
+// endpoints do when nothing matches, and counts the requests.
+func notFoundServer(t *testing.T) (*httptest.Server, *int32) {
+	t.Helper()
+	var n int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&n, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":404,"message":"Not Found"}`))
+	}))
+	t.Cleanup(ts.Close)
+	return ts, &n
+}
+
+// A PTAB query with no matches gives an empty export, as plain `ptab search`
+// gives an empty result. The count's 404 used to fail the export with exit 4.
+func TestPtabDownload_NoMatchesIsAnEmptyExport(t *testing.T) {
+	for _, c := range ptabExportCommands() {
+		t.Run(c.cmd.CommandPath()+" count 404", func(t *testing.T) {
+			ts, n := notFoundServer(t)
+			exportHarness(t, ts, true)
+			setFlagForTest(t, c.cmd, "download", "json")
+
+			stdout, _, err := captureTrademarkOutput(t, c.run)
+			if err != nil {
+				t.Fatalf("run error: %v, want an empty export", err)
+			}
+			if stdout != "[]\n" {
+				t.Errorf("stdout = %q, want an empty JSON array", stdout)
+			}
+			if got := atomic.LoadInt32(n); got != 1 {
+				t.Errorf("server saw %d requests, want the count only", got)
+			}
+		})
+		t.Run(c.cmd.CommandPath()+" export 404 with --limit", func(t *testing.T) {
+			ts, n := notFoundServer(t)
+			exportHarness(t, ts, true)
+			setFlagForTest(t, c.cmd, "download", "csv")
+			setFlagForTest(t, c.cmd, "limit", "40")
+
+			stdout, _, err := captureTrademarkOutput(t, c.run)
+			if err != nil {
+				t.Fatalf("run error: %v, want an empty export", err)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want an empty CSV", stdout)
+			}
+			if got := atomic.LoadInt32(n); got != 1 {
+				t.Errorf("server saw %d requests, want the export only", got)
+			}
+		})
+	}
+}
+
+// --limit 0 or below is a usage error on every PTAB search command, with or
+// without --download, and nothing is sent.
+func TestPtabSearch_NonPositiveLimitIsAUsageError(t *testing.T) {
+	for _, c := range ptabExportCommands() {
+		for _, limit := range []string{"0", "-5"} {
+			for _, download := range []string{"", "csv"} {
+				name := c.cmd.CommandPath() + " --limit " + limit
+				if download != "" {
+					name += " --download"
+				}
+				t.Run(name, func(t *testing.T) {
+					ts, requests := exportServer(t, 3)
+					exportHarness(t, ts, true)
+					setFlagForTest(t, c.cmd, "limit", limit)
+					if download != "" {
+						setFlagForTest(t, c.cmd, "download", download)
+					}
+
+					err := c.run()
+					if err == nil {
+						t.Fatal("want a usage error")
+					}
+					if code, errType := usageEnvelope(t, err); code != types.ExitInvalidArgs || errType != "INVALID_ARGUMENTS" {
+						t.Errorf("exit %d type %q, want exit %d INVALID_ARGUMENTS", code, errType, types.ExitInvalidArgs)
+					}
+					if got := requests(); len(got) != 0 {
+						t.Errorf("server saw %+v, want no requests", got)
+					}
+				})
+			}
+		}
+	}
+}
