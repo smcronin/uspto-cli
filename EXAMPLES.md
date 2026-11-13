@@ -202,7 +202,9 @@ Record the service, identifier namespace, retrieval time, requested/returned IDs
 Pull every patent application filed by a company and export it to a spreadsheet:
 
 ```bash
-# Export all of Google's recent filings to CSV
+# Export all of Google's recent filings to CSV. --download counts the matches,
+# then exports every row in one request (the USPTO ceiling is 10,000; the CLI
+# warns on stderr if the query matches more, so narrow the date range then)
 uspto search --assignee "Google" --filed-within 1y --download csv > google_filings.csv
 
 # See what Apple is patenting in machine learning (CPC class G06N)
@@ -301,8 +303,8 @@ uspto ptab search --type IPR --patent 9876543
 # Get details on a specific proceeding
 uspto ptab get IPR2023-00001
 
-# Download all IPR decisions to a file
-uspto ptab decisions --download csv > ipr_decisions.csv
+# Export every decision of one trial to a file (all matches, up to 10,000 rows)
+uspto ptab decisions --trial IPR2020-00388 --download csv > ipr_decisions.csv
 
 # Check appeal decisions
 uspto ptab appeals "artificial intelligence"

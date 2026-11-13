@@ -144,7 +144,7 @@ func init() {
 	// Pagination.
 	f.IntVar(&searchFlags.limit, "limit", 25, "Number of results per page")
 	f.IntVar(&searchFlags.offset, "offset", 0, "Result offset for pagination")
-	f.BoolVar(&searchFlags.all, "all", false, "Auto-paginate to fetch all results (up to 10,000)")
+	f.BoolVar(&searchFlags.all, "all", false, "Auto-paginate to fetch all results (up to 10,000). With --download: the same full export, ignoring --limit")
 	f.IntVar(&searchFlags.page, "page", 0, "Page number (1-based, alternative to --offset)")
 	f.BoolVar(&searchFlags.countOnly, "count-only", false, "Return only total count (no result records)")
 
@@ -155,7 +155,7 @@ func init() {
 	f.StringVar(&searchFlags.fields, "fields", "", "Comma-separated list of fields to return")
 	f.StringArrayVar(&searchFlags.filters, "filter", nil, "Structured filter: field=value (repeatable, comma-separated values)")
 	f.StringVar(&searchFlags.facets, "facets", "", "Comma-separated facet fields")
-	f.String("download", "", "Download all results in one request (json or csv)")
+	addDownloadFlag(searchCmd)
 
 	rootCmd.AddCommand(searchCmd)
 }
@@ -202,48 +202,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	// --download: use the bulk download endpoint instead of paginated search.
-	if dlFmt := downloadFormat(cmd); dlFmt != "" {
-		if needsPost {
-			body := buildPostBody(freeTextQuery, searchFlags.limit, searchFlags.offset)
-			if flagDryRun {
-				printDryRunPOST("/api/v1/patent/applications/search/download", nil, map[string]interface{}{
-					"q":            body.Q,
-					"filters":      body.Filters,
-					"rangeFilters": body.RangeFilters,
-					"sort":         body.Sort,
-					"fields":       body.Fields,
-					"pagination":   body.Pagination,
-					"facets":       body.Facets,
-					"format":       dlFmt,
-				})
-				return nil
-			}
-			data, err := api.DefaultClient.DownloadPatentsPost(ctx, body, dlFmt)
-			if err != nil {
-				return annotateSearch404(err)
-			}
-			writeDownloadResult(data)
-			return nil
-		}
-
-		query := buildGetQuery(freeTextQuery)
-		opts := types.SearchOptions{
-			Limit:  searchFlags.limit,
-			Offset: searchFlags.offset,
-			Sort:   buildGetSort(),
-		}
-		if flagDryRun {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = dlFmt
-			printDryRunGET("/api/v1/patent/applications/search/download", params)
-			return nil
-		}
-		data, err := api.DefaultClient.DownloadPatents(ctx, query, dlFmt, opts)
-		if err != nil {
-			return annotateSearch404(err)
-		}
-		writeDownloadResult(data)
-		return nil
+	// (validateSearchMode has already rejected a bad --download value.)
+	if dlFmt, _ := downloadFormat(cmd); dlFmt != "" {
+		return runSearchDownload(ctx, cmd, freeTextQuery, needsPost, dlFmt)
 	}
 
 	if searchFlags.all {
@@ -254,6 +215,82 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	return runSearchSinglePage(ctx, cmd, freeTextQuery, needsPost)
+}
+
+// runSearchDownload exports the search through the server-side download
+// endpoint and writes the raw JSON or CSV to stdout.
+//
+// The endpoint pages like the search endpoint and defaults to 25 rows, so the
+// export first counts the matches and asks for all of them (at most
+// exportCap). An explicit --limit is sent as given. --all means the same full
+// export and overrides --limit, as it does for a paginated search.
+func runSearchDownload(ctx context.Context, cmd *cobra.Command, freeTextQuery string, usePost bool, dlFmt string) error {
+	const downloadPath = "/api/v1/patent/applications/search/download"
+
+	limit, offset := searchFlags.limit, searchFlags.offset
+	fullExport := searchFlags.all || !explicitExportLimit(cmd)
+
+	if flagDryRun {
+		// Nothing is sent, so the count that would set the limit is unknown:
+		// print the count request, then the download with a placeholder.
+		var limitShown interface{} = limit
+		if fullExport {
+			if _, err := executeSearchCountOnly(ctx, freeTextQuery, usePost); err != nil {
+				return err
+			}
+			printDryRunExportNote()
+			limitShown = exportLimitPlaceholder
+		}
+		if usePost {
+			body := buildPostBody(freeTextQuery, limit, offset)
+			printDryRunPOST(downloadPath, nil, map[string]interface{}{
+				"q":            body.Q,
+				"filters":      body.Filters,
+				"rangeFilters": body.RangeFilters,
+				"sort":         body.Sort,
+				"fields":       body.Fields,
+				"pagination":   map[string]interface{}{"offset": offset, "limit": limitShown},
+				"facets":       body.Facets,
+				"format":       dlFmt,
+			})
+			return nil
+		}
+		params := searchOptionsToParams(buildGetQuery(freeTextQuery), types.SearchOptions{
+			Limit:  limit,
+			Offset: offset,
+			Sort:   buildGetSort(),
+		})
+		params["format"] = dlFmt
+		params["limit"] = fmt.Sprint(limitShown)
+		printDryRunGET(downloadPath, params)
+		return nil
+	}
+
+	if fullExport {
+		resp, err := executeSearchCountOnly(ctx, freeTextQuery, usePost)
+		if err != nil {
+			return err
+		}
+		limit = exportLimit(resp.Count, offset)
+		reportExportSize(resp.Count, limit)
+	}
+
+	var data []byte
+	var err error
+	if usePost {
+		data, err = api.DefaultClient.DownloadPatentsPost(ctx, buildPostBody(freeTextQuery, limit, offset), dlFmt)
+	} else {
+		data, err = api.DefaultClient.DownloadPatents(ctx, buildGetQuery(freeTextQuery), dlFmt, types.SearchOptions{
+			Limit:  limit,
+			Offset: offset,
+			Sort:   buildGetSort(),
+		})
+	}
+	if err != nil {
+		return exportTimeoutHint(annotateSearch404(err))
+	}
+	writeDownloadResult(data)
+	return nil
 }
 
 // runSearchCountOnly performs a lightweight search and returns only the total count.
@@ -579,7 +616,11 @@ func validateSearchInputs() error {
 }
 
 func validateSearchMode(cmd *cobra.Command) error {
-	if searchFlags.countOnly && downloadFormat(cmd) != "" {
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if searchFlags.countOnly && dlFmt != "" {
 		return usageErrorf("cannot combine --count-only and --download")
 	}
 	return nil

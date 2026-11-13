@@ -139,7 +139,8 @@ uspto search --granted-after 2024-01-01 -f json -q
 # Pagination and export
 uspto search --assignee "Tesla" --granted --all -f json -q        # All pages (up to 10,000)
 uspto search --assignee "Tesla" --granted --all -f csv > out.csv   # Client-side CSV concat
-uspto search --assignee "Tesla" --download csv > out.csv           # Server-side bulk export
+uspto search --assignee "Tesla" --download csv > out.csv           # Server-side export of EVERY match (counts first, max 10,000 rows)
+uspto search --assignee "Tesla" --download csv --limit 200 > out.csv   # Export exactly 200 rows, no count request
 uspto search --title "AI" --count-only -f json -q                  # Fast count only
 
 # Advanced: POST filters and facets
@@ -239,8 +240,8 @@ uspto ptab appeals-for <appealNumber> -f json -q
 uspto ptab interferences --limit 10 -f json -q
 uspto ptab interference <documentId> -f json -q
 uspto ptab interferences-for <interferenceNumber> -f json -q
-# Bulk download
-uspto ptab search --type IPR --download csv > ipr_proceedings.csv
+# Export every match as raw CSV/JSON (counts first, max 10,000 rows; --limit N exports fewer)
+uspto ptab search --type IPR --petitioner "Samsung" --download csv > samsung_iprs.csv
 ```
 
 ### Petition Decisions
@@ -297,7 +298,7 @@ uspto search --title "solid state battery" --granted --filed-within 5y --count-o
 # Faceted analysis
 uspto search --title "solid state battery" --granted --filed-within 5y --facets "applicationMetaData.firstApplicantName" -f json -q
 
-# Full export
+# Full export (every match, up to 10,000 rows). Redirect to a file: the output can be large
 uspto search --assignee "Samsung" --cpc "H01M" --download csv > samsung_battery.csv
 ```
 
@@ -344,6 +345,7 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 - **CPC search unreliable**: `--cpc "H04W"` may 404. Use `--filter "applicationMetaData.cpcClassificationBag=H04W*"` instead.
 - **`--granted` and `--pending` are mutually exclusive**: the CLI rejects the combination with an error before any request.
 - **`--pending` means still alive**: it excludes granted patents, abandoned applications and expired provisionals, so the count is "applications still in prosecution" (plus PCT international-phase records, which are neither). Neither flag = everything, abandoned included. Releases up to v0.3.0 treated `--pending` as "has a pre-grant publication", which returned most granted patents too.
+- **`--download` exports everything**: with no `--limit` it sends a count request and then exports every match (at most 10,000 rows) as raw JSON/CSV on stdout, not the envelope. Always redirect it to a file, or pass `--limit N`, so thousands of rows do not land in your context. Above 10,000 matches it warns on stderr and exports the first 10,000. Values other than `json`/`csv` exit 2. Large exports may need a higher `--timeout` (default 30 s).
 - **`--granted-after` is more reliable** than `--filed-after + --granted` for issued-only date windows.
 - **`--type` flag unreliable via GET**: Use `--filter "applicationTypeLabelName=Design"` instead.
 - **6MB payload limit**: Reduce `--limit` or use `--fields` to narrow response. HTTP 413 = too broad.

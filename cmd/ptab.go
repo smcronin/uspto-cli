@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -11,25 +10,50 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// downloadFormat returns the download format from the --download flag.
-// Empty string means --download was not set.
-func downloadFormat(cmd *cobra.Command) string {
-	v, _ := cmd.Flags().GetString("download")
-	return v
+// ptabExport is one --download request against a PTAB search endpoint.
+type ptabExport struct {
+	// searchPath is the search endpoint; its export lives at searchPath +
+	// "/download".
+	searchPath string
+	query      string
+	opts       types.SearchOptions
+	format     string
+	// count returns the number of results the query matches.
+	count func(ctx context.Context) (int, error)
+	// download fetches the export with the resolved options.
+	download func(ctx context.Context, opts types.SearchOptions) ([]byte, error)
 }
 
-// addDownloadFlag adds the --download flag to a command.
-func addDownloadFlag(cmd *cobra.Command) {
-	cmd.Flags().String("download", "", "Download all results in one request (json or csv)")
-}
+// runPtabExport performs a --download for a PTAB search command: it resolves
+// the row limit (see resolveExportLimit), fetches the export and writes it to
+// stdout. Under --dry-run it prints the requests instead and sends nothing.
+func runPtabExport(cmd *cobra.Command, e ptabExport) error {
+	ctx := context.Background()
 
-// writeDownloadResult writes raw bytes from a download endpoint to stdout.
-func writeDownloadResult(data []byte) {
-	os.Stdout.Write(data)
-	// Ensure trailing newline for terminal friendliness.
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		os.Stdout.Write([]byte("\n"))
+	if flagDryRun {
+		params := searchOptionsToParams(e.query, e.opts)
+		params["format"] = e.format
+		if !explicitExportLimit(cmd) {
+			printDryRunGET(e.searchPath, searchOptionsToParams(e.query, types.SearchOptions{Limit: 1}))
+			printDryRunExportNote()
+			params["limit"] = exportLimitPlaceholder
+		}
+		printDryRunGET(e.searchPath+"/download", params)
+		return nil
 	}
+
+	limit, err := resolveExportLimit(ctx, cmd, e.opts.Limit, e.opts.Offset, e.count)
+	if err != nil {
+		return err
+	}
+	e.opts.Limit = limit
+
+	data, err := e.download(ctx, e.opts)
+	if err != nil {
+		return exportTimeoutHint(err)
+	}
+	writeDownloadResult(data)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -110,23 +134,31 @@ func runPtabSearch(cmd *cobra.Command, args []string) error {
 		Sort:   sort,
 	}
 
-	if flagDryRun {
-		if fmt := downloadFormat(cmd); fmt != "" {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = fmt
-			printDryRunGET("/api/v1/patent/trials/proceedings/search/download", params)
-			return nil
-		}
-		printDryRunGET("/api/v1/patent/trials/proceedings/search", searchOptionsToParams(query, opts))
-		return nil
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if dlFmt != "" {
+		return runPtabExport(cmd, ptabExport{
+			searchPath: "/api/v1/patent/trials/proceedings/search",
+			query:      query,
+			opts:       opts,
+			format:     dlFmt,
+			count: func(ctx context.Context) (int, error) {
+				resp, err := api.DefaultClient.SearchProceedings(ctx, query, types.SearchOptions{Limit: 1})
+				if err != nil {
+					return 0, err
+				}
+				return resp.Count, nil
+			},
+			download: func(ctx context.Context, opts types.SearchOptions) ([]byte, error) {
+				return api.DefaultClient.DownloadProceedingsSearch(ctx, query, dlFmt, opts)
+			},
+		})
 	}
 
-	if fmt := downloadFormat(cmd); fmt != "" {
-		data, err := api.DefaultClient.DownloadProceedingsSearch(context.Background(), query, fmt, opts)
-		if err != nil {
-			return err
-		}
-		writeDownloadResult(data)
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/proceedings/search", searchOptionsToParams(query, opts))
 		return nil
 	}
 
@@ -233,23 +265,31 @@ func runPtabDecisions(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
-	if flagDryRun {
-		if fmt := downloadFormat(cmd); fmt != "" {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = fmt
-			printDryRunGET("/api/v1/patent/trials/decisions/search/download", params)
-			return nil
-		}
-		printDryRunGET("/api/v1/patent/trials/decisions/search", searchOptionsToParams(query, opts))
-		return nil
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if dlFmt != "" {
+		return runPtabExport(cmd, ptabExport{
+			searchPath: "/api/v1/patent/trials/decisions/search",
+			query:      query,
+			opts:       opts,
+			format:     dlFmt,
+			count: func(ctx context.Context) (int, error) {
+				resp, err := api.DefaultClient.SearchDecisions(ctx, query, types.SearchOptions{Limit: 1})
+				if err != nil {
+					return 0, err
+				}
+				return resp.Count, nil
+			},
+			download: func(ctx context.Context, opts types.SearchOptions) ([]byte, error) {
+				return api.DefaultClient.DownloadDecisionsSearch(ctx, query, dlFmt, opts)
+			},
+		})
 	}
 
-	if fmt := downloadFormat(cmd); fmt != "" {
-		data, err := api.DefaultClient.DownloadDecisionsSearch(context.Background(), query, fmt, opts)
-		if err != nil {
-			return err
-		}
-		writeDownloadResult(data)
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/decisions/search", searchOptionsToParams(query, opts))
 		return nil
 	}
 
@@ -383,23 +423,31 @@ func runPtabDocs(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
-	if flagDryRun {
-		if fmt := downloadFormat(cmd); fmt != "" {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = fmt
-			printDryRunGET("/api/v1/patent/trials/documents/search/download", params)
-			return nil
-		}
-		printDryRunGET("/api/v1/patent/trials/documents/search", searchOptionsToParams(query, opts))
-		return nil
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if dlFmt != "" {
+		return runPtabExport(cmd, ptabExport{
+			searchPath: "/api/v1/patent/trials/documents/search",
+			query:      query,
+			opts:       opts,
+			format:     dlFmt,
+			count: func(ctx context.Context) (int, error) {
+				resp, err := api.DefaultClient.SearchTrialDocuments(ctx, query, types.SearchOptions{Limit: 1})
+				if err != nil {
+					return 0, err
+				}
+				return resp.Count, nil
+			},
+			download: func(ctx context.Context, opts types.SearchOptions) ([]byte, error) {
+				return api.DefaultClient.DownloadTrialDocumentsSearch(ctx, query, dlFmt, opts)
+			},
+		})
 	}
 
-	if fmt := downloadFormat(cmd); fmt != "" {
-		data, err := api.DefaultClient.DownloadTrialDocumentsSearch(context.Background(), query, fmt, opts)
-		if err != nil {
-			return err
-		}
-		writeDownloadResult(data)
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/trials/documents/search", searchOptionsToParams(query, opts))
 		return nil
 	}
 
@@ -524,23 +572,31 @@ func runPtabAppeals(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
-	if flagDryRun {
-		if fmt := downloadFormat(cmd); fmt != "" {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = fmt
-			printDryRunGET("/api/v1/patent/appeals/decisions/search/download", params)
-			return nil
-		}
-		printDryRunGET("/api/v1/patent/appeals/decisions/search", searchOptionsToParams(query, opts))
-		return nil
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if dlFmt != "" {
+		return runPtabExport(cmd, ptabExport{
+			searchPath: "/api/v1/patent/appeals/decisions/search",
+			query:      query,
+			opts:       opts,
+			format:     dlFmt,
+			count: func(ctx context.Context) (int, error) {
+				resp, err := api.DefaultClient.SearchAppeals(ctx, query, types.SearchOptions{Limit: 1})
+				if err != nil {
+					return 0, err
+				}
+				return resp.Count, nil
+			},
+			download: func(ctx context.Context, opts types.SearchOptions) ([]byte, error) {
+				return api.DefaultClient.DownloadAppealsSearch(ctx, query, dlFmt, opts)
+			},
+		})
 	}
 
-	if fmt := downloadFormat(cmd); fmt != "" {
-		data, err := api.DefaultClient.DownloadAppealsSearch(context.Background(), query, fmt, opts)
-		if err != nil {
-			return err
-		}
-		writeDownloadResult(data)
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/appeals/decisions/search", searchOptionsToParams(query, opts))
 		return nil
 	}
 
@@ -665,23 +721,31 @@ func runPtabInterferences(cmd *cobra.Command, args []string) error {
 		Offset: offset,
 	}
 
-	if flagDryRun {
-		if fmt := downloadFormat(cmd); fmt != "" {
-			params := searchOptionsToParams(query, opts)
-			params["format"] = fmt
-			printDryRunGET("/api/v1/patent/interferences/decisions/search/download", params)
-			return nil
-		}
-		printDryRunGET("/api/v1/patent/interferences/decisions/search", searchOptionsToParams(query, opts))
-		return nil
+	dlFmt, err := downloadFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if dlFmt != "" {
+		return runPtabExport(cmd, ptabExport{
+			searchPath: "/api/v1/patent/interferences/decisions/search",
+			query:      query,
+			opts:       opts,
+			format:     dlFmt,
+			count: func(ctx context.Context) (int, error) {
+				resp, err := api.DefaultClient.SearchInterferences(ctx, query, types.SearchOptions{Limit: 1})
+				if err != nil {
+					return 0, err
+				}
+				return resp.Count, nil
+			},
+			download: func(ctx context.Context, opts types.SearchOptions) ([]byte, error) {
+				return api.DefaultClient.DownloadInterferencesSearch(ctx, query, dlFmt, opts)
+			},
+		})
 	}
 
-	if fmt := downloadFormat(cmd); fmt != "" {
-		data, err := api.DefaultClient.DownloadInterferencesSearch(context.Background(), query, fmt, opts)
-		if err != nil {
-			return err
-		}
-		writeDownloadResult(data)
+	if flagDryRun {
+		printDryRunGET("/api/v1/patent/interferences/decisions/search", searchOptionsToParams(query, opts))
 		return nil
 	}
 

@@ -245,9 +245,12 @@ uspto search --assignee "Tesla" --granted --all -f csv > tesla_all.csv
 # Count matches only (lightweight sizing call for agents)
 uspto search --assignee "Tesla" --granted-after 2023-01-01 --count-only -f json -q
 
-# Download all results server-side (single request, supports CSV)
-uspto search --title "battery" --download csv > batteries.csv
+# Export every matching result server-side as raw JSON or CSV.
+# Without --limit the CLI counts first, then exports all rows (at most 10,000).
+uspto search --title "bicycle saddle" --download csv > saddles.csv
 uspto search --assignee "Tesla" --download json > tesla.json
+# An explicit --limit exports exactly that many rows and skips the count
+uspto search --title "battery" --download csv --limit 500 > batteries_500.csv
 # With filters/ranges, --download automatically uses POST body syntax
 uspto search --granted --filed-after 2024-01-01 --filter "applicationTypeLabelName=Utility" --download csv > granted_utility.csv
 
@@ -259,6 +262,14 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - Uses `POST /search` when `--filter`, `--facets`, date ranges, or `--granted/--pending` are present.
 - Uses `GET /search` for simple query-only cases.
 - For `--download`, it uses `POST /search/download` when those advanced parameters are present; otherwise `GET /search/download`.
+
+`--download json|csv` (on `search` and on `ptab search`, `decisions`, `docs`, `appeals`, `interferences`):
+- The download endpoints page like the search endpoints and return 25 rows unless told otherwise. So when `--limit` is not given, the CLI sends one count request, then exports `min(total, 10000)` rows and prints `Exporting N of TOTAL results.` on stderr. If the total is above 10,000 it prints a warning instead, even under `-q`; split the query (for example by date range) to get the rest.
+- An explicit `--limit` is sent as given, with no count request. `--offset` moves the start of the export.
+- `--all` together with `--download` means the same full export (and overrides `--limit`).
+- The value must be `json` or `csv`; anything else is a usage error (exit 2).
+- The export is raw server output on stdout, not the CLI envelope. It runs under `--timeout` (30 s by default); raise it for exports of several thousand rows.
+- `--dry-run` sends nothing: it prints the count request, then the download request with a placeholder where the counted limit would go.
 - `--all -f csv` performs client-side page concatenation for CSV export UX (useful when you need paged search semantics instead of `--download csv`).
 
 `--granted` and `--pending`:
@@ -412,9 +423,10 @@ uspto ptab interferences [query]
 uspto ptab interference <documentId>
 uspto ptab interferences-for <interferenceId> # All decisions for an interference
 
-# Bulk download of search results (single request)
-uspto ptab search --type IPR --download csv > ipr_proceedings.csv
-uspto ptab decisions --download json > decisions.json
+# Export search results as raw CSV/JSON: counts first, then exports all rows (at most 10,000)
+uspto ptab search --type IPR --petitioner "Apple" --download csv > apple_iprs.csv
+uspto ptab decisions --trial IPR2020-00388 --download json > decisions.json
+uspto ptab search --type IPR --download csv --limit 200 > first_200_iprs.csv
 ```
 
 ### Petition Decisions
@@ -494,7 +506,7 @@ Built for AI agents and automation:
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
 - **`--all`** auto-paginates up to 10,000 results
 - **`--count-only`** returns just total matches for fast landscape sizing
-- **`--download`** server-side bulk export (json or csv) in a single request
+- **`--download`** server-side export (json or csv) of every matching row, up to 10,000: one count request, then one export; `--limit` exports fewer
 - **`--facets`** returns aggregated counts alongside results
 - **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command, and mark an incomplete result with `partial: true` and `warnings`
 - **NDJSON** format for streaming large result sets

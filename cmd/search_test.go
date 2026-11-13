@@ -321,6 +321,10 @@ func TestRunSearch_DownloadWithFiltersUsesPostEndpoint(t *testing.T) {
 		if !ok || len(ranges) == 0 {
 			t.Fatalf("rangeFilters missing from POST body: %#v", body["rangeFilters"])
 		}
+		pagination, _ := body["pagination"].(map[string]interface{})
+		if got, _ := pagination["limit"].(float64); got != 10 {
+			t.Fatalf("pagination.limit = %v, want the explicit --limit 10", pagination["limit"])
+		}
 
 		w.Header().Set("Content-Type", "text/csv")
 		fmt.Fprint(w, "applicationNumberText\n16123456\n")
@@ -329,10 +333,16 @@ func TestRunSearch_DownloadWithFiltersUsesPostEndpoint(t *testing.T) {
 
 	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
 
+	// An explicit --limit is sent as given, with no count request first (the
+	// handler above fails the test on any path but /search/download).
 	cmd := &cobra.Command{}
 	cmd.Flags().String("download", "", "")
+	cmd.Flags().Int("limit", 25, "")
 	if err := cmd.Flags().Set("download", "csv"); err != nil {
 		t.Fatalf("set download flag: %v", err)
+	}
+	if err := cmd.Flags().Set("limit", "10"); err != nil {
+		t.Fatalf("set limit flag: %v", err)
 	}
 
 	oldStdout := os.Stdout
