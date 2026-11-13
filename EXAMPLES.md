@@ -330,7 +330,8 @@ uspto bulk download PTGRXML ipg260101.zip -o ./data/
 Every command can output to CSV for Excel, Google Sheets, or any data tool:
 
 ```bash
-# CSV export for spreadsheet analysis
+# CSV export for spreadsheet analysis. --all pages through at most 10,000
+# results; if the query matches more, a warning on stderr says so
 uspto search --assignee "Tesla" --all -f csv > tesla_portfolio.csv
 
 # Get filing counts by technology area

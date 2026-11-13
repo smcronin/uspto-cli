@@ -238,7 +238,7 @@ uspto search --assignee "Apple" --pending --count-only -f json -q
 uspto search --assignor "Samsung" --limit 20
 uspto search --reel-frame "012345/0001"
 
-# Auto-paginate all results (up to 10,000)
+# Auto-paginate all results (up to 10,000; a longer result set is cut there, with a warning on stderr)
 uspto search --examiner "RILEY" --all -f ndjson
 uspto search --assignee "Tesla" --granted --all -f csv > tesla_all.csv
 
@@ -271,6 +271,8 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - The export is raw server output on stdout, not the CLI envelope. It runs under `--timeout` (30 s by default); raise it for exports of several thousand rows.
 - `--dry-run` sends nothing: it prints the count request, then the download request with a placeholder where the counted limit would go.
 - `--all -f csv` performs client-side page concatenation for CSV export UX (useful when you need paged search semantics instead of `--download csv`).
+
+`--all` and the 10,000-result ceiling: USPTO search pages through at most 10,000 results per query. When a query matches more, `--all` returns the first 10,000 and always prints `Warning: returned 10000 of N results; ...` on stderr, in every output format and under `-q`. With `-f json` the envelope also has `"truncated": true` inside `pagination` and the same text in `warnings`. The exit code stays 0. Split the query (for example by filing-date range) and combine the parts to get everything.
 
 `--granted` and `--pending`:
 - `--granted` keeps records whose publication categories include `Granted/Issued`.
@@ -504,7 +506,7 @@ Built for AI agents and automation:
 - **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error. Exit 2 (`error.type` `INVALID_ARGUMENTS`) covers every input the caller has to fix: unknown commands, subcommands and flags, flag values that do not parse, failed validation (dates, application numbers, `--limit 0`, conflicting flags) and unknown `-f` formats
 - **`--dry-run`** shows the API request without executing (all commands)
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
-- **`--all`** auto-paginates up to 10,000 results
+- **`--all`** auto-paginates up to 10,000 results and never truncates silently: a warning on stderr (also under `-q`) plus `pagination.truncated` in JSON
 - **`--count-only`** returns just total matches for fast landscape sizing
 - **`--download`** server-side export (json or csv) of every matching row, up to 10,000: one count request, then one export; `--limit` exports fewer
 - **`--facets`** returns aggregated counts alongside results

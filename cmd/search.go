@@ -62,11 +62,12 @@ var searchFlags struct {
 }
 
 // autoPageLimit is the maximum number of results that auto-pagination will
-// fetch. The USPTO API caps search results at 10,000.
-const autoPageLimit = 10000
+// fetch. The USPTO API caps search results at 10,000. (A variable, like
+// autoPageSize, only so tests can exercise the cap with small numbers.)
+var autoPageLimit = 10000
 
 // autoPageSize is the page size used during auto-pagination.
-const autoPageSize = 100
+var autoPageSize = 100
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
@@ -222,7 +223,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 //
 // The endpoint pages like the search endpoint and defaults to 25 rows, so the
 // export first counts the matches and asks for all of them (at most
-// exportCap). An explicit --limit is sent as given. --all means the same full
+// 10,000). An explicit --limit is sent as given. --all means the same full
 // export and overrides --limit, as it does for a paginated search.
 func runSearchDownload(ctx context.Context, cmd *cobra.Command, freeTextQuery string, usePost bool, dlFmt string) error {
 	const downloadPath = "/api/v1/patent/applications/search/download"
@@ -398,8 +399,33 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		HasMore: totalCount > len(allResults),
 	}
 
-	outputResult(cmd, allResults, pagination)
+	var notes resultNotes
+	if warning := allPagesTruncation(len(allResults), totalCount, offset); warning != "" {
+		pagination.Truncated = true
+		notes.Warnings = []string{warning}
+	}
+
+	outputResultWithNotes(cmd, allResults, pagination, nil, notes)
 	return nil
+}
+
+// allPagesTruncation reports an --all run that stopped before the end of the
+// result set, which happens when the query matches more than the 10,000
+// results USPTO search will page through. nextOffset is where the following
+// page would have started. It returns "" for a complete run; otherwise it
+// prints the warning on stderr and returns it for the JSON envelope.
+//
+// The line is printed for every output format and under --quiet: ndjson, csv
+// and table output have no envelope, and a silently short export is exactly
+// what a landscape count must not rest on.
+func allPagesTruncation(fetched, total, nextOffset int) string {
+	if nextOffset >= total {
+		return ""
+	}
+	warning := fmt.Sprintf("returned %d of %d results; USPTO search stops at %d. Split the query (for example by filing-date range) to get the rest.",
+		fetched, total, autoPageLimit)
+	fmt.Fprintln(os.Stderr, "Warning: "+warning)
+	return warning
 }
 
 // runSearchAllPagesCSV fetches all pages and concatenates rows client-side
@@ -445,6 +471,8 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 			break
 		}
 	}
+
+	allPagesTruncation(len(rows), totalCount, offset)
 
 	writeCSVRows(rows)
 	return nil

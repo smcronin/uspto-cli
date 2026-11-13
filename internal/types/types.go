@@ -42,6 +42,10 @@ type PaginationMeta struct {
 	Limit   int  `json:"limit"`
 	Total   int  `json:"total"`
 	HasMore bool `json:"hasMore"`
+	// Truncated is true when an auto-paginated run (--all) stopped before the
+	// end of the result set because USPTO search pages through at most
+	// 10,000 results. Results then holds fewer records than Total.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // CLIError is the structured error payload for JSON-mode error output.

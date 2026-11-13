@@ -614,3 +614,127 @@ func TestBuildPostBody_GrantedIsUnchangedAndNotPending(t *testing.T) {
 		t.Errorf("filters = %+v, want the Granted/Issued filter", body.Filters)
 	}
 }
+
+// truncatedSearchServer reports total matches and serves full pages of
+// pageSize records for whatever offset is asked for.
+func truncatedSearchServer(t *testing.T, total, pageSize int) (*httptest.Server, *[]string) {
+	t.Helper()
+	var offsets []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		offsets = append(offsets, r.URL.Query().Get("offset"))
+		resp := types.PatentDataResponse{Count: total}
+		for i := 0; i < pageSize; i++ {
+			resp.PatentFileWrapperDataBag = append(resp.PatentFileWrapperDataBag, types.PatentFileWrapper{
+				ApplicationNumberText: fmt.Sprintf("A%s-%03d", r.URL.Query().Get("offset"), i),
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(ts.Close)
+	return ts, &offsets
+}
+
+// allPagesHarness runs --all against ts with a small cap (300) and page
+// size (100) so the 10,000-result ceiling can be reached in three requests.
+func allPagesHarness(t *testing.T, ts *httptest.Server, format string) {
+	t.Helper()
+	origFlags, origDryRun, origClient := searchFlags, flagDryRun, api.DefaultClient
+	origFormat, origQuiet, origMinify := flagFormat, flagQuiet, flagMinify
+	origLimit, origSize := autoPageLimit, autoPageSize
+	t.Cleanup(func() {
+		searchFlags, flagDryRun, api.DefaultClient = origFlags, origDryRun, origClient
+		flagFormat, flagQuiet, flagMinify = origFormat, origQuiet, origMinify
+		autoPageLimit, autoPageSize = origLimit, origSize
+	})
+	resetSearchFlagsForTest()
+	searchFlags.all = true
+	flagDryRun, flagFormat, flagQuiet, flagMinify = false, format, true, true
+	autoPageLimit, autoPageSize = 300, 100
+	api.DefaultClient = api.NewClient("test-key", api.WithBaseURL(ts.URL))
+}
+
+// --all stops at USPTO's 10,000-result ceiling. That used to be visible only
+// in a progress line -q hides; it is now reported in every format.
+func TestRunSearchAllPages_TruncationIsReportedInEveryFormatWhenQuiet(t *testing.T) {
+	const wantLine = "Warning: returned 300 of 25000 results; USPTO search stops at 300."
+
+	for _, format := range []string{"json", "ndjson", "csv", "table"} {
+		t.Run(format, func(t *testing.T) {
+			ts, offsets := truncatedSearchServer(t, 25000, 100)
+			allPagesHarness(t, ts, format)
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			})
+			if err != nil {
+				t.Fatalf("runSearch() error: %v (truncation must not change the exit code)", err)
+			}
+			if got := strings.Join(*offsets, ","); got != ",100,200" {
+				t.Errorf("requested offsets %q, want three pages", got)
+			}
+			if !strings.Contains(stderr, wantLine) {
+				t.Errorf("stderr lacks the truncation line under -q:\n%s", stderr)
+			}
+			if strings.Count(stderr, "Warning:") != 1 {
+				t.Errorf("want exactly one warning line on stderr:\n%s", stderr)
+			}
+
+			switch format {
+			case "json":
+				var env struct {
+					OK         bool     `json:"ok"`
+					Warnings   []string `json:"warnings"`
+					Pagination struct {
+						Total     int  `json:"total"`
+						HasMore   bool `json:"hasMore"`
+						Truncated bool `json:"truncated"`
+					} `json:"pagination"`
+					Results []json.RawMessage `json:"results"`
+				}
+				if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+					t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, stdout)
+				}
+				if !env.OK || !env.Pagination.Truncated || !env.Pagination.HasMore || env.Pagination.Total != 25000 {
+					t.Errorf("envelope = ok %v pagination %+v, want ok with truncated and hasMore", env.OK, env.Pagination)
+				}
+				if len(env.Results) != 300 {
+					t.Errorf("results = %d, want 300", len(env.Results))
+				}
+				if len(env.Warnings) != 1 || !strings.Contains(env.Warnings[0], "returned 300 of 25000 results") {
+					t.Errorf("warnings = %q, want the truncation warning", env.Warnings)
+				}
+			case "ndjson":
+				if got := strings.Count(strings.TrimSpace(stdout), "\n") + 1; got != 300 {
+					t.Errorf("ndjson lines = %d, want 300", got)
+				}
+			case "csv":
+				if got := strings.Count(strings.TrimSpace(stdout), "\n"); got != 300 {
+					t.Errorf("csv data rows = %d, want 300", got)
+				}
+			}
+		})
+	}
+}
+
+func TestRunSearchAllPages_CompleteRunHasNoTruncationMarker(t *testing.T) {
+	for _, format := range []string{"json", "csv"} {
+		t.Run(format, func(t *testing.T) {
+			ts, _ := truncatedSearchServer(t, 200, 100)
+			allPagesHarness(t, ts, format)
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			})
+			if err != nil {
+				t.Fatalf("runSearch() error: %v", err)
+			}
+			if stderr != "" {
+				t.Errorf("a complete --all run under -q should leave stderr empty, got %q", stderr)
+			}
+			if strings.Contains(stdout, "truncated") || strings.Contains(stdout, `"warnings"`) {
+				t.Errorf("a complete run should carry no truncation marker:\n%.300s", stdout)
+			}
+		})
+	}
+}

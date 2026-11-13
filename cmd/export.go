@@ -15,10 +15,6 @@ import (
 // search commands share: flag registration, value validation, and working
 // out how many rows to ask the server for.
 
-// exportCap is the most rows one --download can return. The USPTO search
-// APIs stop at 10,000 results, the same ceiling --all runs into.
-const exportCap = autoPageLimit
-
 // exportLimitPlaceholder stands in for the row limit in --dry-run output,
 // where the count request that would resolve it is not sent.
 const exportLimitPlaceholder = "(total from the count request, at most 10000)"
@@ -64,8 +60,8 @@ func explicitExportLimit(cmd *cobra.Command) bool {
 // at offset: everything, up to the 10,000-result ceiling.
 func exportLimit(total, offset int) int {
 	limit := total
-	if limit > exportCap {
-		limit = exportCap
+	if limit > autoPageLimit {
+		limit = autoPageLimit
 	}
 	limit -= offset
 	if limit < 1 {
@@ -80,9 +76,9 @@ func exportLimit(total, offset int) int {
 // covers. A truncated export is reported even under --quiet, because the
 // raw download on stdout has no envelope to say so.
 func reportExportSize(total, limit int) {
-	if total > exportCap {
+	if total > autoPageLimit {
 		fmt.Fprintf(os.Stderr, "Warning: exporting %d of %d results; USPTO search stops at %d. Split the query (for example by date range) to get the rest.\n",
-			limit, total, exportCap)
+			limit, total, autoPageLimit)
 		return
 	}
 	if !flagQuiet {
@@ -92,7 +88,7 @@ func reportExportSize(total, limit int) {
 
 // resolveExportLimit returns the row limit to send to a download endpoint.
 // An explicit --limit is respected. Otherwise count is called once and the
-// export covers everything it reports, up to exportCap. The download
+// export covers everything it reports, up to autoPageLimit. The download
 // endpoints default to 25 rows like the search endpoints, so without this a
 // "full export" silently stopped at the first page.
 func resolveExportLimit(ctx context.Context, cmd *cobra.Command, explicitLimit, offset int, count func(context.Context) (int, error)) (int, error) {
