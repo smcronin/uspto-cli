@@ -955,6 +955,12 @@ var pendingExclusions = []string{
 
 // withPendingExclusions appends the --pending exclusions to a query. The
 // caller's query is parenthesised so an OR inside it cannot capture them.
+//
+// With no other terms the result is purely negative ("NOT a AND NOT b
+// ..."). ODP accepts that and subtracts the exclusions from everything the
+// range filters allow: checked live on 2026-11-13, filed 2022-01-03 to
+// 2022-01-07 counted 8,970 without --pending and 1,114 with it. So no
+// match-all term is needed in front.
 func withPendingExclusions(query string) string {
 	clauses := make([]string, 0, len(pendingExclusions))
 	for _, c := range pendingExclusions {

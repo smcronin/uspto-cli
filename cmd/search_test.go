@@ -598,6 +598,28 @@ func TestBuildPostBody_PendingExcludesGrantedAndAbandoned(t *testing.T) {
 	}
 }
 
+// --pending with nothing but a date range sends a purely negative q (no
+// match-all term) and the dates as a range filter. ODP accepts that query
+// and applies the exclusions (checked live 2026-11-13; see
+// withPendingExclusions), so no match-all term is prepended.
+func TestBuildPostBody_PendingWithOnlyADateRangeIsPurelyNegative(t *testing.T) {
+	orig := searchFlags
+	defer func() { searchFlags = orig }()
+	resetSearchFlagsForTest()
+	searchFlags.pending = true
+	searchFlags.filedAfter, searchFlags.filedBefore = "2022-01-03", "2022-01-07"
+
+	body := buildPostBody("", 1, 0)
+
+	if !strings.HasPrefix(body.Q, "NOT ") || strings.Contains(body.Q, "*:*") || strings.Contains(body.Q, "(") {
+		t.Errorf("q = %q, want only the NOT clauses", body.Q)
+	}
+	if len(body.RangeFilters) != 1 || body.RangeFilters[0].Field != "applicationMetaData.filingDate" ||
+		body.RangeFilters[0].ValueFrom != "2022-01-03" || body.RangeFilters[0].ValueTo != "2022-01-07" {
+		t.Errorf("rangeFilters = %+v, want the filing-date range", body.RangeFilters)
+	}
+}
+
 func TestBuildPostBody_GrantedIsUnchangedAndNotPending(t *testing.T) {
 	orig := searchFlags
 	defer func() { searchFlags = orig }()
