@@ -20,9 +20,9 @@ func dryRunHarness(t *testing.T, format string) *int32 {
 	origClient := api.DefaultClient
 	origDryRun, origFormat, origQuiet, origMinify := flagDryRun, flagFormat, flagQuiet, flagMinify
 	origSearch := searchFlags
-	origDLOut, origDLCodes, origDLAs := appDownloadOutputFlag, appDownloadCodesFlag, appDownloadAsFlag
+	origDLOut, origDLCodes, origDLFrom, origDLTo, origDLSort, origDLAs := appDownloadOutputFlag, appDownloadCodesFlag, appDownloadFromFlag, appDownloadToFlag, appDownloadSortFlag, appDownloadAsFlag
 	origAllOut, origAllCodes, origAllFrom, origAllTo, origAllAs := appDownloadAllOutputFlag, appDownloadAllCodesFlag, appDownloadAllFromFlag, appDownloadAllToFlag, appDownloadAllAsFlag
-	origTextCodes, origTextFrom, origTextTo, origTextAs, origTextLatest := appTextCodesFlag, appTextFromFlag, appTextToFlag, appTextAsFlag, appTextLatestFlag
+	origTextCodes, origTextFrom, origTextTo, origTextSort, origTextAs, origTextLatest := appTextCodesFlag, appTextFromFlag, appTextToFlag, appTextSortFlag, appTextAsFlag, appTextLatestFlag
 	origTextAllCodes, origTextAllFrom, origTextAllTo, origTextAllAs := appTextAllCodesFlag, appTextAllFromFlag, appTextAllToFlag, appTextAllAsFlag
 	origBundleOut, origBundleType := patentBundleOutputDir, patentBundleIDType
 
@@ -39,17 +39,17 @@ func dryRunHarness(t *testing.T, format string) *int32 {
 		api.DefaultClient = origClient
 		flagDryRun, flagFormat, flagQuiet, flagMinify = origDryRun, origFormat, origQuiet, origMinify
 		searchFlags = origSearch
-		appDownloadOutputFlag, appDownloadCodesFlag, appDownloadAsFlag = origDLOut, origDLCodes, origDLAs
+		appDownloadOutputFlag, appDownloadCodesFlag, appDownloadFromFlag, appDownloadToFlag, appDownloadSortFlag, appDownloadAsFlag = origDLOut, origDLCodes, origDLFrom, origDLTo, origDLSort, origDLAs
 		appDownloadAllOutputFlag, appDownloadAllCodesFlag, appDownloadAllFromFlag, appDownloadAllToFlag, appDownloadAllAsFlag = origAllOut, origAllCodes, origAllFrom, origAllTo, origAllAs
-		appTextCodesFlag, appTextFromFlag, appTextToFlag, appTextAsFlag, appTextLatestFlag = origTextCodes, origTextFrom, origTextTo, origTextAs, origTextLatest
+		appTextCodesFlag, appTextFromFlag, appTextToFlag, appTextSortFlag, appTextAsFlag, appTextLatestFlag = origTextCodes, origTextFrom, origTextTo, origTextSort, origTextAs, origTextLatest
 		appTextAllCodesFlag, appTextAllFromFlag, appTextAllToFlag, appTextAllAsFlag = origTextAllCodes, origTextAllFrom, origTextAllTo, origTextAllAs
 		patentBundleOutputDir, patentBundleIDType = origBundleOut, origBundleType
 	})
 
 	flagDryRun, flagFormat, flagQuiet, flagMinify = true, format, false, false
-	appDownloadOutputFlag, appDownloadCodesFlag, appDownloadAsFlag = "", "", "pdf"
+	appDownloadOutputFlag, appDownloadCodesFlag, appDownloadFromFlag, appDownloadToFlag, appDownloadSortFlag, appDownloadAsFlag = "", "", "", "", "", "pdf"
 	appDownloadAllOutputFlag, appDownloadAllCodesFlag, appDownloadAllFromFlag, appDownloadAllToFlag, appDownloadAllAsFlag = "", "", "", "", "pdf"
-	appTextCodesFlag, appTextFromFlag, appTextToFlag, appTextAsFlag, appTextLatestFlag = "", "", "", "auto", false
+	appTextCodesFlag, appTextFromFlag, appTextToFlag, appTextSortFlag, appTextAsFlag, appTextLatestFlag = "", "", "", "", "auto", false
 	appTextAllCodesFlag, appTextAllFromFlag, appTextAllToFlag, appTextAllAsFlag = "", "", "", "auto"
 	patentBundleOutputDir, patentBundleIDType = "", idTypeAuto
 	resetSearchFlagsForTest()

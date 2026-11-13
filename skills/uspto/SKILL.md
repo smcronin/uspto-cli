@@ -168,13 +168,13 @@ uspto app xml 16123456 -f json -q          # Associated XML doc metadata (alias 
 
 # Read a file-wrapper document as text (XML first, then DOCX; PDF-only documents are not OCRed)
 uspto app text 16123456 --codes office-action --latest -f json -q
-uspto app text 16123456 3 --as docx -f json -q
+uspto app text 16123456 LMGEU99FGREENX5 --as docx -f json -q   # By documentIdentifier
 uspto app text-all 16123456 --codes office-action -f json -q   # Every matching readable document
 
-# Download a document by 1-based index
-uspto app dl 16123456 3 -o ./office-action.pdf
-uspto app dl 16123456 3 --as docx -o ./office-action.docx  # Word with full text
-uspto app dl 16123456 3 --as xml -o ./office-action.tar    # Structured XML (tar)
+# Download a document by its documentIdentifier (from `app docs`: results[].documentIdentifier)
+uspto app dl 16123456 LMGEU99FGREENX5 -o ./office-action.pdf
+uspto app dl 16123456 LMGEU99FGREENX5 --as docx -o ./office-action.docx  # Word with full text
+uspto app dl 16123456 LMGEU99FGREENX5 --as xml -o ./office-action.tar    # Structured XML (tar)
 
 # Download all file wrapper PDFs
 uspto app dl-all 16123456 -o ./downloads/
@@ -183,6 +183,8 @@ uspto app dl-all 16123456 --codes "rejection" --as docx -o ./rejections/
 ```
 
 `--codes` aliases: `rejection`=CTNF,CTFR | `allowance`=NOA | `claims`=CLM | `spec`=SPEC | `abstract`=ABST | `drawings`=DRWR | `ids`=IDS
+
+**Selecting a document.** Use `documentIdentifier`, the stable handle: it selects the same document in `app dl` and `app text` with no other flags. The 1-based `index` is only a position in one listing. It also works as a selector, but only when `app dl`/`app text` get the same `--codes`, `--from`, `--to` and `--sort` as the `app docs` call that produced it (all three commands accept those four flags); with different flags the same number is a different document.
 
 ### Grant XML Extraction (Structured Patent Text)
 
@@ -308,18 +310,20 @@ uspto search --assignee "Samsung" --cpc "H01M" --download csv > samsung_battery.
 # 1. Timeline overview
 uspto prosecution-timeline 16123456 -f json -q
 
-# 2. Filter for office actions
+# 2. Filter for office actions; note results[].documentIdentifier of the one you want
 uspto app docs 16123456 --codes "CTNF,CTFR,NOA" -f json -q
 
-# 3. Download specific document by index
-uspto app dl 16123456 3 -o ./office-action.pdf
+# 3. Download that document by its documentIdentifier (no filters needed)
+uspto app dl 16123456 LMGEU99FGREENX5 -o ./office-action.pdf
 ```
+
+Do not pass the `index` from step 2 to `app dl` without repeating `--codes "CTNF,CTFR,NOA"`: index 3 of the filtered list is not document 3 of the whole file wrapper.
 
 **Extracting text from office action PDFs:** USPTO file-wrapper PDFs are image-based scans with NO embedded text layer (`pdftotext` returns empty). Use `--as docx` to download the Word version with full structured text:
 
 ```bash
 # Download office action as DOCX (contains full structured text)
-uspto app dl 16123456 3 --as docx -o ./office-action.docx
+uspto app dl 16123456 LMGEU99FGREENX5 --as docx -o ./office-action.docx
 
 # Download all rejections as DOCX
 uspto app dl-all 16123456 --codes "rejection" --as docx -o ./rejections/

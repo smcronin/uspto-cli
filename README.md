@@ -325,7 +325,7 @@ uspto app get <appNumber>              # Full application data
 uspto app meta <appNumber>             # Metadata only
 uspto app docs <appNumber>             # File wrapper documents
 uspto app docs <appNumber> --sort date:asc
-uspto app text <appNumber> [index|documentIdentifier]     # Extract one document's text from XML/DOCX
+uspto app text <appNumber> [documentIdentifier|index]     # Extract one document's text from XML/DOCX
 uspto app text-all <appNumber> --codes office-action      # Extract all matching readable document texts
 uspto app transactions <appNumber>     # Prosecution history
 uspto app continuity <appNumber>       # Parent/child continuity
@@ -336,7 +336,7 @@ uspto app foreign-priority <appNumber> # Foreign priority claims
 uspto app associated-docs <appNumber>  # Associated XML document metadata
 
 # Document downloads
-uspto app download <appNumber> [index|documentIdentifier] # Download a specific document file
+uspto app download <appNumber> [documentIdentifier|index] # Download a specific document file
 uspto app download-all <appNumber>     # Download all document files for one format
 
 # Patent XML extraction (grant + pgpub fallback)
@@ -355,7 +355,23 @@ For older patents (especially pre-2010), citation completeness can vary dependin
 For file-wrapper office actions and similar documents, `app text` is the text-first command. It reads the XML archive directly when available, falls back to DOCX, and avoids the separate download-then-open workflow that agents otherwise need.
 Use `app text-all` when you want the CLI to emit every matching readable document in one pass rather than selecting them one at a time.
 
-Document code filters (`app docs --codes`, `app dl --codes`, `app dl-all --codes`) support aliases:
+**Selecting a document.** Every file-wrapper document has a `documentIdentifier`: the `Document ID` column of the `app docs` table and `documentIdentifier` in its JSON. It is the stable handle, and `app download` and `app text` accept it with no other flags:
+
+```bash
+uspto app docs 16123456 --codes CTNF,CTFR,NOA --sort date:desc
+uspto app download 16123456 LMGEU99FGREENX5 -o office-action.pdf
+uspto app text 16123456 LMGEU99FGREENX5
+```
+
+The 1-based index (`#`) still works, but it is a position in one listing, not a property of the document. `app docs`, `app download` and `app text` take the same `--codes`, `--from`, `--to` and `--sort` flags and number documents the same way, so an index is valid only when the second command repeats the flags of the first:
+
+```bash
+uspto app docs 16123456 --codes CTNF,CTFR,NOA --sort date:desc       # row 2 is ...
+uspto app download 16123456 2 --codes CTNF,CTFR,NOA --sort date:desc # ... this document
+uspto app download 16123456 2                                        # NOT the same document
+```
+
+Document code filters (`app docs --codes`, `app dl --codes`, `app text --codes`, `app dl-all --codes`) support aliases:
 - `rejection` -> `CTNF,CTFR`
 - `allowance` -> `NOA`
 - `claims` -> `CLM`

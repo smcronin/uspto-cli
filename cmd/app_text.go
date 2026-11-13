@@ -51,6 +51,7 @@ var (
 	appTextCodesFlag  string
 	appTextFromFlag   string
 	appTextToFlag     string
+	appTextSortFlag   string
 	appTextAsFlag     string
 	appTextLatestFlag bool
 
@@ -61,13 +62,18 @@ var (
 )
 
 var appTextCmd = &cobra.Command{
-	Use:     "text <appNumber> [docIndex|documentIdentifier]",
+	Use:     "text <appNumber> [documentIdentifier|docIndex]",
 	Aliases: []string{"read"},
 	Short:   "Extract terminal-readable text from a file-wrapper document",
 	Long: `Extract terminal-readable text from an application's file-wrapper document.
 
 The command fetches the selected document directly from the USPTO API and
 extracts text in-memory, without requiring a separate download-and-read step.
+
+Select the document by its documentIdentifier (the "Document ID" column of
+"app docs"), which names the same document whatever filters are in use. A
+1-based docIndex also works, but it is a position in the listing: it is only
+valid with the same --codes, --from, --to and --sort given to "app docs".
 
 By default it prefers XML when available, then falls back to DOCX. PDF text
 extraction is intentionally not attempted here; use "app download --as pdf"
@@ -83,7 +89,11 @@ Examples:
 		if err := validateAppNumber(appNumber); err != nil {
 			return err
 		}
-		if err := validateDateRange("--from", appTextFromFlag, "--to", appTextToFlag); err != nil {
+		// An index is resolved against the listing these flags describe,
+		// exactly as "app docs" numbers it; a documentIdentifier is looked up
+		// in the whole file wrapper.
+		listing := documentListing{codes: appTextCodesFlag, from: appTextFromFlag, to: appTextToFlag, sort: appTextSortFlag}
+		if err := listing.validate(); err != nil {
 			return err
 		}
 		if err := validateTextFormatRequest(appTextAsFlag); err != nil {
@@ -92,14 +102,12 @@ Examples:
 		if appTextLatestFlag && len(args) > 1 {
 			return usageErrorf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
 		}
-
-		docOpts := types.DocumentOptions{
-			DocumentCodes:    normalizeDocumentCodes(appTextCodesFlag),
-			OfficialDateFrom: appTextFromFlag,
-			OfficialDateTo:   appTextToFlag,
+		if len(args) > 1 {
+			listing = listing.forSelector(args[1])
 		}
+
 		if flagDryRun {
-			printDryRunDocuments(appNumber, docOpts)
+			printDryRunDocuments(appNumber, listing.options())
 			switch {
 			case len(args) > 1:
 				fmt.Fprintf(os.Stderr, "Then: GET <XML or DOCX downloadUrl of document %s> and extract its text\n", args[1])
@@ -110,22 +118,22 @@ Examples:
 			}
 			return nil
 		}
-		docResp, err := api.DefaultClient.GetDocuments(context.Background(), appNumber, docOpts)
+		docs, err := listing.fetch(context.Background(), appNumber)
 		if err != nil {
 			return err
 		}
-		if len(docResp.DocumentBag) == 0 {
+		if len(docs) == 0 {
 			return fmt.Errorf("no documents found for application %s", appNumber)
 		}
 
-		docIndex, doc, autoPicked, err := selectDocumentForText(docResp.DocumentBag, args[1:], appTextLatestFlag)
+		docIndex, doc, autoPicked, err := selectDocumentForText(docs, args[1:], appTextLatestFlag)
 		if err != nil {
 			return err
 		}
 		if doc == nil {
-			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a docIndex (1-%d), a documentIdentifier, or use --latest.\n",
-				len(docResp.DocumentBag), len(docResp.DocumentBag))
-			writeDocumentChoices(docResp.DocumentBag)
+			fmt.Fprintf(os.Stderr, "Found %d documents. Specify a documentIdentifier, a docIndex (1-%d) with these same filters, or use --latest.\n",
+				len(docs), len(docs))
+			writeDocumentChoices(docs)
 			return nil
 		}
 		if autoPicked && !flagQuiet {
@@ -277,6 +285,7 @@ func init() {
 	appTextCmd.Flags().StringVar(&appTextCodesFlag, "codes", "", "Comma-separated document codes/aliases to filter by")
 	appTextCmd.Flags().StringVar(&appTextFromFlag, "from", "", "Filter documents from this date (YYYY-MM-DD)")
 	appTextCmd.Flags().StringVar(&appTextToFlag, "to", "", "Filter documents to this date (YYYY-MM-DD)")
+	appTextCmd.Flags().StringVar(&appTextSortFlag, "sort", "", "Sort the docIndex is counted in (date:asc or date:desc, as in app docs)")
 	appTextCmd.Flags().StringVar(&appTextAsFlag, "as", "auto", "Preferred source format: auto, xml, or docx")
 	appTextCmd.Flags().BoolVar(&appTextLatestFlag, "latest", false, "Read the latest document after filtering")
 

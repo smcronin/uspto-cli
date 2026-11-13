@@ -258,11 +258,11 @@ uspto app text-all 16123456 --codes office-action -f json -q
 # Download the entire file wrapper (all PDFs)
 uspto app download-all 16123456
 
-# Or just see what documents are available first
+# Or just see what documents are available first (note the "Document ID" column)
 uspto app docs 16123456
 
-# Download a specific document by index
-uspto app download 16123456 3
+# Download a specific document by its documentIdentifier
+uspto app download 16123456 LMGEU99FGREENX5
 ```
 
 ## Trace a Patent Family Tree
