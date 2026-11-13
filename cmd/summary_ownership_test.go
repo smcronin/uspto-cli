@@ -28,7 +28,28 @@ func TestClassifyConveyance(t *testing.T) {
 		{"CHANGE OF NAME (SEE DOCUMENT FOR DETAILS).", conveysTitle},
 		{"MERGER (SEE DOCUMENT FOR DETAILS).", conveysTitle},
 		{"CORRECTIVE ASSIGNMENT TO CORRECT THE ASSIGNEE NAME PREVIOUSLY RECORDED", conveysTitle},
-		{"", conveysTitle},
+		{"CORRECTIVE ASSIGNMENT TO CORRECT THE ASSIGNEE ADDRESS PREVIOUSLY RECORDED ON REEL 012345 FRAME 0678. ASSIGNOR(S) HEREBY CONFIRMS THE ASSIGNMENT OF ASSIGNOR'S INTEREST.", conveysTitle},
+		{"MERGER AND CHANGE OF NAME (SEE DOCUMENT FOR DETAILS).", conveysTitle},
+		{"ENTITY CONVERSION (SEE DOCUMENT FOR DETAILS).", conveysTitle},
+		{"CONVERSION (SEE DOCUMENT FOR DETAILS).", conveysTitle},
+		{"ASSIGNMENT OF PART OF ASSIGNOR'S INTEREST", conveysTitle},
+		{"CONFIRMATORY ASSIGNMENT", conveysTitle},
+		// A corrective record that confirms a security interest is one.
+		{"CORRECTIVE ASSIGNMENT TO CORRECT THE RECEIVING PARTY PREVIOUSLY RECORDED ON REEL 040000 FRAME 0100. ASSIGNOR(S) HEREBY CONFIRMS THE SECURITY INTEREST.", conveysEncumbrance},
+		// Changes of a lender's agent concern the encumbrance, not title.
+		{"NOTICE OF SUCCESSION OF AGENCY (SEE DOCUMENT FOR DETAILS).", conveysEncumbrance},
+		{"SUCCESSOR AGENT AGREEMENT", conveysEncumbrance},
+		{"APPOINTMENT OF ADMINISTRATIVE AGENT", conveysEncumbrance},
+		{"ASSIGNMENT OF SECURITY INTEREST IN PATENTS", conveysEncumbrance},
+		// Recognised, but neither title nor encumbrance.
+		{"GOVERNMENT INTEREST AGREEMENT", conveysOtherNonTitle},
+		{"CONFIRMATORY LICENSE (SEE DOCUMENT FOR DETAILS).", conveysOtherNonTitle},
+		{"CHANGE OF ADDRESS", conveysOtherNonTitle},
+		// Not recognised: never title.
+		{"", conveysUnrecognised},
+		{"COURT ORDER (SEE DOCUMENT FOR DETAILS).", conveysUnrecognised},
+		{"EMPLOYMENT AGREEMENT", conveysUnrecognised},
+		{"DECLARATION", conveysUnrecognised},
 		// "CLIENT" contains "LIEN" but is not the word.
 		{"ASSIGNMENT TO CLIENT TRUST (SEE DOCUMENT FOR DETAILS).", conveysTitle},
 		{"SECURITY INTEREST (SEE DOCUMENT FOR DETAILS).", conveysEncumbrance},
@@ -133,6 +154,32 @@ func TestOwnershipFrom(t *testing.T) {
 			},
 			wantAssignee: "Founder LLC", wantConvey: assign, wantRecorded: "2019-01-01",
 		},
+		{
+			name: "a recorded-date tie goes to the higher reel, then the higher frame",
+			assignments: []types.Assignment{
+				{ConveyanceText: assign, AssignmentRecordedDate: "2022-02-02", ReelAndFrameNumber: "059001/0200", AssigneeBag: []types.Assignee{{AssigneeNameText: "Second Buyer"}}},
+				{ConveyanceText: assign, AssignmentRecordedDate: "2022-02-02", ReelAndFrameNumber: "059001/0100", AssigneeBag: []types.Assignee{{AssigneeNameText: "First Buyer"}}},
+				{ConveyanceText: assign, AssignmentRecordedDate: "2022-02-02", ReelNumber: 58999, FrameNumber: 900, AssigneeBag: []types.Assignee{{AssigneeNameText: "Lower Reel"}}},
+			},
+			wantAssignee: "Second Buyer", wantConvey: assign, wantRecorded: "2022-02-02",
+		},
+		{
+			name: "a change of a lender's agent is an encumbrance, not the owner",
+			assignments: []types.Assignment{
+				conveyance(assign, "2020-03-01", "OpCo Inc."),
+				conveyance("NOTICE OF SUCCESSION OF AGENCY (SEE DOCUMENT FOR DETAILS).", "2023-04-04", "New Agent Bank"),
+			},
+			wantAssignee: "OpCo Inc.", wantConvey: assign, wantRecorded: "2020-03-01",
+			wantInterests: "New Agent Bank",
+		},
+		{
+			name: "a government interest agreement is neither owner nor encumbrance",
+			assignments: []types.Assignment{
+				conveyance(assign, "2020-03-01", "University"),
+				conveyance("GOVERNMENT INTEREST AGREEMENT", "2021-05-05", "Department of Energy"),
+			},
+			wantAssignee: "University", wantConvey: assign, wantRecorded: "2020-03-01",
+		},
 		{name: "no records"},
 	}
 	for _, tt := range tests {
@@ -153,6 +200,34 @@ func TestOwnershipFrom(t *testing.T) {
 				t.Errorf("security interest holders = %q, want %q", strings.Join(holders, ","), tt.wantInterests)
 			}
 		})
+	}
+}
+
+// An unrecognised conveyance never names the owner, but it is reported, so
+// the reader knows the assignee was chosen without it.
+func TestOwnershipFrom_UnrecognisedConveyancesAreSkippedAndListed(t *testing.T) {
+	const assign = "ASSIGNMENT OF ASSIGNORS INTEREST (SEE DOCUMENT FOR DETAILS)."
+	got := ownershipFrom([]types.Assignment{
+		conveyance("COURT ORDER (SEE DOCUMENT FOR DETAILS).", "2024-01-01", "Receiver LLC"),
+		conveyance(assign, "2020-03-01", "OpCo Inc."),
+		conveyance("", "2019-01-01", "Mystery Co."),
+	})
+	if got.Assignee != "OpCo Inc." {
+		t.Errorf("assignee = %q, want OpCo Inc. (unrecognised records are not title)", got.Assignee)
+	}
+	if len(got.Unclassified) != 2 || got.Unclassified[0].Assignee != "Mystery Co." || got.Unclassified[1].Assignee != "Receiver LLC" {
+		t.Fatalf("unclassified = %+v, want Mystery Co. then Receiver LLC", got.Unclassified)
+	}
+	if got.Unclassified[1].Conveyance != "COURT ORDER (SEE DOCUMENT FOR DETAILS)." || got.Unclassified[1].RecordedDate != "2024-01-01" || got.Unclassified[1].ReelFrame == "" {
+		t.Errorf("unclassified record lacks its basis: %+v", got.Unclassified[1])
+	}
+
+	summary, _ := ownershipSummary(t, "OpCo Inc.", []types.Assignment{
+		conveyance("COURT ORDER (SEE DOCUMENT FOR DETAILS).", "2024-01-01", "Receiver LLC"),
+	})
+	if summary.CurrentAssigneeSource != assigneeFromApplicant || len(summary.UnclassifiedConveyances) != 1 {
+		t.Errorf("source=%q unclassified=%+v, want the applicant fallback with the court order listed",
+			summary.CurrentAssigneeSource, summary.UnclassifiedConveyances)
 	}
 }
 
@@ -292,5 +367,14 @@ func TestWriteKeyValueSummary_ShowsTheBasisOfTheAssignee(t *testing.T) {
 	})
 	if !strings.Contains(fromApplicant, "OpCo Inc. (the applicant; no title assignment is recorded)") {
 		t.Errorf("summary does not say the assignee is the applicant:\n%s", fromApplicant)
+	}
+
+	withUnclassified := render(AppSummary{
+		ApplicationNumber:       "16123456",
+		UnclassifiedConveyances: []UnclassifiedConveyanceSummary{{Assignee: "Receiver LLC", Conveyance: "COURT ORDER", RecordedDate: "2024-01-01"}},
+	})
+	if !strings.Contains(withUnclassified, "Not Classified:") ||
+		!strings.Contains(withUnclassified, "COURT ORDER (assignee Receiver LLC, recorded 2024-01-01; skipped for Current Assignee)") {
+		t.Errorf("summary does not list the unclassified conveyance:\n%s", withUnclassified)
 	}
 }

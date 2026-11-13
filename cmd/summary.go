@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/smcronin/uspto-cli/internal/api"
@@ -50,6 +51,16 @@ type SecurityInterestSummary struct {
 	ReelFrame    string `json:"reelFrame,omitempty"`
 }
 
+// UnclassifiedConveyanceSummary is a recorded conveyance whose text the
+// summary does not recognise as a title transfer, an encumbrance or another
+// known kind of record. It is not used for CurrentAssignee.
+type UnclassifiedConveyanceSummary struct {
+	Assignee     string `json:"assignee,omitempty"`
+	Conveyance   string `json:"conveyance"`
+	RecordedDate string `json:"recordedDate,omitempty"`
+	ReelFrame    string `json:"reelFrame,omitempty"`
+}
+
 // Values of AppSummary.CurrentAssigneeSource.
 const (
 	// assigneeFromAssignment: the assignee of the latest recorded conveyance
@@ -79,11 +90,17 @@ type AppSummary struct {
 	Children          []ContinuitySummary `json:"children,omitempty"`
 
 	// CurrentAssignee is the assignee of the latest recorded conveyance that
-	// transfers title; security interests, liens, licences and releases are
-	// not ownership and are skipped. CurrentAssigneeSource says where the
-	// name came from ("assignment", or "applicant" when no title conveyance
-	// is recorded). For "assignment" the conveyance text and recorded date
-	// of that record are given so the basis can be checked.
+	// transfers title (an assignment, merger, change of name or conversion;
+	// a recorded-date tie goes to the higher reel, then frame). Security
+	// interests, liens, changes of a lender's agent, licences, government
+	// interests and releases are not ownership and are skipped, and so are
+	// conveyances not recognised at all (listed in UnclassifiedConveyances).
+	// CurrentAssigneeSource says where the name came from ("assignment", or
+	// "applicant" when no title conveyance is recorded). For "assignment"
+	// the conveyance text and recorded date of that record are given so the
+	// basis can be checked. Recording order is not chain order: a corrective
+	// or nunc pro tunc assignment recorded late for an early link can name a
+	// former owner, so check `app assignments` when it matters.
 	CurrentAssignee             string `json:"currentAssignee,omitempty"`
 	CurrentAssigneeSource       string `json:"currentAssigneeSource,omitempty"`
 	CurrentAssigneeConveyance   string `json:"currentAssigneeConveyance,omitempty"`
@@ -91,6 +108,10 @@ type AppSummary struct {
 	// SecurityInterests lists the recorded encumbrances, oldest first. A
 	// later release is not matched against them: check `app assignments`.
 	SecurityInterests []SecurityInterestSummary `json:"securityInterests,omitempty"`
+	// UnclassifiedConveyances lists the recorded conveyances whose text is
+	// not recognised, oldest first. They were skipped when choosing
+	// CurrentAssignee, so one of them may change the answer: read them.
+	UnclassifiedConveyances []UnclassifiedConveyanceSummary `json:"unclassifiedConveyances,omitempty"`
 
 	RecentEvents         []EventSummary           `json:"recentEvents,omitempty"`
 	ForeignPriority      []ForeignPrioritySummary `json:"foreignPriority,omitempty"`
@@ -199,39 +220,61 @@ type ownership struct {
 	RecordedDate string
 	// SecurityInterests are the recorded encumbrances, oldest first.
 	SecurityInterests []SecurityInterestSummary
+	// Unclassified are the records whose conveyance text is not recognised
+	// as anything, oldest first. They were not used for the assignee.
+	Unclassified []UnclassifiedConveyanceSummary
 }
 
-// Words that mark a conveyance as not transferring title. They are matched
-// as whole words of the conveyance text, so "LIEN" does not match "CLIENT".
+// Words and phrases that classify a conveyance. Words are matched as whole
+// words of the conveyance text, so "LIEN" does not match "CLIENT"; phrases
+// are matched as whole-word sequences.
 var (
-	// encumbranceWords: the assignee takes a security interest, not title.
-	encumbranceWords = []string{"SECURITY", "SECURED", "LIEN", "LIENS", "MORTGAGE", "COLLATERAL", "PLEDGE"}
+	// encumbranceWords: the assignee takes a security interest, not title,
+	// or the record moves the role of a lender's agent (a successor or
+	// newly appointed administrative or collateral agent), which concerns
+	// the encumbrance and leaves title where it was.
+	encumbranceWords = []string{"SECURITY", "SECURED", "LIEN", "LIENS", "MORTGAGE", "COLLATERAL", "PLEDGE", "AGENT", "AGENTS", "AGENCY"}
 	// releaseWords: an earlier encumbrance is being lifted; the assignee is
 	// whoever it is released to, which is not a transfer of title either.
 	releaseWords = []string{"RELEASE", "RELEASES", "DISCHARGE", "TERMINATION"}
 	// licenceWords: a licence leaves title where it was.
 	licenceWords = []string{"LICENSE", "LICENCE", "SUBLICENSE"}
+	// otherNonTitlePhrases: recognised records that are neither title nor
+	// encumbrance. A government interest agreement records the government's
+	// licence rights; a change of address moves nothing.
+	otherNonTitlePhrases = []string{"GOVERNMENT INTEREST", "CHANGE OF ADDRESS"}
+	// titleWords and titlePhrases are the allow-list of title conveyances:
+	// assignments of the assignors' interest (including nunc pro tunc,
+	// confirmatory and corrective assignments), mergers, changes of name and
+	// entity conversions. They name the owner in their assignee.
+	titleWords   = []string{"ASSIGNMENT", "ASSIGNMENTS", "MERGER", "MERGERS", "CONVERSION"}
+	titlePhrases = []string{"ASSIGNORS INTEREST", "ASSIGNOR S INTEREST", "NUNC PRO TUNC", "CHANGE OF NAME", "NAME CHANGE"}
 )
 
 // conveyanceKind classifies an assignment record by its conveyance text.
 type conveyanceKind int
 
 const (
-	conveysTitle         conveyanceKind = iota // assignment, merger, change of name, ...
-	conveysEncumbrance                         // security interest, lien, mortgage, pledge
-	conveysOtherNonTitle                       // release of an encumbrance, licence
+	conveysTitle         conveyanceKind = iota // assignment, merger, change of name, conversion
+	conveysEncumbrance                         // security interest, lien, mortgage, pledge, lender's agent
+	conveysOtherNonTitle                       // release, licence, government interest, change of address
+	conveysUnrecognised                        // none of the above: not used, but reported
 )
 
 // classifyConveyance decides whether a recorded conveyance transfers title.
-// Anything that is not recognisably an encumbrance, a release or a licence
-// counts as a title conveyance: assignments, mergers, changes of name and
-// corrective assignments all name the owner in their assignee.
+// Title is an allow-list: a conveyance counts as title only when its text is
+// recognisably an assignment, merger, change of name or conversion, and
+// carries no word of an encumbrance, release or licence. Anything that is
+// not recognised is conveysUnrecognised, so an unexpected kind of record can
+// never name the owner.
 func classifyConveyance(text string) conveyanceKind {
+	fields := strings.FieldsFunc(strings.ToUpper(text), func(r rune) bool { return r < 'A' || r > 'Z' })
 	words := map[string]bool{}
-	for _, w := range strings.FieldsFunc(strings.ToUpper(text), func(r rune) bool { return r < 'A' || r > 'Z' }) {
+	for _, w := range fields {
 		words[w] = true
 	}
-	has := func(list []string) bool {
+	joined := " " + strings.Join(fields, " ") + " "
+	hasWord := func(list []string) bool {
 		for _, w := range list {
 			if words[w] {
 				return true
@@ -239,29 +282,84 @@ func classifyConveyance(text string) conveyanceKind {
 		}
 		return false
 	}
+	hasPhrase := func(list []string) bool {
+		for _, p := range list {
+			if strings.Contains(joined, " "+p+" ") {
+				return true
+			}
+		}
+		return false
+	}
 	switch {
-	case has(releaseWords):
+	case hasWord(releaseWords):
 		// "RELEASE OF SECURITY INTEREST" has both; the release decides.
 		return conveysOtherNonTitle
-	case has(encumbranceWords):
+	case hasWord(encumbranceWords):
 		return conveysEncumbrance
-	case has(licenceWords):
+	case hasWord(licenceWords), hasPhrase(otherNonTitlePhrases):
 		return conveysOtherNonTitle
+	case hasWord(titleWords), hasPhrase(titlePhrases):
+		return conveysTitle
 	}
-	return conveysTitle
+	return conveysUnrecognised
+}
+
+// reelFrame returns an assignment's reel and frame numbers, from the numeric
+// fields or else from the "reel/frame" text. ok is false when neither gives
+// both numbers.
+func reelFrame(a *types.Assignment) (reel, frame int, ok bool) {
+	if a.ReelNumber > 0 {
+		return a.ReelNumber, a.FrameNumber, true
+	}
+	r, f, found := strings.Cut(strings.TrimSpace(a.ReelAndFrameNumber), "/")
+	if !found {
+		return 0, 0, false
+	}
+	reel, errR := strconv.Atoi(strings.TrimSpace(r))
+	frame, errF := strconv.Atoi(strings.TrimSpace(f))
+	if errR != nil || errF != nil {
+		return 0, 0, false
+	}
+	return reel, frame, true
+}
+
+// recordedLater reports whether a was recorded after b: a later recorded
+// date, or on the same date a higher reel, then a higher frame (reels and
+// frames are assigned in recording order). A record without a usable
+// reel/frame never wins a tie.
+func recordedLater(a, b *types.Assignment, dateA, dateB string) bool {
+	if dateA != dateB {
+		return dateA > dateB
+	}
+	reelA, frameA, okA := reelFrame(a)
+	reelB, frameB, okB := reelFrame(b)
+	if !okA || !okB {
+		return false
+	}
+	if reelA != reelB {
+		return reelA > reelB
+	}
+	return frameA > frameB
 }
 
 // ownershipFrom reads the current assignee and the security interests out of
 // an application's assignment records.
 //
 // The current assignee is the first-named assignee of the title conveyance
-// with the latest recorded date (received date when the recorded date is
-// missing). The latest record of any kind used to be taken, so a security
-// agreement recorded after the last assignment named the lender as owner.
+// recorded last: latest recorded date (received date when the recorded date
+// is missing), then highest reel and frame. The latest record of any kind
+// used to be taken, so a security agreement recorded after the last
+// assignment named the lender as owner.
+//
+// Known limitation: recording order is not chain order. A corrective or nunc
+// pro tunc assignment recorded years later to fix an early link of the chain
+// becomes the latest title record and names that early assignee, even if
+// the patent has since been sold on. Reconstructing the chain would need the
+// assignors and execution dates of every link; it is not attempted here.
 func ownershipFrom(assignments []types.Assignment) ownership {
 	var own ownership
+	var latest *types.Assignment
 	latestDate := ""
-	found := false
 
 	for i := range assignments {
 		a := &assignments[i]
@@ -282,13 +380,19 @@ func ownershipFrom(assignments []types.Assignment) ownership {
 				RecordedDate: date,
 				ReelFrame:    a.ReelAndFrameNumber,
 			})
+		case conveysUnrecognised:
+			own.Unclassified = append(own.Unclassified, UnclassifiedConveyanceSummary{
+				Assignee:     holder,
+				Conveyance:   a.ConveyanceText,
+				RecordedDate: date,
+				ReelFrame:    a.ReelAndFrameNumber,
+			})
 		case conveysTitle:
 			if holder == "" {
 				continue
 			}
-			if !found || date > latestDate {
-				found = true
-				latestDate = date
+			if latest == nil || recordedLater(a, latest, date, latestDate) {
+				latest, latestDate = a, date
 				own.Assignee, own.Conveyance, own.RecordedDate = holder, a.ConveyanceText, date
 			}
 		}
@@ -296,6 +400,9 @@ func ownershipFrom(assignments []types.Assignment) ownership {
 
 	sort.SliceStable(own.SecurityInterests, func(i, j int) bool {
 		return own.SecurityInterests[i].RecordedDate < own.SecurityInterests[j].RecordedDate
+	})
+	sort.SliceStable(own.Unclassified, func(i, j int) bool {
+		return own.Unclassified[i].RecordedDate < own.Unclassified[j].RecordedDate
 	})
 	return own
 }
@@ -307,6 +414,7 @@ func ownershipFrom(assignments []types.Assignment) ownership {
 // or leaving the reader to guess.
 func applyOwnership(summary *AppSummary, own ownership) {
 	summary.SecurityInterests = own.SecurityInterests
+	summary.UnclassifiedConveyances = own.Unclassified
 	if own.Assignee != "" {
 		summary.CurrentAssignee = own.Assignee
 		summary.CurrentAssigneeSource = assigneeFromAssignment
@@ -583,6 +691,13 @@ func writeKeyValueSummary(s AppSummary) {
 			line += ", recorded " + si.RecordedDate
 		}
 		kv("Security Interest", line+")")
+	}
+	for _, uc := range s.UnclassifiedConveyances {
+		line := fmt.Sprintf("%s (assignee %s", uc.Conveyance, safeStr(uc.Assignee, "-"))
+		if uc.RecordedDate != "" {
+			line += ", recorded " + uc.RecordedDate
+		}
+		kv("Not Classified", line+"; skipped for Current Assignee)")
 	}
 	if s.ForeignPriorityCount > 0 {
 		kv("Foreign Priority", fmt.Sprintf("%d claim(s)", s.ForeignPriorityCount))

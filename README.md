@@ -412,9 +412,11 @@ uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 
 `summary` reads ownership from the assignment records:
 
-- `currentAssignee` is the first-named assignee of the latest recorded conveyance that transfers title. Security interests, liens, mortgages, pledges, licences and releases are skipped, so a security agreement recorded after the last assignment no longer names the lender as owner.
+- `currentAssignee` is the first-named assignee of the latest recorded conveyance that transfers title: an assignment (including nunc pro tunc, confirmatory and corrective assignments), a merger, a change of name or an entity conversion. Two records with the same recorded date are ordered by reel, then frame. Security interests, liens, mortgages, pledges, changes of a lender's agent (notice of succession of agency, successor or administrative agent), licences, government interest agreements and releases are skipped, so a security agreement recorded after the last assignment no longer names the lender as owner.
 - `currentAssigneeSource` is `assignment` when the name comes from such a record, with its text in `currentAssigneeConveyance` and its date in `currentAssigneeRecordedDate`. It is `applicant` when no title conveyance is recorded; `currentAssignee` is then the applicant from the metadata, and the conveyance fields are absent.
-- `securityInterests` lists each recorded encumbrance (`holder`, `conveyance`, `recordedDate`, `reelFrame`), oldest first. Releases are not matched against them; read `uspto app assignments` for the full chain.
+- `securityInterests` lists each recorded encumbrance, including changes of a lender's agent (`holder`, `conveyance`, `recordedDate`, `reelFrame`), oldest first. Releases are not matched against them; read `uspto app assignments` for the full chain.
+- `unclassifiedConveyances` lists records whose conveyance text is not recognised as any of the above (`assignee`, `conveyance`, `recordedDate`, `reelFrame`). They are never used as the owner; when the list is present, read it, because one of them may change the answer.
+- Recording order is not chain order. A corrective or nunc pro tunc assignment recorded years later to fix an early link becomes the latest title record and names that early assignee, even if the patent was sold on since. The summary does not reconstruct the chain; check `uspto app assignments` when ownership matters.
 
 The classification goes by the words of the conveyance text. It is a reading aid, not a title opinion.
 
