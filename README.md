@@ -264,7 +264,7 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - For `--download`, it uses `POST /search/download` when those advanced parameters are present; otherwise `GET /search/download`.
 
 `--download json|csv` (on `search` and on `ptab search`, `decisions`, `docs`, `appeals`, `interferences`):
-- The download endpoints page like the search endpoints and return 25 rows unless told otherwise. So when `--limit` is not given, the CLI sends one count request, then exports `min(total, 10000)` rows and prints `Exporting N of TOTAL results.` on stderr. If the total is above 10,000 it prints a warning instead, even under `-q`; split the query (for example by date range) to get the rest.
+- The download endpoints page like the search endpoints and return 25 rows unless told otherwise. So when `--limit` is not given, the CLI sends one count request, then exports `min(total, 10000)` rows and prints `Exporting N of TOTAL results.` on stderr. If the total is above 10,000 it prints a warning instead, even under `-q`; split the query (for example by date range) to get the rest. When the count is 0 (or `--offset` is past the end) no export is requested: stdout gets `[]` for `json` and nothing for `csv`, and stderr says `Exporting 0 of 0 results.`
 - An explicit `--limit` is sent as given, with no count request. `--offset` moves the start of the export.
 - `--all` together with `--download` means the same full export (and overrides `--limit`).
 - The value must be `json` or `csv`; anything else is a usage error (exit 2).

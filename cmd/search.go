@@ -275,6 +275,10 @@ func runSearchDownload(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		}
 		limit = exportLimit(resp.Count, offset)
 		reportExportSize(resp.Count, limit)
+		if limit == 0 {
+			writeEmptyExport(dlFmt)
+			return nil
+		}
 	}
 
 	var data []byte

@@ -57,19 +57,29 @@ func explicitExportLimit(cmd *cobra.Command) bool {
 }
 
 // exportLimit is the row limit for a full export of total results starting
-// at offset: everything, up to the 10,000-result ceiling.
+// at offset: everything, up to the 10,000-result ceiling. It is 0 when there
+// is nothing (left) to export; the caller then writes an empty export
+// without calling the download endpoint (see writeEmptyExport).
 func exportLimit(total, offset int) int {
 	limit := total
 	if limit > autoPageLimit {
 		limit = autoPageLimit
 	}
 	limit -= offset
-	if limit < 1 {
-		// Nothing (left) to export. The download endpoints treat a missing
-		// limit as 25, so ask for a single row instead of sending none.
-		limit = 1
+	if limit < 0 {
+		limit = 0
 	}
 	return limit
+}
+
+// writeEmptyExport writes the export of zero rows: an empty JSON array for
+// json, and nothing for csv (the column header comes from the server, which
+// is not asked). It used to request one row instead, because the download
+// endpoints read a missing or zero limit as 25.
+func writeEmptyExport(format string) {
+	if format == "json" {
+		writeDownloadResult([]byte("[]"))
+	}
 }
 
 // reportExportSize says on stderr how much of the result set a full export

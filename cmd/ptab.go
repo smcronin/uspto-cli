@@ -46,6 +46,10 @@ func runPtabExport(cmd *cobra.Command, e ptabExport) error {
 	if err != nil {
 		return err
 	}
+	if limit == 0 {
+		writeEmptyExport(e.format)
+		return nil
+	}
 	e.opts.Limit = limit
 
 	data, err := e.download(ctx, e.opts)

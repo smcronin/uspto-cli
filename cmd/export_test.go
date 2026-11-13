@@ -124,8 +124,9 @@ func TestExportLimit(t *testing.T) {
 		{25000, 0, 10000},
 		{137, 100, 37},
 		{25000, 9000, 1000},
-		{0, 0, 1},     // nothing to export; never fall back to the server's 25
-		{137, 500, 1}, // offset past the end
+		{0, 0, 0},     // nothing to export: no download request at all
+		{137, 500, 0}, // offset past the end
+		{10000, 10000, 0},
 	}
 	for _, tt := range tests {
 		if got := exportLimit(tt.total, tt.offset); got != tt.want {
@@ -293,6 +294,46 @@ func TestRunSearch_DownloadFromOffsetExportsTheRest(t *testing.T) {
 	got := requests()
 	if len(got) != 2 || got[1].Limit != "37" || got[1].Offset != "100" {
 		t.Fatalf("requests = %+v, want a download with offset=100 limit=37", got)
+	}
+}
+
+// A count of zero (or an offset past the end) needs no export request: the
+// export is empty, in the requested format, and stderr says 0 rows.
+func TestDownload_ZeroCountWritesEmptyExportWithoutRequestingIt(t *testing.T) {
+	commands := []struct {
+		name  string
+		cmd   *cobra.Command
+		run   func() error
+		setup func()
+	}{
+		{"search GET", searchCmd, func() error { return runSearch(searchCmd, []string{"battery"}) }, func() {}},
+		{"search POST", searchCmd, func() error { return runSearch(searchCmd, []string{"battery"}) }, func() { searchFlags.granted = true }},
+		{"ptab search", ptabSearchCmd, func() error { return runPtabSearch(ptabSearchCmd, nil) }, func() {}},
+		{"ptab decisions", ptabDecisionsCmd, func() error { return runPtabDecisions(ptabDecisionsCmd, nil) }, func() {}},
+	}
+	for _, c := range commands {
+		for format, wantStdout := range map[string]string{"json": "[]\n", "csv": ""} {
+			t.Run(c.name+" "+format, func(t *testing.T) {
+				ts, requests := exportServer(t, 0)
+				exportHarness(t, ts, false)
+				c.setup()
+				setFlagForTest(t, c.cmd, "download", format)
+
+				stdout, stderr, err := captureTrademarkOutput(t, c.run)
+				if err != nil {
+					t.Fatalf("run error: %v", err)
+				}
+				if got := requests(); len(got) != 1 || strings.HasSuffix(got[0].Path, "/download") {
+					t.Errorf("requests = %+v, want the count only", got)
+				}
+				if stdout != wantStdout {
+					t.Errorf("stdout = %q, want %q", stdout, wantStdout)
+				}
+				if !strings.Contains(stderr, "Exporting 0 of 0 results.") {
+					t.Errorf("stderr lacks the export size:\n%s", stderr)
+				}
+			})
+		}
 	}
 }
 
