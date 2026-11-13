@@ -67,9 +67,80 @@ func normalizePgpubXMLForGrantParser(in []byte) []byte {
 }
 
 // grantPatentNumber extracts the patent number from the grant XML bib data.
+// It is only a patent number when the XML is a grant: the same element of a
+// pre-grant publication holds the publication number (see identifyPatentXML).
 func grantPatentNumber(g *types.PatentGrantXML) string {
 	return g.BibData.PublicationRef.DocumentID.DocNum
 }
+
+// Sources of parsed patent XML, as reported in the `source` result field.
+const (
+	xmlSourceGrant = "grant"
+	xmlSourcePgpub = "pgpub"
+)
+
+// xmlIdentity is how a parsed patent XML document identifies itself.
+type xmlIdentity struct {
+	Source            string // xmlSourceGrant or xmlSourcePgpub
+	PatentNumber      string // grant only
+	GrantDate         string // grant only
+	PublicationNumber string // the pre-grant publication
+	PublicationDate   string
+}
+
+// identifyPatentXML reads the document's numbers and dates according to its
+// source. Both kinds of XML carry their own number in publication-reference:
+// a grant's is the patent number, a pre-grant publication's is the
+// publication number. Reporting the latter as patentNumber (and its date as
+// grantDate) presented a pending application as a granted patent.
+func identifyPatentXML(g *types.PatentGrantXML, source string) xmlIdentity {
+	own := g.BibData.PublicationRef.DocumentID
+	if source == xmlSourcePgpub {
+		return xmlIdentity{
+			Source:            xmlSourcePgpub,
+			PublicationNumber: own.DocNum,
+			PublicationDate:   own.Date,
+		}
+	}
+	related := g.BibData.RelatedDocuments.RelatedPub.DocumentID
+	return xmlIdentity{
+		Source:            xmlSourceGrant,
+		PatentNumber:      own.DocNum,
+		GrantDate:         own.Date,
+		PublicationNumber: related.DocNum,
+		PublicationDate:   related.Date,
+	}
+}
+
+// heading returns the parenthesised number for a table-mode title line:
+// " (Pat. 10000001)" for a grant, " (Pub. 20190095759)" for a publication.
+func (id xmlIdentity) heading() string {
+	switch {
+	case id.Source == xmlSourcePgpub && id.PublicationNumber != "":
+		return fmt.Sprintf(" (Pub. %s)", id.PublicationNumber)
+	case id.Source != xmlSourcePgpub && id.PatentNumber != "":
+		return fmt.Sprintf(" (Pat. %s)", id.PatentNumber)
+	}
+	return ""
+}
+
+// sourceLine is the table-mode line that says a result came from the
+// pre-grant publication. It is empty for a grant.
+func (id xmlIdentity) sourceLine() string {
+	if id.Source != xmlSourcePgpub {
+		return ""
+	}
+	line := "Source: pre-grant publication (as published, not as granted)"
+	if id.PublicationDate != "" {
+		line += ", published " + id.PublicationDate
+	}
+	return line
+}
+
+// pgpubCitationsWarning explains an empty citations result for an application
+// that has no grant XML. Citations are recorded on the grant only, so the
+// publication cannot say what was cited.
+const pgpubCitationsWarning = "citations are only available from the grant XML, and this application has none (not granted, or its grant XML is not published); the empty result does not mean nothing was cited"
 
 var (
 	xmlTagRE         = regexp.MustCompile(`<[^>]+>`)
@@ -264,15 +335,19 @@ Example:
 		}
 
 		ctx := context.Background()
-		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
+		grant, source, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
 
+		id := identifyPatentXML(grant, source)
 		claims := extractClaims(grant)
 		result := types.ClaimsResult{
 			ApplicationNumber: appNumber,
-			PatentNumber:      grantPatentNumber(grant),
+			Source:            id.Source,
+			PatentNumber:      id.PatentNumber,
+			PublicationNumber: id.PublicationNumber,
+			PublicationDate:   id.PublicationDate,
 			TotalClaims:       len(claims),
 			Claims:            claims,
 		}
@@ -291,11 +366,11 @@ Example:
 }
 
 func writeClaimsTable(r types.ClaimsResult) {
-	fmt.Fprintf(os.Stdout, "Claims for %s", r.ApplicationNumber)
-	if r.PatentNumber != "" {
-		fmt.Fprintf(os.Stdout, " (Pat. %s)", r.PatentNumber)
+	id := xmlIdentity{Source: r.Source, PatentNumber: r.PatentNumber, PublicationNumber: r.PublicationNumber, PublicationDate: r.PublicationDate}
+	fmt.Fprintf(os.Stdout, "Claims for %s%s — %d claims\n", r.ApplicationNumber, id.heading(), r.TotalClaims)
+	if line := id.sourceLine(); line != "" {
+		fmt.Fprintln(os.Stdout, line)
 	}
-	fmt.Fprintf(os.Stdout, " — %d claims\n", r.TotalClaims)
 	fmt.Fprintln(os.Stdout, strings.Repeat("=", 70))
 	for _, c := range r.Claims {
 		fmt.Fprintf(os.Stdout, "\nClaim %d:\n", c.Number)
@@ -353,17 +428,31 @@ Example:
 		}
 
 		ctx := context.Background()
-		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
+		grant, source, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
 
+		id := identifyPatentXML(grant, source)
 		patCits := extractPatentCitations(grant)
 		nplCits := extractNPLCitations(grant)
+
+		// A pre-grant publication carries no citations. Zero from that source
+		// is "unknown", not "nothing was cited": the command still succeeds
+		// with an empty result, and says why in a warning.
+		var notes resultNotes
+		if id.Source == xmlSourcePgpub {
+			patCits, nplCits = nil, nil
+			notes.Warnings = []string{pgpubCitationsWarning}
+		}
+
 		examinerCount, applicantCount, otherCount := citationCategoryCounts(patCits, nplCits)
 		result := types.CitationResult{
 			ApplicationNumber:      appNumber,
-			PatentNumber:           grantPatentNumber(grant),
+			Source:                 id.Source,
+			PatentNumber:           id.PatentNumber,
+			PublicationNumber:      id.PublicationNumber,
+			PublicationDate:        id.PublicationDate,
 			TotalCitations:         len(patCits) + len(nplCits),
 			PatentCitationCount:    len(patCits),
 			NPLCitationCount:       len(nplCits),
@@ -376,6 +465,7 @@ Example:
 
 		progress(fmt.Sprintf("Found %d citations (%d patent, %d NPL).",
 			result.TotalCitations, len(patCits), len(nplCits)))
+		reportWarnings(notes.Warnings)
 
 		opts := getOutputOptions()
 		if opts.Format == "table" {
@@ -383,17 +473,20 @@ Example:
 			return nil
 		}
 
-		outputResult(cmd, result, nil)
+		outputResultWithNotes(cmd, result, nil, nil, notes)
 		return nil
 	},
 }
 
 func writeCitationsTable(r types.CitationResult) {
-	fmt.Fprintf(os.Stdout, "Citations for %s", r.ApplicationNumber)
-	if r.PatentNumber != "" {
-		fmt.Fprintf(os.Stdout, " (Pat. %s)", r.PatentNumber)
+	id := xmlIdentity{Source: r.Source, PatentNumber: r.PatentNumber, PublicationNumber: r.PublicationNumber, PublicationDate: r.PublicationDate}
+	if id.Source == xmlSourcePgpub {
+		// No grant, so nothing to tabulate: say that instead of "0 total".
+		fmt.Fprintf(os.Stdout, "Citations for %s%s — not available\n", r.ApplicationNumber, id.heading())
+		fmt.Fprintln(os.Stdout, "Citations are recorded on the grant only, and this application has no grant XML.")
+		return
 	}
-	fmt.Fprintf(os.Stdout, " — %d total\n", r.TotalCitations)
+	fmt.Fprintf(os.Stdout, "Citations for %s%s — %d total\n", r.ApplicationNumber, id.heading(), r.TotalCitations)
 	fmt.Fprintf(os.Stdout, "Patent: %d | NPL: %d | Examiner: %d | Applicant: %d | Other: %d\n",
 		r.PatentCitationCount, r.NPLCitationCount, r.ExaminerCitationCount, r.ApplicantCitationCount, r.OtherCitationCount)
 	fmt.Fprintln(os.Stdout, strings.Repeat("=", 70))
@@ -447,24 +540,27 @@ Example:
 		}
 
 		ctx := context.Background()
-		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
+		grant, source, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
 
+		id := identifyPatentXML(grant, source)
 		result := types.AbstractResult{
 			ApplicationNumber: appNumber,
-			PatentNumber:      grantPatentNumber(grant),
+			Source:            id.Source,
+			PatentNumber:      id.PatentNumber,
+			PublicationNumber: id.PublicationNumber,
+			PublicationDate:   id.PublicationDate,
 			Abstract:          stripXMLTags(grant.Abstract.Text),
 		}
 
 		opts := getOutputOptions()
 		if opts.Format == "table" {
-			fmt.Fprintf(os.Stdout, "Abstract for %s", result.ApplicationNumber)
-			if result.PatentNumber != "" {
-				fmt.Fprintf(os.Stdout, " (Pat. %s)", result.PatentNumber)
+			fmt.Fprintf(os.Stdout, "Abstract for %s%s\n", result.ApplicationNumber, id.heading())
+			if line := id.sourceLine(); line != "" {
+				fmt.Fprintln(os.Stdout, line)
 			}
-			fmt.Fprintln(os.Stdout)
 			fmt.Fprintln(os.Stdout, strings.Repeat("=", 70))
 			for _, line := range wordWrap(result.Abstract, 70) {
 				fmt.Fprintf(os.Stdout, "  %s\n", line)
@@ -507,17 +603,21 @@ Example:
 		}
 
 		ctx := context.Background()
-		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
+		grant, source, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
 
+		id := identifyPatentXML(grant, source)
 		descText := stripXMLTagsPreserveParagraphs(grant.Description.Text)
 		wordCount := len(strings.Fields(descText))
 
 		result := types.DescriptionResult{
 			ApplicationNumber: appNumber,
-			PatentNumber:      grantPatentNumber(grant),
+			Source:            id.Source,
+			PatentNumber:      id.PatentNumber,
+			PublicationNumber: id.PublicationNumber,
+			PublicationDate:   id.PublicationDate,
 			Description:       descText,
 			WordCount:         wordCount,
 		}
@@ -526,11 +626,10 @@ Example:
 
 		opts := getOutputOptions()
 		if opts.Format == "table" {
-			fmt.Fprintf(os.Stdout, "Description for %s", result.ApplicationNumber)
-			if result.PatentNumber != "" {
-				fmt.Fprintf(os.Stdout, " (Pat. %s)", result.PatentNumber)
+			fmt.Fprintf(os.Stdout, "Description for %s%s — %d words\n", result.ApplicationNumber, id.heading(), result.WordCount)
+			if line := id.sourceLine(); line != "" {
+				fmt.Fprintln(os.Stdout, line)
 			}
-			fmt.Fprintf(os.Stdout, " — %d words\n", result.WordCount)
 			fmt.Fprintln(os.Stdout, strings.Repeat("=", 70))
 			fmt.Fprintln(os.Stdout)
 			fmt.Fprintln(os.Stdout, result.Description)
@@ -572,15 +671,23 @@ Example:
 		}
 
 		ctx := context.Background()
-		grant, _, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
+		grant, source, err := fetchPatentXML(ctx, api.DefaultClient, appNumber)
 		if err != nil {
 			return err
 		}
 
-		patNum := grantPatentNumber(grant)
+		id := identifyPatentXML(grant, source)
 		claims := extractClaims(grant)
 		patCits := extractPatentCitations(grant)
 		nplCits := extractNPLCitations(grant)
+
+		// As in `app citations`: a pre-grant publication carries no
+		// citations, so zero from that source is not a finding.
+		var notes resultNotes
+		if id.Source == xmlSourcePgpub {
+			patCits, nplCits = nil, nil
+			notes.Warnings = []string{pgpubCitationsWarning}
+		}
 		descText := stripXMLTagsPreserveParagraphs(grant.Description.Text)
 		exemplary, _ := strconv.Atoi(grant.BibData.ExemplaryClaim)
 
@@ -605,9 +712,6 @@ Example:
 			prioCountry = pc.Country
 		}
 
-		// Publication number.
-		pubNum := grant.BibData.RelatedDocuments.RelatedPub.DocumentID.DocNum
-
 		// Field of search.
 		var fieldOfSearch []string
 		for _, cpc := range grant.BibData.FieldOfSearch.CPCText {
@@ -619,10 +723,11 @@ Example:
 
 		result := types.FullTextResult{
 			ApplicationNumber:  appNumber,
-			PatentNumber:       patNum,
+			Source:             id.Source,
+			PatentNumber:       id.PatentNumber,
 			Title:              grant.BibData.InventionTitle,
 			Abstract:           stripXMLTags(grant.Abstract.Text),
-			GrantDate:          grant.BibData.PublicationRef.DocumentID.Date,
+			GrantDate:          id.GrantDate,
 			FilingDate:         grant.BibData.ApplicationRef.DocumentID.Date,
 			ApplicationType:    grant.BibData.ApplicationRef.ApplType,
 			Examiner:           examiner,
@@ -646,11 +751,13 @@ Example:
 			Drawings:           extractDrawings(grant),
 			Description:        descText,
 			DescriptionWords:   len(strings.Fields(descText)),
-			PublicationNumber:  pubNum,
+			PublicationNumber:  id.PublicationNumber,
+			PublicationDate:    id.PublicationDate,
 		}
 
 		progress(fmt.Sprintf("Extracted: %d claims, %d citations, %d words of description, %d figures.",
 			result.TotalClaims, result.TotalCitations, result.DescriptionWords, result.FigureCount))
+		reportWarnings(notes.Warnings)
 
 		opts := getOutputOptions()
 		if opts.Format == "table" {
@@ -658,7 +765,7 @@ Example:
 			return nil
 		}
 
-		outputResult(cmd, result, nil)
+		outputResultWithNotes(cmd, result, nil, nil, notes)
 		return nil
 	},
 }
@@ -670,12 +777,17 @@ func writeFulltextTable(r types.FullTextResult) {
 		}
 	}
 
+	fromPgpub := r.Source == xmlSourcePgpub
 	fmt.Fprintln(os.Stdout, "=== Full Patent Text ===")
 	fmt.Fprintln(os.Stdout)
+	if fromPgpub {
+		kv("Source", "pre-grant publication (as published, not as granted)")
+	}
 	kv("Patent Number", r.PatentNumber)
 	kv("Application", r.ApplicationNumber)
 	kv("Title", r.Title)
 	kv("Grant Date", r.GrantDate)
+	kv("Publication Date", r.PublicationDate)
 	kv("Filing Date", r.FilingDate)
 	kv("Application Type", r.ApplicationType)
 	kv("Examiner", r.Examiner)
@@ -698,7 +810,11 @@ func writeFulltextTable(r types.FullTextResult) {
 	kv("Term Extension", r.TermExtensionDays+" days")
 	kv("Publication Number", r.PublicationNumber)
 	kv("Total Claims", strconv.Itoa(r.TotalClaims))
-	kv("Total Citations", strconv.Itoa(r.TotalCitations))
+	if fromPgpub {
+		kv("Total Citations", "not available (citations are recorded on the grant only)")
+	} else {
+		kv("Total Citations", strconv.Itoa(r.TotalCitations))
+	}
 	kv("Drawing Sheets", strconv.Itoa(r.DrawingSheets))
 	kv("Figures", strconv.Itoa(r.FigureCount))
 	kv("Description Words", strconv.Itoa(r.DescriptionWords))
@@ -722,7 +838,11 @@ func writeFulltextTable(r types.FullTextResult) {
 
 	// Citations.
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintf(os.Stdout, "--- Citations (%d) ---\n", r.TotalCitations)
+	if fromPgpub {
+		fmt.Fprintln(os.Stdout, "--- Citations (not available: no grant XML) ---")
+	} else {
+		fmt.Fprintf(os.Stdout, "--- Citations (%d) ---\n", r.TotalCitations)
+	}
 	if len(r.PatentCitations) > 0 {
 		t := table.NewWriter()
 		t.SetOutputMirror(os.Stdout)

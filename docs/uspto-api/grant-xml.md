@@ -146,6 +146,8 @@ Pre-grant publications contain:
 
 They do NOT contain citations (since citations are added during examination).
 
+Both kinds of XML carry their own number and date in `<publication-reference>`: in a grant that is the patent number and grant date, in a pre-grant publication it is the publication number and publication date. The CLI's XML commands report which document they parsed in `source` (`grant` or `pgpub`). For `pgpub` they fill `publicationNumber`/`publicationDate` and leave `patentNumber`/`grantDate` empty, and `app citations` returns an empty list with a warning.
+
 ## Parsing Notes for Go
 
 - Use `encoding/xml` with struct tags matching element names

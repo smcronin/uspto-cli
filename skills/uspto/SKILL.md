@@ -188,7 +188,9 @@ uspto app dl-all 16123456 --codes "rejection" --as docx -o ./rejections/
 
 ### Grant XML Extraction (Structured Patent Text)
 
-Parse official patent XML for structured text. Uses grant XML first, falls back to pgpub XML for pending apps.
+Parse official patent XML for structured text. Uses grant XML first, falls back to pre-grant publication (pgpub) XML when there is no grant XML (pending apps).
+
+**Check `results.source` on every one of these.** `"grant"` = text and claims as granted, `patentNumber` set. `"pgpub"` = the application **as published, not as granted**: `patentNumber` is empty, `grantDate` is absent, and `publicationNumber`/`publicationDate` identify the publication. Never report pgpub claims as the granted claims. `app citations` with `source: "pgpub"` returns an empty list plus a `warnings` entry: citations exist only on the grant, so empty there means "unknown", not "nothing cited".
 
 ```bash
 uspto app claims 16123456 -f json -q       # Individual claims with references

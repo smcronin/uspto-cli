@@ -347,8 +347,17 @@ uspto app description <appNumber>      # Full specification text
 uspto app fulltext <appNumber>         # Everything: meta + abstract + claims + citations + description
 ```
 
-The XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse official patent XML to extract structured data. They prefer grant XML and fall back to pgpub XML for pending applications when available. `fulltext` is the most comprehensive single-command view.
-For pending applications, these commands automatically fall back to pgpub XML when available.
+The XML commands (`abstract`, `claims`, `citations`, `description`, `fulltext`) parse official patent XML to extract structured data. They prefer grant XML and fall back to the pre-grant publication (pgpub) XML when the application has no grant XML, which is the normal case for a pending application. `fulltext` is the most comprehensive single-command view.
+
+Every result says which one it used in `source`:
+
+| `source` | Meaning | Identifying fields |
+| --- | --- | --- |
+| `grant` | Parsed from the grant: claims and text as granted | `patentNumber` (and `grantDate` in `fulltext`); `publicationNumber`/`publicationDate` name the earlier publication when the grant lists one |
+| `pgpub` | Parsed from the pre-grant publication: claims and text **as published, not as granted** | `publicationNumber`, `publicationDate`; `patentNumber` is empty and `grantDate` is absent |
+
+`citations` (and the citation fields of `fulltext`) need the grant: a publication does not list what was cited. With `source: "pgpub"` they return an empty list, `ok: true`, and a `warnings` entry saying that citations are only available from the grant and none exists. Do not read that as "nothing was cited". In table mode the title shows `(Pub. …)` instead of `(Pat. …)` plus a `Source:` line.
+
 For older patents (especially pre-2010), citation completeness can vary depending on legacy XML structure and source data availability.
 
 `app docs` now surfaces both available formats and the CLI's preferred direct-text source (`xml` or `docx`) for each file-wrapper entry.

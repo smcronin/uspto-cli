@@ -244,6 +244,8 @@ uspto app fulltext 16123456
 uspto app citations 16123456
 ```
 
+For an application that has not been granted, these commands read the pre-grant publication instead and say so: the JSON has `"source": "pgpub"` with `publicationNumber`/`publicationDate` (no `patentNumber`), and the table shows `(Pub. …)` and a `Source:` line. The claims are then the claims as published. Citations exist only on the grant, so `app citations` returns an empty list with a warning for such an application.
+
 ## Download Every Document in a Patent's File History
 
 Get all the PDFs — office actions, responses, drawings, everything the USPTO has on file:
