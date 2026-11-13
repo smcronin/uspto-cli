@@ -12,8 +12,8 @@ your agent in a fresh session with the `/uspto` skill loaded.
 | 1 | search (--patent), summary, app claims, app citations, app cont | json | Patent# → app# resolution, grant XML |
 | 2 | search (--assignee, --granted, --filed-within, --all, --facets, --fields, --download, --sort) | csv, json | Facets, field projection, server-side export |
 | 3 | patent bundle | table, json | Auto-ID resolution from pub number, bundle directory structure |
-| 4 | summary, app txn, app docs (--codes), app dl | json, pdf | Document code filtering, PDF download by index |
-| 5 | search (--title, --inventor), app fulltext, app abstract on pending | json | Grant XML on pending app (should fail gracefully) |
+| 4 | summary, app txn, app docs (--codes), app dl | json, pdf | Document code filtering, PDF download by documentIdentifier |
+| 5 | search (--title, --assignee, --granted, --pending), app fulltext, app claims on pending | json | `source: grant` vs `source: pgpub`; failure only for an unpublished app |
 | 6 | ptab search (--type, --patent), ptab get, ptab decisions-for, ptab docs-for | json | Full PTAB workflow |
 | 7 | family (--depth), summary (multiple members), app assign | json | Recursive family tree, multi-member analysis |
 | 8 | search (--examiner, --art-unit, --status, --filter), petition search, status | json, csv | POST filter syntax, petition decisions, status lookup |
@@ -33,7 +33,12 @@ your agent in a fresh session with the `/uspto` skill loaded.
 For each prompt, note:
 - Did the agent pick the right commands without being told which CLI flags to use?
 - Did it handle the patent# → app# resolution correctly?
-- Did it recover gracefully from expected failures (e.g., grant XML on pending app)?
+- Did it recover gracefully from expected failures (e.g., XML commands on an
+  application that is not yet published)?
+- Did it read `source` on XML results and keep pre-grant publication
+  (`pgpub`) claims apart from granted claims?
+- Did it select file-wrapper documents by `documentIdentifier` rather than by
+  an index from a differently filtered listing?
 - Did it present results in a useful, summarized way (not just raw JSON dumps)?
 - Did it chain multiple commands logically without unnecessary calls?
 - Did it route trademark discovery to keyless Trademark Search and identified
