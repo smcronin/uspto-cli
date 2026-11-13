@@ -272,7 +272,7 @@ uspto search --filter "applicationTypeLabelName=Utility" --facets applicationTyp
 - `--dry-run` sends nothing: it prints the count request, then the download request with a placeholder where the counted limit would go.
 - `--all -f csv` performs client-side page concatenation for CSV export UX (useful when you need paged search semantics instead of `--download csv`).
 
-`--all` and the 10,000-result ceiling: USPTO search pages through at most 10,000 results per query. When a query matches more, `--all` returns the first 10,000 and always prints `Warning: returned 10000 of N results; ...` on stderr, in every output format and under `-q`. With `-f json` the envelope also has `"truncated": true` inside `pagination` and the same text in `warnings`. The exit code stays 0. Split the query (for example by filing-date range) and combine the parts to get everything.
+`--all` and the 10,000-result ceiling: USPTO search pages through at most 10,000 results per query. When a query matches more, `--all` returns the first 10,000 and always prints `Warning: returned 10000 of N results; ...` on stderr, in every output format and under `-q`. With `-f json` the envelope also has `"truncated": true` inside `pagination` and the same text in `warnings`. The exit code stays 0. Split the query (for example by filing-date range) and combine the parts to get everything. If a page comes back empty before the reported total is reached and below 10,000, the warning says so instead (`returned N of M results; the API sent an empty page at offset X ...`) and `truncated` is not set, because the ceiling was not the cause.
 
 `--granted` and `--pending`:
 - `--granted` keeps records whose publication categories include `Granted/Issued`.

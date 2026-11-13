@@ -368,6 +368,7 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 	offset := searchFlags.offset
 	pageSize := autoPageSize
 	totalCount := 0
+	emptyPage := false
 
 	for {
 		resp, err := executeSearch(ctx, freeTextQuery, usePost, pageSize, offset)
@@ -387,6 +388,7 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		}
 
 		allResults = append(allResults, resp.PatentFileWrapperDataBag...)
+		emptyPage = len(resp.PatentFileWrapperDataBag) == 0
 
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "  fetched %d / %d\n", len(allResults), totalCount)
@@ -395,7 +397,7 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 		offset += pageSize
 
 		// Stop conditions: we have all results, hit API cap, or no more data.
-		if offset >= totalCount || offset >= autoPageLimit || len(resp.PatentFileWrapperDataBag) == 0 {
+		if offset >= totalCount || offset >= autoPageLimit || emptyPage {
 			break
 		}
 	}
@@ -408,8 +410,8 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 	}
 
 	var notes resultNotes
-	if warning := allPagesTruncation(len(allResults), totalCount, offset); warning != "" {
-		pagination.Truncated = true
+	if warning, truncated := allPagesTruncation(len(allResults), totalCount, offset, emptyPage); warning != "" {
+		pagination.Truncated = truncated
 		notes.Warnings = []string{warning}
 	}
 
@@ -418,22 +420,34 @@ func runSearchAllPages(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 }
 
 // allPagesTruncation reports an --all run that stopped before the end of the
-// result set, which happens when the query matches more than the 10,000
-// results USPTO search will page through. nextOffset is where the following
-// page would have started. It returns "" for a complete run; otherwise it
-// prints the warning on stderr and returns it for the JSON envelope.
+// result set. nextOffset is where the following page would have started, and
+// emptyPage says the run stopped because the last page came back empty. It
+// returns "" for a complete run; otherwise it prints the warning on stderr
+// and returns it for the JSON envelope, with truncated true only when the
+// stop was the 10,000-result ceiling of USPTO search.
+//
+// An empty page below the ceiling is a different stop: the server had no
+// more rows than it reported (the result set changed while paging, or the
+// count was an estimate). It gets its own warning and is not called
+// truncation, because splitting the query would not recover anything.
 //
 // The line is printed for every output format and under --quiet: ndjson, csv
 // and table output have no envelope, and a silently short export is exactly
 // what a landscape count must not rest on.
-func allPagesTruncation(fetched, total, nextOffset int) string {
+func allPagesTruncation(fetched, total, nextOffset int, emptyPage bool) (warning string, truncated bool) {
 	if nextOffset >= total {
-		return ""
+		return "", false
 	}
-	warning := fmt.Sprintf("returned %d of %d results; USPTO search stops at %d. Split the query (for example by filing-date range) to get the rest.",
-		fetched, total, autoPageLimit)
+	if emptyPage {
+		warning = fmt.Sprintf("returned %d of %d results; the API sent an empty page at offset %d, before the reported total. The result set may have changed while paging; rerun to check.",
+			fetched, total, nextOffset-autoPageSize)
+	} else {
+		warning = fmt.Sprintf("returned %d of %d results; USPTO search stops at %d. Split the query (for example by filing-date range) to get the rest.",
+			fetched, total, autoPageLimit)
+		truncated = true
+	}
 	fmt.Fprintln(os.Stderr, "Warning: "+warning)
-	return warning
+	return warning, truncated
 }
 
 // runSearchAllPagesCSV fetches all pages and concatenates rows client-side
@@ -444,6 +458,7 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 	totalCount := 0
 
 	var rows []map[string]string
+	emptyPage := false
 
 	if !flagQuiet {
 		fmt.Fprintln(os.Stderr, "Using client-side CSV concat flow (--all + -f csv).")
@@ -469,18 +484,19 @@ func runSearchAllPagesCSV(ctx context.Context, freeTextQuery string, usePost boo
 		for _, item := range resp.PatentFileWrapperDataBag {
 			rows = append(rows, flattenToMap(item))
 		}
+		emptyPage = len(resp.PatentFileWrapperDataBag) == 0
 
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "  fetched %d / %d\n", len(rows), totalCount)
 		}
 
 		offset += pageSize
-		if offset >= totalCount || offset >= autoPageLimit || len(resp.PatentFileWrapperDataBag) == 0 {
+		if offset >= totalCount || offset >= autoPageLimit || emptyPage {
 			break
 		}
 	}
 
-	allPagesTruncation(len(rows), totalCount, offset)
+	allPagesTruncation(len(rows), totalCount, offset, emptyPage)
 
 	writeCSVRows(rows)
 	return nil

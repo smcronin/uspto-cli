@@ -738,3 +738,58 @@ func TestRunSearchAllPages_CompleteRunHasNoTruncationMarker(t *testing.T) {
 		})
 	}
 }
+
+// An --all run that meets an empty page below the ceiling is short for a
+// different reason: it is reported, but not as the 10,000-result ceiling,
+// and not as truncated.
+func TestRunSearchAllPages_EarlyEmptyPageIsNotCalledTheCeiling(t *testing.T) {
+	for _, format := range []string{"json", "csv"} {
+		t.Run(format, func(t *testing.T) {
+			// 250 reported, but only the first page has rows.
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := types.PatentDataResponse{Count: 250}
+				if r.URL.Query().Get("offset") == "" {
+					for i := 0; i < 100; i++ {
+						resp.PatentFileWrapperDataBag = append(resp.PatentFileWrapperDataBag, types.PatentFileWrapper{ApplicationNumberText: fmt.Sprintf("A%03d", i)})
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(resp)
+			}))
+			t.Cleanup(ts.Close)
+			allPagesHarness(t, ts, format)
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			})
+			if err != nil {
+				t.Fatalf("runSearch() error: %v", err)
+			}
+			if !strings.Contains(stderr, "Warning: returned 100 of 250 results; the API sent an empty page at offset 100") {
+				t.Errorf("stderr lacks the early-stop warning:\n%s", stderr)
+			}
+			if strings.Contains(stderr, "stops at") {
+				t.Errorf("an early empty page must not be blamed on the ceiling:\n%s", stderr)
+			}
+			if format != "json" {
+				return
+			}
+			var env struct {
+				Warnings   []string `json:"warnings"`
+				Pagination struct {
+					HasMore   bool `json:"hasMore"`
+					Truncated bool `json:"truncated"`
+				} `json:"pagination"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+				t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, stdout)
+			}
+			if env.Pagination.Truncated || !env.Pagination.HasMore {
+				t.Errorf("pagination = %+v, want hasMore without truncated", env.Pagination)
+			}
+			if len(env.Warnings) != 1 || !strings.Contains(env.Warnings[0], "empty page") {
+				t.Errorf("warnings = %q, want the early-stop warning", env.Warnings)
+			}
+		})
+	}
+}
