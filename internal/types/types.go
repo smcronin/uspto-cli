@@ -951,10 +951,14 @@ type PetitionDecision struct {
 	BusinessEntityStatusCategory            string             `json:"businessEntityStatusCategory"`
 	CustomerNumber                          int                `json:"customerNumber"`
 	DecisionDate                            string             `json:"decisionDate"`
-	DecisionPetitionTypeCode                int                `json:"decisionPetitionTypeCode"`
+	DecisionPetitionTypeCode                json.RawMessage    `json:"decisionPetitionTypeCode,omitempty"` // number or string; the API returns both
 	DecisionPetitionTypeCodeDescriptionText string             `json:"decisionPetitionTypeCodeDescriptionText"`
-	DecisionTypeCode                        string             `json:"decisionTypeCode"`
-	DecisionTypeCodeDescriptionText         string             `json:"decisionTypeCodeDescriptionText"`
+	DecisionTypeCode                        string             `json:"decisionTypeCode,omitempty"`                // legacy; empty on current records
+	DecisionTypeCodeDescriptionText         string             `json:"decisionTypeCodeDescriptionText,omitempty"` // legacy; empty on current records
+	DecidedPetitionTypeCode                 string             `json:"decidedPetitionTypeCode,omitempty"`
+	DecidedPetitionTypeCodeDescriptionText  string             `json:"decidedPetitionTypeCodeDescriptionText,omitempty"` // outcome: GRANTED, DISMISSED, DENIED, GRANTED-IN-PART
+	FinalPetitionDecisionIndicator          bool               `json:"finalPetitionDecisionIndicator"`
+	DecisionMailDate                        string             `json:"decisionMailDate,omitempty"`
 	FinalDecidingOfficeName                 string             `json:"finalDecidingOfficeName"`
 	FirstApplicantName                      string             `json:"firstApplicantName"`
 	FirstInventorToFileIndicator            bool               `json:"firstInventorToFileIndicator"`
@@ -967,6 +971,8 @@ type PetitionDecision struct {
 	PetitionMailDate                        string             `json:"petitionMailDate"`
 	ProsecutionStatusCode                   json.Number        `json:"prosecutionStatusCode,omitempty"`
 	ProsecutionStatusCodeDescriptionText    string             `json:"prosecutionStatusCodeDescriptionText"`
+	ApplicationStatusDescriptionText        string             `json:"applicationStatusDescriptionText,omitempty"`
+	ApplicationStatusDate                   string             `json:"applicationStatusDate,omitempty"`
 	PetitionIssueConsideredTextBag          []string           `json:"petitionIssueConsideredTextBag"`
 	RuleBag                                 []string           `json:"ruleBag"`
 	StatuteBag                              []string           `json:"statuteBag"`

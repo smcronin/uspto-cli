@@ -55,7 +55,7 @@ These are real patents chosen for testing richness:
 - **US 7,657,849** — Apple "slide to unlock" — big family tree, PTAB history
 - **US 11,574,018** — Moderna mRNA patent — assignments, continuity, recent
 - **US20230259568A1** — A published application (may or may not be granted yet)
-- **IPR2020-00388** — A real IPR proceeding with decisions
+- **IPR2022-00302** — A real IPR proceeding with decisions (institution, final written decision)
 
 ## Real Trademark Records Used
 

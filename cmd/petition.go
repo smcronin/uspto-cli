@@ -34,7 +34,7 @@ var petitionSearchFlags struct {
 var petitionSearchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search petition decisions",
-	Long:  "Search petition decisions using USPTO simplified query syntax.\n\nExamples:\n  uspto petition search \"revival\"\n  uspto petition search --office \"Office of Petitions\" --decision GRANTED\n  uspto petition search --app 16123456 --limit 10\n  uspto petition search --patent 10000000",
+	Long:  "Search petition decisions using USPTO simplified query syntax.\n\nExamples:\n  uspto petition search \"revival\"\n  uspto petition search --office \"OFFICE OF PETITIONS\" --decision DENIED\n  uspto petition search --app 15223202 --limit 10\n  uspto petition search --patent 10000000",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runPetitionSearch,
 }
@@ -42,7 +42,7 @@ var petitionSearchCmd = &cobra.Command{
 func init() {
 	sf := petitionSearchCmd.Flags()
 	sf.StringVar(&petitionSearchFlags.office, "office", "", "Filter by deciding office name")
-	sf.StringVar(&petitionSearchFlags.decision, "decision", "", "Filter by decision type: GRANTED, DENIED, DISMISSED")
+	sf.StringVar(&petitionSearchFlags.decision, "decision", "", "Filter by decision outcome: GRANTED, GRANTED-IN-PART, DENIED, DISMISSED")
 	sf.StringVar(&petitionSearchFlags.app, "app", "", "Filter by application number")
 	sf.StringVar(&petitionSearchFlags.patent, "patent", "", "Filter by patent number")
 	sf.StringVar(&petitionSearchFlags.facets, "facets", "", "Comma-separated facet fields")
@@ -73,13 +73,11 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 		parts = append(parts, fmt.Sprintf("finalDecidingOfficeName:\"%s\"", petitionSearchFlags.office))
 	}
 	if petitionSearchFlags.decision != "" {
-		decision := strings.ToUpper(strings.TrimSpace(petitionSearchFlags.decision))
-		switch decision {
-		case "GRANTED", "DENIED", "DISMISSED":
-			parts = append(parts, fmt.Sprintf("decisionTypeCodeDescriptionText:%s", decision))
-		default:
-			return usageErrorf("invalid --decision %q: expected GRANTED, DENIED, or DISMISSED", petitionSearchFlags.decision)
+		decision, err := petitionDecisionClause(petitionSearchFlags.decision)
+		if err != nil {
+			return err
 		}
+		parts = append(parts, decision)
 	}
 	if petitionSearchFlags.app != "" {
 		parts = append(parts, fmt.Sprintf("applicationNumberText:%s", petitionSearchFlags.app))
@@ -162,6 +160,23 @@ func runPetitionSearch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// petitionDecisionField is the petition field that holds the outcome
+// (GRANTED, DISMISSED, ...). The older decisionTypeCodeDescriptionText field
+// is empty on every record the API serves, so filtering on it matched nothing.
+const petitionDecisionField = "decidedPetitionTypeCodeDescriptionText"
+
+// petitionDecisionClause validates a --decision value and returns its query
+// clause. The value is quoted so GRANTED-IN-PART stays one exact term.
+func petitionDecisionClause(raw string) (string, error) {
+	decision := strings.ToUpper(strings.TrimSpace(raw))
+	switch decision {
+	case "GRANTED", "GRANTED-IN-PART", "DENIED", "DISMISSED":
+		return fmt.Sprintf("%s:\"%s\"", petitionDecisionField, decision), nil
+	default:
+		return "", usageErrorf("invalid --decision %q: expected GRANTED, GRANTED-IN-PART, DENIED, or DISMISSED", raw)
+	}
+}
+
 func buildPetitionPostSort(expr string) []types.SortField {
 	if strings.TrimSpace(expr) == "" {
 		return nil
@@ -185,12 +200,12 @@ func annotatePetitionSearchError(err error) (error, bool) {
 	if !ok || apiErr.StatusCode != 404 {
 		return nil, false
 	}
-	if !strings.EqualFold(strings.TrimSpace(petitionSearchFlags.decision), "GRANTED") {
+	if strings.TrimSpace(petitionSearchFlags.decision) == "" {
 		return nil, false
 	}
 	return &api.UsptoAPIError{
 		StatusCode: apiErr.StatusCode,
-		Message:    strings.TrimSpace(apiErr.Message) + ". Hint: petition decision data is often DENIED-heavy; retry with --decision DENIED or omit --decision and use --facets decisionTypeCodeDescriptionText.",
+		Message:    strings.TrimSpace(apiErr.Message) + ". Hint: no decision matched every filter; drop --decision and add --facets " + petitionDecisionField + " to see which outcomes the other filters match.",
 		Body:       apiErr.Body,
 	}, true
 }

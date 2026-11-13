@@ -302,13 +302,13 @@ Track inter partes reviews (IPRs), post-grant reviews, and other Patent Trial an
 
 ```bash
 # Find all IPR proceedings against a specific patent
-uspto ptab search --type IPR --patent 9876543
+uspto ptab search --type IPR --patent 11369456
 
 # Get details on a specific proceeding
-uspto ptab get IPR2023-00001
+uspto ptab get IPR2025-00816
 
 # Export every decision of one trial to a file (all matches, up to 10,000 rows)
-uspto ptab decisions --trial IPR2020-00388 --download csv > ipr_decisions.csv
+uspto ptab decisions --trial IPR2022-00302 --download csv > ipr_decisions.csv
 
 # Check appeal decisions
 uspto ptab appeals "artificial intelligence"
