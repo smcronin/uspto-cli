@@ -260,6 +260,7 @@ func runSearchDownload(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 			Limit:  limit,
 			Offset: offset,
 			Sort:   buildGetSort(),
+			Fields: strings.Join(projectedFields(), ","),
 		})
 		params["format"] = dlFmt
 		params["limit"] = fmt.Sprint(limitShown)
@@ -281,10 +282,13 @@ func runSearchDownload(ctx context.Context, cmd *cobra.Command, freeTextQuery st
 	if usePost {
 		data, err = api.DefaultClient.DownloadPatentsPost(ctx, buildPostBody(freeTextQuery, limit, offset), dlFmt)
 	} else {
+		// --fields goes on the GET export as it does in the POST body; it
+		// used to be dropped here, so a GET export carried every column.
 		data, err = api.DefaultClient.DownloadPatents(ctx, buildGetQuery(freeTextQuery), dlFmt, types.SearchOptions{
 			Limit:  limit,
 			Offset: offset,
 			Sort:   buildGetSort(),
+			Fields: strings.Join(projectedFields(), ","),
 		})
 	}
 	if err != nil {
@@ -699,13 +703,7 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	}
 
 	// Field projection.
-	if searchFlags.fields != "" {
-		fields := strings.Split(searchFlags.fields, ",")
-		for i, f := range fields {
-			fields[i] = strings.TrimSpace(f)
-		}
-		body.Fields = fields
-	}
+	body.Fields = projectedFields()
 
 	// Facets.
 	if searchFlags.facets != "" {
@@ -717,6 +715,20 @@ func buildPostBody(freeTextQuery string, limit, offset int) types.SearchRequest 
 	}
 
 	return body
+}
+
+// projectedFields returns the --fields list, split on commas and trimmed, or
+// nil when the flag is not set. The POST body sends it as an array and the
+// GET export as a comma-separated parameter.
+func projectedFields() []string {
+	if searchFlags.fields == "" {
+		return nil
+	}
+	fields := strings.Split(searchFlags.fields, ",")
+	for i, f := range fields {
+		fields[i] = strings.TrimSpace(f)
+	}
+	return fields
 }
 
 // buildStructuredFilters parses repeatable --filter flags into Filter objects.

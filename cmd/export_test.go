@@ -40,6 +40,7 @@ type exportRequest struct {
 	Limit  string // limit query parameter, or pagination.limit of a POST body
 	Offset string
 	Format string
+	Fields string // fields query parameter, or the POST body's fields joined with ","
 }
 
 // exportServer answers search requests with the given count and download
@@ -55,10 +56,12 @@ func exportServer(t *testing.T, count int) (*httptest.Server, func() []exportReq
 			Limit:  r.URL.Query().Get("limit"),
 			Offset: r.URL.Query().Get("offset"),
 			Format: r.URL.Query().Get("format"),
+			Fields: r.URL.Query().Get("fields"),
 		}
 		if r.Method == http.MethodPost {
 			var body struct {
-				Format     string `json:"format"`
+				Format     string   `json:"format"`
+				Fields     []string `json:"fields"`
 				Pagination struct {
 					Limit  int `json:"limit"`
 					Offset int `json:"offset"`
@@ -68,6 +71,7 @@ func exportServer(t *testing.T, count int) (*httptest.Server, func() []exportReq
 				t.Errorf("decode POST body: %v", err)
 			}
 			req.Limit, req.Offset, req.Format = fmt.Sprint(body.Pagination.Limit), fmt.Sprint(body.Pagination.Offset), body.Format
+			req.Fields = strings.Join(body.Fields, ",")
 		}
 		mu.Lock()
 		seen = append(seen, req)
@@ -217,6 +221,41 @@ func TestRunSearch_DownloadWithAllIsAFullExport(t *testing.T) {
 	got := requests()
 	if len(got) != 2 || got[1].Limit != "137" {
 		t.Fatalf("requests = %+v, want a count then a download with limit=137", got)
+	}
+}
+
+// --fields reaches the export on both paths. The GET export used to drop it
+// and return every column.
+func TestRunSearch_DownloadSendsFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func()
+		wantMethod string
+	}{
+		{name: "GET", setup: func() {}, wantMethod: http.MethodGet},
+		{name: "POST", setup: func() { searchFlags.granted = true }, wantMethod: http.MethodPost},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts, requests := exportServer(t, 137)
+			exportHarness(t, ts, true)
+			tt.setup()
+			searchFlags.fields = "applicationNumberText, applicationMetaData.inventionTitle"
+			setFlagForTest(t, searchCmd, "download", "csv")
+
+			if _, _, err := captureTrademarkOutput(t, func() error {
+				return runSearch(searchCmd, []string{"battery"})
+			}); err != nil {
+				t.Fatalf("runSearch() error: %v", err)
+			}
+			got := requests()
+			if len(got) != 2 || got[1].Path != patentDownloadPath || got[1].Method != tt.wantMethod {
+				t.Fatalf("requests = %+v, want a count then %s %s", got, tt.wantMethod, patentDownloadPath)
+			}
+			if want := "applicationNumberText,applicationMetaData.inventionTitle"; got[1].Fields != want {
+				t.Errorf("download sent fields=%q, want %q", got[1].Fields, want)
+			}
+		})
 	}
 }
 
@@ -402,6 +441,16 @@ func TestDryRun_DownloadPrintsCountThenExportWithoutSendingEither(t *testing.T) 
 				"GET " + patentDownloadPath, "format=csv&limit=" + exportLimitPlaceholder,
 			},
 			notStderr: []string{"limit=25"},
+		},
+		{
+			name: "search GET with fields",
+			setup: func(t *testing.T) {
+				setFlagForTest(t, searchCmd, "download", "csv")
+				setFlagForTest(t, searchCmd, "limit", "40")
+				searchFlags.fields = "applicationNumberText, applicationMetaData.inventionTitle"
+			},
+			run:        func() error { return runSearch(searchCmd, []string{"battery"}) },
+			wantStderr: []string{"GET " + patentDownloadPath, "fields=applicationNumberText,applicationMetaData.inventionTitle&format=csv&limit=40&q=battery"},
 		},
 		{
 			name: "search POST",
