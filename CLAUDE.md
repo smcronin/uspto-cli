@@ -49,7 +49,7 @@ tests/
 ```
 
 ## Key Conventions
-- All commands support `-f json` (envelope: `{ok, command, commandPath, provider, pagination, results, facets, version, error}`)
+- All commands support `-f json` (envelope: `{ok, command, commandPath, provider, pagination, results, facets, warnings, partial, version, error}`)
 - Additional formats: `-f csv`, `-f ndjson`, `-f table` (default)
 - ODP key from `--api-key`, `USPTO_API_KEY`, or the config file; TSDR uses a separate key (`--tsdr-api-key`, `USPTO_TSDR_API_KEY`); trademark search needs none
 - ODP rate limiter: sequential requests (burst=1) within one process, 100 ms minimum gap. The last-request timestamp file is read once at start-up, so separate `uspto` processes are not coordinated (the TSDR client does coordinate across processes with lock files)

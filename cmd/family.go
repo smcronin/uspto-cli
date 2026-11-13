@@ -103,11 +103,19 @@ func runFamily(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 	client := api.DefaultClient
-	visited := make(map[string]string)
+	walk := &familyWalk{visited: make(map[string]string)}
+	visited := walk.visited
 
 	progress(fmt.Sprintf("Building family tree for %s (depth %d)...", appNumber, flagFamilyDepth))
 
-	tree := buildFamilyNode(ctx, client, appNumber, "", flagFamilyDepth, visited)
+	tree, metaErr, contErr := buildFamilyNode(ctx, client, appNumber, "", flagFamilyDepth, walk)
+
+	// Neither lookup for the root application worked (unknown application,
+	// bad key, outage): there is no tree to report. Return the error so the
+	// caller gets ok:false and the typed exit code.
+	if metaErr != nil && contErr != nil {
+		return metaErr
+	}
 
 	// Collect all unique application numbers and their relationship labels.
 	allAppNums := make([]string, 0, len(visited))
@@ -132,6 +140,12 @@ func runFamily(cmd *cobra.Command, args []string) error {
 
 	progress(fmt.Sprintf("Found %d family members.", result.TotalMembers))
 
+	// A failed lookup anywhere in the walk leaves that member without
+	// metadata, or hides its relatives, so the tree and totalMembers may be
+	// short. Say so in the result instead of only on stderr.
+	notes := resultNotes{Warnings: walk.warnings, Partial: len(walk.warnings) > 0}
+	reportWarnings(notes.Warnings)
+
 	// For table output, render as indented tree.
 	opts := getOutputOptions()
 	if opts.Format == "table" {
@@ -139,8 +153,17 @@ func runFamily(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	outputResult(cmd, result, nil)
+	outputResultWithNotes(cmd, result, nil, nil, notes)
 	return nil
+}
+
+// familyWalk is the state shared by one recursive family walk.
+type familyWalk struct {
+	// visited maps each application number seen so far to the relationship
+	// label it was first discovered with.
+	visited map[string]string
+	// warnings records every lookup that failed.
+	warnings []string
 }
 
 // ---------------------------------------------------------------------------
@@ -149,9 +172,13 @@ func runFamily(cmd *cobra.Command, args []string) error {
 
 // buildFamilyNode recursively builds a FamilyNode by fetching continuity
 // and metadata for the given application number. It uses the visited set
-// to avoid cycles and redundant API calls.
-func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relationship string, depth int, visited map[string]string) FamilyNode {
-	node := FamilyNode{
+// to avoid cycles and redundant API calls. A failed lookup is recorded in
+// walk.warnings and the walk carries on; the two errors returned are this
+// node's own metadata and continuity failures, which the caller uses to tell
+// a total failure of the root from a partial tree.
+func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relationship string, depth int, walk *familyWalk) (node FamilyNode, metaErr, contErr error) {
+	visited := walk.visited
+	node = FamilyNode{
 		ApplicationNumber: appNumber,
 		Relationship:      relationship,
 	}
@@ -170,9 +197,8 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 	progress(fmt.Sprintf("  Fetching metadata for %s...", appNumber))
 	metaResp, err := client.GetMetadata(ctx, appNumber)
 	if err != nil {
-		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "  Warning: metadata for %s: %v\n", appNumber, err)
-		}
+		metaErr = err
+		walk.warnings = append(walk.warnings, fmt.Sprintf("failed to fetch metadata for %s: %v", appNumber, err))
 	} else if len(metaResp.PatentFileWrapperDataBag) > 0 {
 		md := metaResp.PatentFileWrapperDataBag[0].ApplicationMetaData
 		node.Title = md.InventionTitle
@@ -183,21 +209,19 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 
 	// Stop recursion if we have reached the depth limit.
 	if depth <= 0 {
-		return node
+		return node, metaErr, nil
 	}
 
 	// Fetch continuity to discover related applications.
 	progress(fmt.Sprintf("  Fetching continuity for %s...", appNumber))
 	contResp, err := client.GetContinuity(ctx, appNumber)
 	if err != nil {
-		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "  Warning: continuity for %s: %v\n", appNumber, err)
-		}
-		return node
+		walk.warnings = append(walk.warnings, fmt.Sprintf("failed to fetch continuity for %s (its relatives are missing from the tree): %v", appNumber, err))
+		return node, metaErr, err
 	}
 
 	if len(contResp.PatentFileWrapperDataBag) == 0 {
-		return node
+		return node, metaErr, nil
 	}
 
 	fw := contResp.PatentFileWrapperDataBag[0]
@@ -239,11 +263,11 @@ func buildFamilyNode(ctx context.Context, client *api.Client, appNumber, relatio
 		if visited[rel.appNumber] != "" {
 			continue
 		}
-		childNode := buildFamilyNode(ctx, client, rel.appNumber, rel.relationship, depth-1, visited)
+		childNode, _, _ := buildFamilyNode(ctx, client, rel.appNumber, rel.relationship, depth-1, walk)
 		node.Children = append(node.Children, childNode)
 	}
 
-	return node
+	return node, metaErr, nil
 }
 
 // parentRelationship normalizes a claim parentage type code for parent

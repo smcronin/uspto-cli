@@ -177,15 +177,24 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		ApplicationNumber: appNumber,
 	}
 
-	// Track partial failures so we can still return what we got.
+	// Track partial failures so we can still return what we got. firstErr and
+	// succeeded tell "partial" apart from "nothing came back at all".
 	var warnings []string
+	var firstErr error
+	succeeded := 0
+	failed := func(what string, err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+		warnings = append(warnings, fmt.Sprintf("failed to fetch %s: %v", what, err))
+	}
 
 	// 1. Metadata
 	progress("Fetching metadata...")
 	metaResp, err := client.GetMetadata(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("metadata: %v", err))
-	} else if len(metaResp.PatentFileWrapperDataBag) > 0 {
+		failed("metadata", err)
+	} else if succeeded++; len(metaResp.PatentFileWrapperDataBag) > 0 {
 		fw := metaResp.PatentFileWrapperDataBag[0]
 		md := fw.ApplicationMetaData
 
@@ -235,9 +244,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	ptaResp, err := client.GetAdjustment(ctx, appNumber)
 	if err != nil {
 		if !isNotFoundAPIError(err) {
-			warnings = append(warnings, fmt.Sprintf("patent term adjustment: %v", err))
+			failed("patent term adjustment", err)
 		}
-	} else if len(ptaResp.PatentFileWrapperDataBag) > 0 {
+	} else if succeeded++; len(ptaResp.PatentFileWrapperDataBag) > 0 {
 		if pta := ptaResp.PatentFileWrapperDataBag[0].PatentTermAdjustmentData; pta != nil {
 			summary.PTADays = pta.AdjustmentTotalQuantity
 		}
@@ -247,8 +256,8 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching continuity...")
 	contResp, err := client.GetContinuity(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("continuity: %v", err))
-	} else if len(contResp.PatentFileWrapperDataBag) > 0 {
+		failed("continuity", err)
+	} else if succeeded++; len(contResp.PatentFileWrapperDataBag) > 0 {
 		fw := contResp.PatentFileWrapperDataBag[0]
 
 		for _, p := range fw.ParentContinuityBag {
@@ -278,8 +287,8 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching assignments...")
 	assignResp, err := client.GetAssignment(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("assignment: %v", err))
-	} else if len(assignResp.PatentFileWrapperDataBag) > 0 {
+		failed("assignment", err)
+	} else if succeeded++; len(assignResp.PatentFileWrapperDataBag) > 0 {
 		fw := assignResp.PatentFileWrapperDataBag[0]
 
 		// Find the most recent assignment by recorded date.
@@ -305,8 +314,8 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching transactions...")
 	txResp, err := client.GetTransactions(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("transactions: %v", err))
-	} else if len(txResp.PatentFileWrapperDataBag) > 0 {
+		failed("transactions", err)
+	} else if succeeded++; len(txResp.PatentFileWrapperDataBag) > 0 {
 		fw := txResp.PatentFileWrapperDataBag[0]
 		summary.RecentEvents = recentEventSummaries(fw.EventDataBag, recentEventCount)
 	}
@@ -315,8 +324,8 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching foreign priority...")
 	fpResp, err := client.GetForeignPriority(ctx, appNumber)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("foreign priority: %v", err))
-	} else if len(fpResp.PatentFileWrapperDataBag) > 0 {
+		failed("foreign priority", err)
+	} else if succeeded++; len(fpResp.PatentFileWrapperDataBag) > 0 {
 		fw := fpResp.PatentFileWrapperDataBag[0]
 		summary.ForeignPriorityCount = len(fw.ForeignPriorityBag)
 		for _, fp := range fw.ForeignPriorityBag {
@@ -332,8 +341,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	progress("Fetching documents...")
 	docResp, err := client.GetDocuments(ctx, appNumber, types.DocumentOptions{})
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("documents: %v", err))
+		failed("documents", err)
 	} else {
+		succeeded++
 		summary.DocumentCount = len(docResp.DocumentBag)
 
 		// Find the latest document by official date.
@@ -350,12 +360,17 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Print warnings for partial failures.
-	for _, w := range warnings {
-		if !flagQuiet {
-			fmt.Fprintf(os.Stderr, "Warning: failed to fetch %s\n", w)
-		}
+	// Nothing came back at all (unknown application, bad key, outage). That
+	// is a failure, not an empty summary: returning the first error gives the
+	// caller ok:false and the typed exit code.
+	if succeeded == 0 && firstErr != nil {
+		return firstErr
 	}
+
+	// Some sub-requests failed. The rest of the summary is still useful, so
+	// the command succeeds, but the result says that it is incomplete.
+	notes := resultNotes{Warnings: warnings, Partial: len(warnings) > 0}
+	reportWarnings(notes.Warnings)
 
 	if len(warnings) > 0 {
 		progress(fmt.Sprintf("Completed with %d warning(s).", len(warnings)))
@@ -370,7 +385,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	outputResult(cmd, summary, nil)
+	outputResultWithNotes(cmd, summary, nil, nil, notes)
 	return nil
 }
 

@@ -64,7 +64,8 @@ agent workflows, rate limits, and recovery guidance.
 ## Output Formats
 
 Always use `-f json -q` when calling the CLI programmatically:
-- `-f json` gives a structured envelope: `{ ok, command, commandPath, provider, pagination, results, facets, version, error }`
+- `-f json` gives a structured envelope: `{ ok, command, commandPath, provider, pagination, results, facets, warnings, partial, version, error }`
+- `warnings` (array of strings) and `partial: true` appear only when there is something to report. Read them on every `ok: true` result: `-q` does not remove them
 - `-q` (quiet) suppresses stderr progress messages
 - Add `--minify` for compact JSON
 - On `uspto search` only, add `--fields` to select specific response fields and save tokens
@@ -207,6 +208,8 @@ uspto family 16123456 --depth 3 --with-dates        # Filing dates in the table-
 uspto prosecution-timeline 16123456 -f json -q
 uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ```
+
+**Partial results.** `summary`, `family`, `app dl-all`, `app text-all` and `patent bundle` make several requests. If all of them fail, the command fails (`ok: false`, typed exit code). If only some fail, it still exits 0 with `ok: true`, and the envelope carries `"partial": true` and a `warnings` array naming each failed step. Treat a partial result as incomplete: a missing `currentAssignee`, a short `totalMembers` or a missing file may be the failed step, not a fact about the application.
 
 ### PTAB
 

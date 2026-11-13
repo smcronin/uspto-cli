@@ -208,24 +208,51 @@ Examples:
 			Skipped:           make([]AppDocumentTextSkip, 0),
 		}
 
+		// A document with no XML or DOCX rendition is skipped by design. A
+		// document that has one but could not be fetched or parsed is a
+		// failure: it is still listed under skipped, and also reported as a
+		// warning so the caller knows the batch is incomplete.
+		var warnings []string
+		var firstErr error
+		skip := func(index int, doc *types.Document, reason error) {
+			result.Skipped = append(result.Skipped, AppDocumentTextSkip{
+				DocumentIndex:      index,
+				DocumentIdentifier: doc.DocumentIdentifier,
+				DocumentCode:       doc.DocumentCode,
+				Description:        doc.DocumentCodeDescriptionText,
+				AvailableFormats:   availableFormatList(doc),
+				Reason:             reason.Error(),
+			})
+		}
+
 		ctx := context.Background()
 		for i, doc := range docResp.DocumentBag {
+			if _, _, _, fmtErr := resolveTextFormat(&doc, appTextAllAsFlag); fmtErr != nil {
+				skip(i+1, &doc, fmtErr)
+				continue
+			}
 			textResult, textErr := fetchAppDocumentText(ctx, appNumber, i+1, &doc, appTextAllAsFlag)
 			if textErr != nil {
-				result.Skipped = append(result.Skipped, AppDocumentTextSkip{
-					DocumentIndex:      i + 1,
-					DocumentIdentifier: doc.DocumentIdentifier,
-					DocumentCode:       doc.DocumentCode,
-					Description:        doc.DocumentCodeDescriptionText,
-					AvailableFormats:   availableFormatList(&doc),
-					Reason:             textErr.Error(),
-				})
+				skip(i+1, &doc, textErr)
+				if firstErr == nil {
+					firstErr = textErr
+				}
+				warnings = append(warnings, fmt.Sprintf("document %d (%s, %s) could not be read: %v",
+					i+1, doc.DocumentCode, doc.OfficialDate, textErr))
 				continue
 			}
 			result.Documents = append(result.Documents, *textResult)
 		}
 		result.ExtractedCount = len(result.Documents)
 		result.SkippedCount = len(result.Skipped)
+
+		// Every readable document failed: that is a failure with the first
+		// error's typed exit code, not an empty batch.
+		if result.ExtractedCount == 0 && firstErr != nil {
+			return fmt.Errorf("could not read any of the %d readable document(s): %w", len(warnings), firstErr)
+		}
+		notes := resultNotes{Warnings: warnings, Partial: len(warnings) > 0}
+		reportWarnings(notes.Warnings)
 
 		if result.ExtractedCount == 0 && !flagQuiet {
 			fmt.Fprintf(os.Stderr, "No matching documents exposed direct XML/DOCX text. %d document(s) skipped.\n", result.SkippedCount)
@@ -238,7 +265,7 @@ Examples:
 			return nil
 		}
 
-		outputResult(cmd, result, nil)
+		outputResultWithNotes(cmd, result, nil, nil, notes)
 		return nil
 	},
 }

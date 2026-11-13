@@ -363,6 +363,15 @@ uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 
 `family` JSON includes relationship-aware `allApplicationNumbers` entries so CON/DIV/CIP links are explicit in the flat member list.
 
+Commands that make several requests (`summary`, `family`, `app download-all`, `app text-all`, `patent bundle`) report failure in two ways:
+
+- **Nothing worked** (unknown application, bad key, every download refused): the command fails with `ok: false`, the first error, and its typed exit code. It no longer returns an empty result with exit 0.
+- **Part of it failed**: exit code 0 and `ok: true`, and the JSON envelope adds `"partial": true` plus a `warnings` array naming each failed step. `-q` does not remove them. With `-f table`, `csv` or `ndjson` the same warnings are printed on stderr, also under `-q`.
+
+```bash
+uspto summary 16123456 -f json -q | jq '{partial, warnings}'
+```
+
 ### PTAB (Patent Trial and Appeal Board)
 
 14 subcommands for trials, decisions, appeals, and interferences:
@@ -470,7 +479,7 @@ If your agent runtime loads skills from a user directory (for example `~/.claude
 
 Built for AI agents and automation:
 
-- **Structured JSON envelope** with `ok`, `command`, `commandPath`, `provider`, `pagination`, `results`, `facets`, `version`
+- **Structured JSON envelope** with `ok`, `command`, `commandPath`, `provider`, `pagination`, `results`, `facets`, `warnings`, `partial`, `version` (`warnings` and `partial` appear only when there is something to report)
 - **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error. Exit 2 (`error.type` `INVALID_ARGUMENTS`) covers every input the caller has to fix: unknown commands, subcommands and flags, flag values that do not parse, failed validation (dates, application numbers, `--limit 0`, conflicting flags) and unknown `-f` formats
 - **`--dry-run`** shows the API request without executing (all commands)
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
@@ -478,7 +487,7 @@ Built for AI agents and automation:
 - **`--count-only`** returns just total matches for fast landscape sizing
 - **`--download`** server-side bulk export (json or csv) in a single request
 - **`--facets`** returns aggregated counts alongside results
-- **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command
+- **Compound commands** (`summary`, `family`) reduce multi-call workflows to one command, and mark an incomplete result with `partial: true` and `warnings`
 - **NDJSON** format for streaming large result sets
 - **Grant XML extraction** (`claims`, `citations`, `abstract`, `description`, `fulltext`) for structured patent text
 - **Typed trademark identifiers** prevent silent serial/registration/Madrid namespace mistakes

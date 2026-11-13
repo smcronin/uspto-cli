@@ -26,8 +26,14 @@ type CLIResponse struct {
 	Pagination  *PaginationMeta         `json:"pagination,omitempty"`
 	Results     any                     `json:"results"`
 	Facets      map[string][]FacetValue `json:"facets,omitempty"`
-	Version     string                  `json:"version"`
-	Error       *CLIError               `json:"error,omitempty"`
+	// Warnings lists what the caller should know about an ok:true result:
+	// sub-requests that failed, truncation, a fallback data source.
+	Warnings []string `json:"warnings,omitempty"`
+	// Partial is true when at least one sub-request of a compound command
+	// failed, so Results is incomplete.
+	Partial bool      `json:"partial,omitempty"`
+	Version string    `json:"version"`
+	Error   *CLIError `json:"error,omitempty"`
 }
 
 // PaginationMeta contains offset-based pagination metadata for the CLI envelope.

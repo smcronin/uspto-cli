@@ -1491,6 +1491,8 @@ Progress is shown on stderr.`,
 		errCount := 0
 		collisionCount := 0
 		seenPaths := map[string]int{}
+		var warnings []string
+		var firstErr error
 
 		for i, doc := range docResp.DocumentBag {
 			dlURL := findDownloadOption(&doc, mimeType)
@@ -1529,7 +1531,14 @@ Progress is shown on stderr.`,
 					Format:       fmtLabel,
 					Error:        dlErr.Error(),
 				})
-				fmt.Fprintf(os.Stderr, "  Error: %v\n", dlErr)
+				if firstErr == nil {
+					firstErr = dlErr
+				}
+				warnings = append(warnings, fmt.Sprintf("document %d (%s, %s) was not downloaded: %v",
+					i+1, doc.DocumentCode, doc.OfficialDate, dlErr))
+				if !flagQuiet {
+					fmt.Fprintf(os.Stderr, "  Error: %v\n", dlErr)
+				}
 				continue
 			}
 
@@ -1553,8 +1562,19 @@ Progress is shown on stderr.`,
 				downloaded, skipped, fmtLabel, errCount, totalDocs, len(seenPaths), collisionCount)
 		}
 
+		// Every download failed: nothing was saved, so this is a failure with
+		// the first error's typed exit code, not an empty success.
+		if downloaded == 0 && firstErr != nil {
+			return fmt.Errorf("all %d downloads failed: %w", errCount, firstErr)
+		}
+
+		// Some downloads failed. The files that did arrive are on disk, so
+		// the command succeeds, but the result says it is incomplete.
+		notes := resultNotes{Warnings: warnings, Partial: errCount > 0}
+		reportWarnings(notes.Warnings)
+
 		if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
-			outputResult(cmd, results, nil)
+			outputResultWithNotes(cmd, results, nil, nil, notes)
 		}
 
 		return nil
