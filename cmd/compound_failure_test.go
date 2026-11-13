@@ -537,6 +537,35 @@ func TestAppDownloadAll_PartialFailureIsMarked(t *testing.T) {
 	}
 }
 
+// Without -q each failed document gets one stderr line. It used to get two:
+// an "Error:" line during the run and a "Warning:" line at the end.
+func TestAppDownloadAll_OneStderrLinePerFailureWithoutQuiet(t *testing.T) {
+	for _, format := range []string{"json", "table"} {
+		t.Run(format, func(t *testing.T) {
+			ts := documentsServer(t, "/files/B.pdf")
+			defer ts.Close()
+			compoundHarness(t, ts, format, false)
+			appDownloadAllOutputFlag = t.TempDir()
+
+			stdout, stderr, err := captureTrademarkOutput(t, func() error {
+				return appDownloadAllCmd.RunE(appDownloadAllCmd, []string{"16123456"})
+			})
+			if err != nil {
+				t.Fatalf("download-all error: %v", err)
+			}
+			if n := strings.Count(stderr, "document 2 (NOA, 2023-06-07)"); n != 1 {
+				t.Errorf("the failure is reported %d times on stderr, want once:\n%s", n, stderr)
+			}
+			if strings.Contains(stderr, "Error:") {
+				t.Errorf("stderr still has a separate Error: line:\n%s", stderr)
+			}
+			if format == "json" {
+				wantWarning(t, decodeNotedEnvelope(t, stdout).Warnings, "document 2 (NOA, 2023-06-07)")
+			}
+		})
+	}
+}
+
 func TestAppDownloadAll_TotalFailureReturnsTypedError(t *testing.T) {
 	ts := documentsServer(t, "/files/A.pdf", "/files/B.pdf")
 	defer ts.Close()

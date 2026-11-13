@@ -1611,10 +1611,14 @@ Progress is shown on stderr.`,
 				if firstErr == nil {
 					firstErr = dlErr
 				}
-				warnings = append(warnings, fmt.Sprintf("document %d (%s, %s) was not downloaded: %v",
-					i+1, doc.DocumentCode, doc.OfficialDate, dlErr))
+				warning := fmt.Sprintf("document %d (%s, %s) was not downloaded: %v",
+					i+1, doc.DocumentCode, doc.OfficialDate, dlErr)
+				warnings = append(warnings, warning)
+				// One stderr line per failure. Without -q it is printed here,
+				// under the progress line of the download that failed, and is
+				// not repeated at the end; with -q it is printed at the end.
 				if !flagQuiet {
-					fmt.Fprintf(os.Stderr, "  Error: %v\n", dlErr)
+					fmt.Fprintln(os.Stderr, "Warning: "+warning)
 				}
 				continue
 			}
@@ -1649,7 +1653,9 @@ Progress is shown on stderr.`,
 		// Some downloads failed. The files that did arrive are on disk, so
 		// the command succeeds, but the result says it is incomplete.
 		notes := resultNotes{Warnings: warnings, Partial: errCount > 0}
-		reportWarnings(notes.Warnings)
+		if flagQuiet {
+			reportWarnings(notes.Warnings)
+		}
 
 		if flagFormat == "json" || flagFormat == "ndjson" || flagFormat == "csv" {
 			outputResultWithNotes(cmd, results, nil, nil, notes)
