@@ -31,39 +31,46 @@ var bulkSearchFlags struct {
 var bulkSearchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search bulk data products",
-	Long:  "Search bulk data products using USPTO simplified query syntax.\n\nExamples:\n  uspto bulk search \"patent file wrapper\"\n  uspto bulk search --frequency WEEKLY\n  uspto bulk search --category \"Patent Grant\" --limit 10\n  uspto bulk search --title \"Assignment\"",
+	Long:  "Search bulk data products. The query is free text sent to USPTO. --title, --category and\n--frequency filter the product catalog locally, because the products search endpoint\nrejects every field:value query.\n\nExamples:\n  uspto bulk search \"patent file wrapper\"\n  uspto bulk search --frequency WEEKLY\n  uspto bulk search --category \"patent grants\" --frequency WEEKLY\n  uspto bulk search --title \"Assignment\"",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runBulkSearch,
 }
 
 func init() {
 	sf := bulkSearchCmd.Flags()
-	sf.StringVar(&bulkSearchFlags.title, "title", "", "Filter by product title")
-	sf.StringVar(&bulkSearchFlags.category, "category", "", "Filter by dataset category")
-	sf.StringVar(&bulkSearchFlags.frequency, "frequency", "", "Filter by update frequency: WEEKLY, DAILY, MONTHLY, ANNUAL")
+	sf.StringVar(&bulkSearchFlags.title, "title", "", "Filter by product title (case-insensitive substring)")
+	sf.StringVar(&bulkSearchFlags.category, "category", "", "Filter by dataset category (case-insensitive substring, e.g. \"patent grants\", \"trademark\")")
+	sf.StringVar(&bulkSearchFlags.frequency, "frequency", "", "Filter by update frequency: DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY (ANNUAL = YEARLY)")
 	sf.IntVarP(&bulkSearchFlags.limit, "limit", "l", 25, "Maximum number of results")
 	sf.IntVarP(&bulkSearchFlags.offset, "offset", "o", 0, "Starting offset for pagination")
 
 	bulkCmd.AddCommand(bulkSearchCmd)
 }
 
+// The products search endpoint answers 404 to any field:value query (checked
+// live on 2026-11-13 with productFrequencyText, productTitleText and
+// productIdentifier), so the flag filters run over the fetched catalog. The
+// whole catalog is under 100 products, so that is normally one request.
+const (
+	bulkCatalogPageSize = 100
+	bulkCatalogMaxPages = 20
+)
+
 func runBulkSearch(cmd *cobra.Command, args []string) error {
-	// Build the query string from the positional argument and filter flags.
-	var parts []string
-	if len(args) > 0 && args[0] != "" {
-		parts = append(parts, args[0])
+	if bulkSearchFlags.limit <= 0 {
+		return usageErrorf("invalid --limit %d: must be > 0", bulkSearchFlags.limit)
 	}
-	if bulkSearchFlags.title != "" {
-		parts = append(parts, fmt.Sprintf("productTitleText:\"%s\"", bulkSearchFlags.title))
-	}
-	if bulkSearchFlags.category != "" {
-		parts = append(parts, fmt.Sprintf("productDataSetCategoryArrayText:\"%s\"", bulkSearchFlags.category))
-	}
-	if bulkSearchFlags.frequency != "" {
-		parts = append(parts, fmt.Sprintf("productFrequencyText:%s", bulkSearchFlags.frequency))
+	if bulkSearchFlags.offset < 0 {
+		return usageErrorf("invalid --offset %d: must be >= 0", bulkSearchFlags.offset)
 	}
 
-	query := strings.TrimSpace(strings.Join(parts, " AND "))
+	query := ""
+	if len(args) > 0 {
+		query = strings.TrimSpace(args[0])
+	}
+	if bulkSearchHasLocalFilters() {
+		return runBulkSearchFiltered(cmd, query)
+	}
 
 	opts := types.SearchOptions{
 		Limit:  bulkSearchFlags.limit,
@@ -96,6 +103,123 @@ func runBulkSearch(cmd *cobra.Command, args []string) error {
 
 	outputResult(cmd, resp.BulkDataProductBag, pagination)
 	return nil
+}
+
+// runBulkSearchFiltered fetches the catalog (narrowed by the free-text query,
+// if any), applies --title/--category/--frequency, then pages the matches.
+func runBulkSearchFiltered(cmd *cobra.Command, query string) error {
+	if flagDryRun {
+		printDryRunGET("/api/v1/datasets/products/search", searchOptionsToParams(query, types.SearchOptions{Limit: bulkCatalogPageSize}))
+		fmt.Fprintf(os.Stderr, "  then filtered locally: %s\n", bulkSearchFilterSummary())
+		return nil
+	}
+
+	var catalog []types.BulkDataProduct
+	for page := 0; page < bulkCatalogMaxPages; page++ {
+		resp, err := api.DefaultClient.SearchBulkData(context.Background(), query, types.SearchOptions{
+			Limit:  bulkCatalogPageSize,
+			Offset: len(catalog),
+		})
+		if err != nil {
+			return err
+		}
+		catalog = append(catalog, resp.BulkDataProductBag...)
+		if len(resp.BulkDataProductBag) == 0 || len(catalog) >= resp.Count {
+			break
+		}
+	}
+
+	matched := filterBulkProducts(catalog, bulkSearchFlags.title, bulkSearchFlags.category, bulkSearchFlags.frequency)
+	if len(matched) == 0 {
+		return &api.UsptoAPIError{
+			StatusCode: 404,
+			Message: fmt.Sprintf("no bulk data products match %s (%d products checked); run `uspto bulk search -f json` to see the catalog's titles, categories and frequencies",
+				bulkSearchFilterSummary(), len(catalog)),
+		}
+	}
+
+	if !flagQuiet {
+		fmt.Fprintf(os.Stderr, "%d bulk data products found\n", len(matched))
+	}
+
+	total := len(matched)
+	start := min(bulkSearchFlags.offset, total)
+	stop := min(start+bulkSearchFlags.limit, total)
+	pagination := &types.PaginationMeta{
+		Offset:  bulkSearchFlags.offset,
+		Limit:   bulkSearchFlags.limit,
+		Total:   total,
+		HasMore: stop < total,
+	}
+	outputResult(cmd, matched[start:stop], pagination)
+	return nil
+}
+
+func bulkSearchHasLocalFilters() bool {
+	return strings.TrimSpace(bulkSearchFlags.title) != "" ||
+		strings.TrimSpace(bulkSearchFlags.category) != "" ||
+		strings.TrimSpace(bulkSearchFlags.frequency) != ""
+}
+
+func bulkSearchFilterSummary() string {
+	var parts []string
+	if v := strings.TrimSpace(bulkSearchFlags.title); v != "" {
+		parts = append(parts, fmt.Sprintf("title contains %q", v))
+	}
+	if v := strings.TrimSpace(bulkSearchFlags.category); v != "" {
+		parts = append(parts, fmt.Sprintf("category contains %q", v))
+	}
+	if v := strings.TrimSpace(bulkSearchFlags.frequency); v != "" {
+		parts = append(parts, "frequency = "+normalizeBulkFrequency(v))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// normalizeBulkFrequency upper-cases a frequency and maps ANNUAL, the name
+// earlier help text used, to YEARLY, the value the API returns.
+func normalizeBulkFrequency(v string) string {
+	f := strings.ToUpper(strings.TrimSpace(v))
+	if f == "ANNUAL" || f == "ANNUALLY" {
+		return "YEARLY"
+	}
+	return f
+}
+
+// filterBulkProducts keeps products whose title contains title, one of whose
+// categories contains category, and whose frequency equals frequency. The API
+// cuts category names at 50 characters ("Published patent applications
+// (pre-grant publicati"), so category is a substring match. Matching ignores
+// case, and an empty filter matches every product.
+func filterBulkProducts(products []types.BulkDataProduct, title, category, frequency string) []types.BulkDataProduct {
+	title = strings.ToLower(strings.TrimSpace(title))
+	category = strings.ToLower(strings.TrimSpace(category))
+	if strings.TrimSpace(frequency) != "" {
+		frequency = normalizeBulkFrequency(frequency)
+	}
+
+	out := make([]types.BulkDataProduct, 0, len(products))
+	for _, p := range products {
+		if title != "" && !strings.Contains(strings.ToLower(p.ProductTitleText), title) {
+			continue
+		}
+		if frequency != "" && !strings.EqualFold(strings.TrimSpace(p.ProductFrequencyText), frequency) {
+			continue
+		}
+		if category != "" && !bulkCategoryContains(p.ProductDataSetCategoryArrayText, category) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func bulkCategoryContains(categories []string, lowerNeedle string) bool {
+	for _, c := range categories {
+		if strings.Contains(strings.ToLower(c), lowerNeedle) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- bulk get ----------
