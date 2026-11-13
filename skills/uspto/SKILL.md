@@ -222,15 +222,16 @@ uspto prosecution-timeline 16123456 --codes rejection,allowance,CLM -f json -q
 ### PTAB
 
 ```bash
-uspto ptab search --type IPR --patent 9876543 -f json -q
+uspto ptab search --type IPR --patent 11369456 -f json -q
 uspto ptab search --petitioner "Samsung" --status "Instituted" -f json -q
 uspto ptab search --patent-owner "Samsung" --limit 50 -f json -q
 uspto ptab search --app 15144741 -f json -q              # By application number (--family is an alias)
-uspto ptab get IPR2023-00001 -f json -q
+uspto ptab get IPR2025-00816 -f json -q
 
 # Decisions: search, one by document ID, or all for a trial
-uspto ptab decisions --trial IPR2020-00388 -f json -q
-uspto ptab decisions --outcome "Adverse Judgment" --type "Final Written Decision" -f json -q
+uspto ptab decisions --trial IPR2022-00302 -f json -q
+uspto ptab decisions --outcome "Final Written Decision" -f json -q   # exact outcome value, e.g. "Institution Denied", "Institution Granted", "Termination", "Settled After Institution", ...
+uspto ptab decisions --type "Rehearing Decision" -f json -q         # --type: "Decision" or "Rehearing Decision"
 uspto ptab decision <documentId> -f json -q
 uspto ptab decisions-for IPR2022-00302 -f json -q
 
@@ -254,8 +255,8 @@ uspto ptab search --type IPR --petitioner "Samsung" --download csv > samsung_ipr
 
 ```bash
 uspto petition search "revival" -f json -q
-uspto petition search --app 16123456 -f json -q
-uspto petition search --office "OFFICE OF PETITIONS" --decision DENIED -f json -q   # --decision: GRANTED, DENIED, DISMISSED
+uspto petition search --app 15223202 -f json -q
+uspto petition search --office "OFFICE OF PETITIONS" --decision DENIED -f json -q   # --decision: GRANTED, GRANTED-IN-PART, DENIED, DISMISSED
 uspto petition get <recordId> --include-documents -f json -q
 ```
 
@@ -263,7 +264,7 @@ uspto petition get <recordId> --include-documents -f json -q
 
 ```bash
 uspto bulk search "patent grant" -f json -q
-uspto bulk search --category "Patent Grant" --frequency WEEKLY -f json -q   # --frequency: WEEKLY, DAILY, MONTHLY, ANNUAL
+uspto bulk search --category "Patent Grant" --frequency WEEKLY -f json -q   # filtered locally; --frequency: DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY
 uspto bulk get PTGRXML --include-files --latest -f json -q
 uspto bulk files PTFWPRE --limit 10 -f json -q
 uspto bulk download PTGRXML ipg240102.zip -o ./data/

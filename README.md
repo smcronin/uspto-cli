@@ -436,13 +436,13 @@ uspto summary 16123456 -f json -q | jq '{partial, warnings}'
 
 ```bash
 # Trial proceedings
-uspto ptab search --type IPR --patent 9876543
+uspto ptab search --type IPR --patent 11369456
 uspto ptab search --app 15144741
 uspto ptab search --family 15144741
-uspto ptab get IPR2023-00001
+uspto ptab get IPR2025-00816
 
 # Trial decisions
-uspto ptab decisions --trial IPR2020-00388
+uspto ptab decisions --trial IPR2022-00302
 uspto ptab decision <documentId>
 uspto ptab decisions-for <trialNumber>        # All decisions for a trial (institution + FWD when available)
 
@@ -463,7 +463,7 @@ uspto ptab interferences-for <interferenceId> # All decisions for an interferenc
 
 # Export search results as raw CSV/JSON: counts first, then exports all rows (at most 10,000)
 uspto ptab search --type IPR --petitioner "Apple" --download csv > apple_iprs.csv
-uspto ptab decisions --trial IPR2020-00388 --download json > decisions.json
+uspto ptab decisions --trial IPR2022-00302 --download json > decisions.json
 uspto ptab search --type IPR --download csv --limit 200 > first_200_iprs.csv
 ```
 
@@ -472,18 +472,19 @@ uspto ptab search --type IPR --download csv --limit 200 > first_200_iprs.csv
 ```bash
 uspto petition search "revival"
 uspto petition search --office "OFFICE OF PETITIONS" --decision GRANTED
-uspto petition search --app 16123456 --patent 10000000
-uspto petition search --facets decisionTypeCodeDescriptionText -f json -q
+uspto petition search --app 15223202
+uspto petition search --facets decidedPetitionTypeCodeDescriptionText -f json -q
 uspto petition get <recordId> --include-documents
 ```
 
-Dataset note: decision search data is currently dominated by `DENIED` records; `--decision GRANTED` may return no results depending on dataset coverage.
+`--decision` filters the outcome field `decidedPetitionTypeCodeDescriptionText`: `GRANTED` (most records), `DISMISSED`, `DENIED` or `GRANTED-IN-PART`.
 
 ### Bulk Data
 
 ```bash
 # Discover products (weekly patent grants, file wrappers, etc.)
 uspto bulk search "patent grant"
+uspto bulk search --category "Patent Grant" --frequency WEEKLY   # --title/--category/--frequency filter the catalog locally
 uspto bulk get PTGRXML --include-files
 uspto bulk get PTGRXML --include-files --latest --type Data
 

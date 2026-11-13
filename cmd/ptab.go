@@ -244,7 +244,7 @@ func runPtabGet(cmd *cobra.Command, args []string) error {
 var ptabDecisionsCmd = &cobra.Command{
 	Use:   "decisions [query]",
 	Short: "Search PTAB trial decisions",
-	Long:  "Search trial decisions across all PTAB proceedings.\n\nExamples:\n  uspto ptab decisions \"claim construction\"\n  uspto ptab decisions --trial IPR2021-00001\n  uspto ptab decisions --outcome \"Adverse Judgment\"",
+	Long:  "Search trial decisions across all PTAB proceedings.\n\nExamples:\n  uspto ptab decisions \"claim construction\"\n  uspto ptab decisions --trial IPR2022-00302\n  uspto ptab decisions --outcome \"Final Written Decision\"\n  uspto ptab decisions --type \"Rehearing Decision\"",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runPtabDecisions,
 }
@@ -252,8 +252,8 @@ var ptabDecisionsCmd = &cobra.Command{
 func init() {
 	f := ptabDecisionsCmd.Flags()
 	f.String("trial", "", "Filter by trial number")
-	f.String("outcome", "", "Filter by trial outcome category")
-	f.String("type", "", "Filter by decision type category")
+	f.String("outcome", "", "Filter by trial outcome category, exact value (e.g. \"Final Written Decision\", \"Institution Denied\", \"Termination\")")
+	f.String("type", "", "Filter by decision type category, exact value: \"Decision\" or \"Rehearing Decision\"")
 	f.Int("limit", 25, "Maximum results to return")
 	f.Int("offset", 0, "Number of results to skip")
 	addDownloadFlag(ptabDecisionsCmd)
