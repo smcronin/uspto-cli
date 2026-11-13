@@ -34,9 +34,11 @@ const (
 	// defaultTimeout is the HTTP timeout for metadata/search requests.
 	defaultTimeout = 30 * time.Second
 
-	// downloadTimeout is the HTTP timeout for file downloads. The API docs
-	// recommend 600 seconds because large files may have a long initial
-	// delay before content starts streaming.
+	// downloadTimeout is the default HTTP timeout for file downloads. The API
+	// docs recommend 600 seconds because large files may have a long initial
+	// delay before content starts streaming. It is a total limit, body
+	// included, so a file that needs longer is cut off; WithDownloadTimeout
+	// raises or removes it.
 	downloadTimeout = 600 * time.Second
 
 	// minRequestGap is the minimum gap between consecutive requests.
@@ -197,7 +199,10 @@ type Client struct {
 	baseURL    string
 	debug      bool
 	timeout    time.Duration
-	rl         *rateLimiter
+	// downloadTimeout is the total time allowed for one file download
+	// attempt (headers and body). Zero means no limit.
+	downloadTimeout time.Duration
+	rl              *rateLimiter
 
 	// Retry timing overrides; zero means the package defaults
 	// (retryWait429 and retryBackoffStep).
@@ -214,6 +219,24 @@ func WithTimeout(d time.Duration) ClientOption {
 		c.timeout = d
 		c.httpClient.Timeout = d
 	}
+}
+
+// WithDownloadTimeout sets the total time allowed for one file download
+// attempt: file-wrapper documents, grant and pgpub XML, and bulk data files.
+// It covers the whole transfer, body included. Zero (or a negative value)
+// removes the limit. The default is 600 seconds.
+func WithDownloadTimeout(d time.Duration) ClientOption {
+	return func(c *Client) {
+		if d < 0 {
+			d = 0
+		}
+		c.downloadTimeout = d
+	}
+}
+
+// DownloadTimeout reports the file download limit; zero means none.
+func (c *Client) DownloadTimeout() time.Duration {
+	return c.downloadTimeout
 }
 
 // WithDebug enables debug logging to stderr.
@@ -242,10 +265,11 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
-		apiKey:  apiKey,
-		baseURL: DefaultBaseURL,
-		timeout: defaultTimeout,
-		rl:      newRateLimiter(),
+		apiKey:          apiKey,
+		baseURL:         DefaultBaseURL,
+		timeout:         defaultTimeout,
+		downloadTimeout: downloadTimeout,
+		rl:              newRateLimiter(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -802,7 +826,11 @@ func (c *Client) fetchXMLByURI(ctx context.Context, fileLocationURI, kind string
 		}
 	}
 
-	return io.ReadAll(xmlResp.Body)
+	body, err := io.ReadAll(xmlResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s XML: %w", kind, c.downloadTimeoutHint(err))
+	}
+	return body, nil
 }
 
 // SearchStatusCodes searches patent application status codes.
@@ -1070,7 +1098,7 @@ func (c *Client) FetchDocumentBytes(ctx context.Context, rawURL string) ([]byte,
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading fetched document: %w", err)
+		return nil, fmt.Errorf("reading fetched document: %w", c.downloadTimeoutHint(err))
 	}
 
 	c.debugf("Fetch complete: %d bytes", len(body))
@@ -1094,7 +1122,8 @@ func wrapFileError(err error, buildMsg, execMsg string) error {
 }
 
 // getFile issues a GET for a document, XML or bulk file. rawURL may be
-// absolute or relative to baseURL. It applies the download timeout (600 s),
+// absolute or relative to baseURL. It applies the download timeout (600 s
+// unless WithDownloadTimeout changed it),
 // the rate limiter, manual redirect handling, and the same retry rules as
 // request, and returns the final response whatever its status. The caller
 // closes the body.
@@ -1104,9 +1133,9 @@ func (c *Client) getFile(ctx context.Context, rawURL string) (*http.Response, er
 		rawURL = c.baseURL + "/" + strings.TrimLeft(rawURL, "/")
 	}
 
-	// Use a separate HTTP client with the download timeout.
+	// Use a separate HTTP client with the download timeout (zero = none).
 	dlClient := &http.Client{
-		Timeout: downloadTimeout,
+		Timeout: c.downloadTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -1128,7 +1157,7 @@ func (c *Client) getFile(ctx context.Context, rawURL string) (*http.Response, er
 			if retry, _ := c.retryAfterFailure(ctx, attempt, nil, err); retry {
 				continue
 			}
-			return nil, err
+			return nil, c.downloadTimeoutHint(err)
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -1141,9 +1170,20 @@ func (c *Client) getFile(ctx context.Context, rawURL string) (*http.Response, er
 	}
 }
 
+// downloadTimeoutHint adds the limit, and the flag that changes it, to an
+// error caused by the download timeout. Without it the failure reads as a
+// bare "context deadline exceeded" and nothing points at the 600 s default.
+func (c *Client) downloadTimeoutHint(err error) error {
+	if err == nil || c.downloadTimeout <= 0 || !isTimeoutError(err) {
+		return err
+	}
+	return fmt.Errorf("%w (the download did not finish within the %s download timeout; raise it with --download-timeout, 0 = no limit)",
+		err, c.downloadTimeout)
+}
+
 // DownloadDocument downloads a file from the given URL (which may be
 // absolute or relative to baseURL) and writes it to outputPath. It uses
-// the download timeout (600 s), follows redirects manually to re-apply
+// the download timeout (600 s by default), follows redirects manually to re-apply
 // the API key header, and retries on 429.
 func (c *Client) DownloadDocument(ctx context.Context, rawURL, outputPath string) (string, error) {
 	c.debugf("DOWNLOAD %s -> %s", redactRawURL(rawURL), outputPath)
@@ -1184,7 +1224,7 @@ func (c *Client) DownloadDocument(ctx context.Context, rawURL, outputPath string
 	closeErr := out.Close()
 	if copyErr != nil {
 		_ = os.Remove(partPath)
-		return "", fmt.Errorf("writing download to disk: %w", copyErr)
+		return "", fmt.Errorf("writing download to disk: %w", c.downloadTimeoutHint(copyErr))
 	}
 	if closeErr != nil {
 		_ = os.Remove(partPath)

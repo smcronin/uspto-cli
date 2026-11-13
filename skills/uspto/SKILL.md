@@ -267,6 +267,7 @@ uspto bulk search --category "Patent Grant" --frequency WEEKLY -f json -q   # --
 uspto bulk get PTGRXML --include-files --latest -f json -q
 uspto bulk files PTFWPRE --limit 10 -f json -q
 uspto bulk download PTGRXML ipg240102.zip -o ./data/
+uspto bulk download PTGRXML ipg240102.zip -o ./data/ --download-timeout 2h   # big file: raise the 10-minute download limit
 ```
 
 ### Status Codes
@@ -361,6 +362,7 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 - **Single-item endpoints return arrays**: Access `results[0]`. Exception: `summary` returns `results: {...}` (object).
 - **Retries are automatic**: up to 3 retries for 429 (waits 5 s, or `Retry-After` if longer), 5xx, and dropped connections. A 429 asking for more than 30 s is returned with `error.retryAfterSeconds` instead of being slept through. No sleep needed between sequential calls.
 - **Do not run patent (ODP) commands in parallel**: ODP allows one request at a time and separate `uspto` processes do not coordinate with each other, so parallel runs draw 429s. TSDR trademark commands do coordinate across processes.
+- **Two timeouts**: `--timeout <seconds>` (default 30) bounds metadata, search and `--download` export requests. `--download-timeout <seconds|duration>` bounds one file download from start to finish (documents, XML, bulk files, trademark PDFs/ZIPs/images); default 10 minutes, `0` = no limit. If a download fails with "did not finish within the ... download timeout", rerun it with a larger `--download-timeout`; raising `--timeout` does nothing for file downloads.
 - **Patent XML may be missing**: Some records have no grant/pgpub XML. Fall back to `app docs` PDF workflow.
 - **`--dry-run`**: Available on all commands. Prints the USPTO request on stderr without sending it; patent and trademark data commands leave stdout empty.
 

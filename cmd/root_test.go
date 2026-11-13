@@ -8,6 +8,7 @@ import (
 
 	"github.com/smcronin/uspto-cli/internal/api"
 	"github.com/smcronin/uspto-cli/internal/config"
+	"github.com/smcronin/uspto-cli/internal/tsdr"
 	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
 )
@@ -276,5 +277,86 @@ func TestGroupCommands_HelpWithoutArgsAndNoProvider(t *testing.T) {
 	}
 	if got := providerForCommand(appMetaCmd); got != providerODP {
 		t.Errorf("providerForCommand(app meta) = %q, want %q", got, providerODP)
+	}
+}
+
+// initDownloadTimeouts runs initConfig for an ODP command with the given
+// --timeout and --download-timeout and returns the two clients' file
+// download limits.
+func initDownloadTimeouts(t *testing.T, timeoutSeconds int, downloadTimeout downloadTimeoutFlag) (odp, trademark time.Duration) {
+	t.Helper()
+	origClient, origTSDR := api.DefaultClient, tsdr.DefaultClient
+	origKey, origTSDRKey := flagAPIKey, flagTSDRAPIKey
+	origTimeout, origDL, origDryRun, origFormat := flagTimeout, flagDownloadTimeout, flagDryRun, flagFormat
+	defer func() {
+		api.DefaultClient, tsdr.DefaultClient = origClient, origTSDR
+		flagAPIKey, flagTSDRAPIKey = origKey, origTSDRKey
+		flagTimeout, flagDownloadTimeout, flagDryRun, flagFormat = origTimeout, origDL, origDryRun, origFormat
+	}()
+	t.Setenv(config.ConfigDirOverrideEnvVar, t.TempDir())
+	t.Setenv(config.APIKeyEnvVar, "")
+	t.Setenv(config.TSDRAPIKeyEnvVar, "")
+	t.Setenv(config.LegacyTSDRAPIKeyEnvVar, "")
+	flagAPIKey, flagTSDRAPIKey = "odp-key", "tsdr-key"
+	flagTimeout, flagDownloadTimeout, flagDryRun, flagFormat = timeoutSeconds, downloadTimeout, true, "table"
+
+	if err := initConfig(appMetaCmd); err != nil {
+		t.Fatalf("initConfig() error: %v", err)
+	}
+	return api.DefaultClient.DownloadTimeout(), tsdr.DefaultClient.DownloadTimeout()
+}
+
+// --timeout is the request limit. It used to be passed on as the TSDR
+// download limit too, so every trademark PDF or ZIP had 30 seconds.
+func TestInitConfig_TimeoutDoesNotSetDownloadLimits(t *testing.T) {
+	odp, trademark := initDownloadTimeouts(t, 5, downloadTimeoutFlag{})
+	if odp != 600*time.Second {
+		t.Errorf("ODP download timeout = %s with --timeout 5, want the 10m0s default", odp)
+	}
+	if trademark != 10*time.Minute {
+		t.Errorf("TSDR download timeout = %s with --timeout 5, want the package default 10m0s", trademark)
+	}
+}
+
+func TestInitConfig_DownloadTimeoutSetsBothClients(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"45m", 45 * time.Minute},
+		{"1200", 20 * time.Minute},
+		{"0", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			var flag downloadTimeoutFlag
+			if err := flag.Set(tt.raw); err != nil {
+				t.Fatalf("Set(%q) error: %v", tt.raw, err)
+			}
+			odp, trademark := initDownloadTimeouts(t, 5, flag)
+			if odp != tt.want || trademark != tt.want {
+				t.Errorf("download timeouts = ODP %s, TSDR %s; want %s for both", odp, trademark, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownloadTimeoutFlag_Parsing(t *testing.T) {
+	for _, raw := range []string{"abc", "-5", "-1m", "", "10 minutes"} {
+		var flag downloadTimeoutFlag
+		if err := flag.Set(raw); err == nil {
+			t.Errorf("Set(%q) accepted, want an error", raw)
+		}
+		if flag.set {
+			t.Errorf("Set(%q) failed but marked the flag as set", raw)
+		}
+	}
+	if rootCmd.PersistentFlags().Lookup("download-timeout") == nil {
+		t.Fatal("--download-timeout is not registered as a global flag")
+	}
+	// A value that does not parse is a usage error like any other flag.
+	err := rootCmd.FlagErrorFunc()(rootCmd, errors.New(`invalid argument "abc" for "--download-timeout" flag`))
+	if code, errType := usageEnvelope(t, err); code != types.ExitInvalidArgs || errType != "INVALID_ARGUMENTS" {
+		t.Errorf("exit %d type %q, want exit 2 INVALID_ARGUMENTS", code, errType)
 	}
 }

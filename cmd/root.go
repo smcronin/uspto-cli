@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,11 +28,14 @@ var (
 	flagNoColor    bool
 	flagQuiet      bool
 	flagTimeout    int
-	flagDryRun     bool
-	flagMinify     bool
-	activeCommand  string
-	activePath     string
-	activeProvider apiProvider
+	// flagDownloadTimeout is --download-timeout. Unlike the other globals it
+	// records whether it was given: unset keeps each client's own default.
+	flagDownloadTimeout downloadTimeoutFlag
+	flagDryRun          bool
+	flagMinify          bool
+	activeCommand       string
+	activePath          string
+	activeProvider      apiProvider
 )
 
 // rootCmd is the top-level command for the USPTO CLI.
@@ -57,7 +61,8 @@ func init() {
 	pf.StringVarP(&flagFormat, "format", "f", "table", "Output format: table, json, csv, ndjson")
 	pf.BoolVar(&flagNoColor, "no-color", false, "Disable color output (also respects NO_COLOR env)")
 	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-data output (counts, progress)")
-	pf.IntVar(&flagTimeout, "timeout", 30, "Request timeout in seconds")
+	pf.IntVar(&flagTimeout, "timeout", 30, "Request timeout in seconds (metadata, search and --download exports; not file downloads)")
+	pf.Var(&flagDownloadTimeout, "download-timeout", "Total time allowed for one file download: seconds or a duration (900, 15m, 2h); 0 = no limit. Default: 10m for patent (ODP) files and trademark (TSDR) files")
 	pf.BoolVar(&flagDryRun, "dry-run", false, "Show the API request without executing it")
 	pf.BoolVar(&flagMinify, "minify", false, "Compact JSON output (no indentation)")
 
@@ -75,6 +80,41 @@ func init() {
 		group.RunE = showGroupHelp
 	}
 }
+
+// downloadTimeoutFlag is the value of --download-timeout: the total time one
+// file download may take. It accepts a whole number of seconds, like
+// --timeout, or a Go duration ("15m", "2h"). Zero means no limit.
+type downloadTimeoutFlag struct {
+	value time.Duration
+	set   bool
+}
+
+// Set parses the flag value (pflag.Value).
+func (f *downloadTimeoutFlag) Set(raw string) error {
+	raw = strings.TrimSpace(raw)
+	var d time.Duration
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		d = time.Duration(seconds) * time.Second
+	} else if d, err = time.ParseDuration(raw); err != nil {
+		return fmt.Errorf("expected seconds or a duration such as 900, 15m or 2h (0 = no limit)")
+	}
+	if d < 0 {
+		return fmt.Errorf("must not be negative (0 = no limit)")
+	}
+	f.value, f.set = d, true
+	return nil
+}
+
+// String renders the current value for help output (pflag.Value).
+func (f *downloadTimeoutFlag) String() string {
+	if !f.set {
+		return ""
+	}
+	return f.value.String()
+}
+
+// Type names the value in help output (pflag.Value).
+func (f *downloadTimeoutFlag) Type() string { return "duration" }
 
 // outputFormats are the values --format accepts.
 var outputFormats = []string{"table", "json", "csv", "ndjson"}
@@ -148,16 +188,25 @@ func initConfig(cmd *cobra.Command) error {
 		return &invalidArgsError{message: fmt.Sprintf("invalid --timeout %d: must be > 0 seconds", flagTimeout)}
 	}
 
+	// --timeout bounds metadata and search requests. File downloads have
+	// their own, much longer limit: 600 s for ODP files and 10 minutes for
+	// TSDR artifacts unless --download-timeout says otherwise. (--timeout
+	// used to be passed as the TSDR download limit as well, which cut every
+	// trademark PDF or ZIP off after 30 seconds.)
 	opts := []api.ClientOption{
 		api.WithDebug(flagDebug),
+		api.WithTimeout(time.Duration(flagTimeout) * time.Second),
 	}
-	opts = append(opts, api.WithTimeout(time.Duration(flagTimeout)*time.Second))
-	api.DefaultClient = api.NewClient(flagAPIKey, opts...)
-	tsdr.DefaultClient = tsdr.NewClient(flagTSDRAPIKey,
+	tsdrOpts := []tsdr.ClientOption{
 		tsdr.WithDebug(flagDebug),
-		tsdr.WithTimeout(time.Duration(flagTimeout)*time.Second),
-		tsdr.WithDownloadTimeout(time.Duration(flagTimeout)*time.Second),
-	)
+		tsdr.WithTimeout(time.Duration(flagTimeout) * time.Second),
+	}
+	if flagDownloadTimeout.set {
+		opts = append(opts, api.WithDownloadTimeout(flagDownloadTimeout.value))
+		tsdrOpts = append(tsdrOpts, tsdr.WithDownloadTimeout(flagDownloadTimeout.value))
+	}
+	api.DefaultClient = api.NewClient(flagAPIKey, opts...)
+	tsdr.DefaultClient = tsdr.NewClient(flagTSDRAPIKey, tsdrOpts...)
 	tmsearch.DefaultClient = tmsearch.NewClient(
 		tmsearch.WithDebug(flagDebug),
 		tmsearch.WithTimeout(time.Duration(flagTimeout)*time.Second),

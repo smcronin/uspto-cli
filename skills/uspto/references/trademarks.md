@@ -291,3 +291,8 @@ calling USPTO. Downloads use temporary files, validate content when a type is
 known, emit a streaming SHA-256 in `sha256`, and require `--overwrite` before
 replacing an existing artifact. Binary raw requests require `--output` before
 any network call.
+
+Timeouts: `--timeout <seconds>` (default 30) bounds metadata requests only. A
+PDF, ZIP, image or other artifact download gets 10 minutes in total; change it
+with `--download-timeout <seconds|duration>` (`0` = no limit), for example
+`--download-timeout 30m` for a large multi-case bundle.

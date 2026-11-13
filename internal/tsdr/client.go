@@ -285,8 +285,30 @@ func WithTimeout(timeout time.Duration) ClientOption {
 	return func(c *Client) { c.timeout = timeout }
 }
 
+// WithDownloadTimeout sets the total time allowed for one PDF, ZIP, image or
+// other artifact download. Zero (or a negative value) removes the limit. The
+// default is 10 minutes.
 func WithDownloadTimeout(timeout time.Duration) ClientOption {
-	return func(c *Client) { c.downloadTimeout = timeout }
+	return func(c *Client) {
+		if timeout < 0 {
+			timeout = 0
+		}
+		c.downloadTimeout = timeout
+	}
+}
+
+// DownloadTimeout reports the artifact download limit; zero means none.
+func (c *Client) DownloadTimeout() time.Duration {
+	return c.downloadTimeout
+}
+
+// withTimeout is context.WithTimeout, except that a zero or negative timeout
+// means no deadline instead of one that has already passed.
+func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 // WithoutRateLimit is intended for tests and private mock servers.
@@ -437,7 +459,7 @@ func (c *Client) openRequestURL(ctx context.Context, method, fullURL, accept, co
 		if err := c.rl.wait(ctx, download); err != nil {
 			return nil, err
 		}
-		reqCtx, cancel := context.WithTimeout(ctx, timeout)
+		reqCtx, cancel := withTimeout(ctx, timeout)
 		var requestBody io.Reader
 		if len(body) > 0 {
 			requestBody = bytes.NewReader(body)
@@ -986,7 +1008,7 @@ func (c *Client) PublicAssetStream(ctx context.Context, rawURL string) (*StreamR
 	if err := c.rl.wait(ctx, true); err != nil {
 		return nil, err
 	}
-	reqCtx, cancel := context.WithTimeout(ctx, c.downloadTimeout)
+	reqCtx, cancel := withTimeout(ctx, c.downloadTimeout)
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		cancel()

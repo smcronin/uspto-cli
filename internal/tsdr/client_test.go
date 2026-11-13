@@ -984,3 +984,31 @@ func TestTSDRRedirectLoopIsBounded(t *testing.T) {
 		t.Fatalf("redirect requests = %d, want 10", got)
 	}
 }
+
+func TestDownloadTimeout_ZeroMeansNoDeadline(t *testing.T) {
+	if got := NewClient("k").DownloadTimeout(); got != 10*time.Minute {
+		t.Errorf("default download timeout = %s, want 10m0s", got)
+	}
+	if got := NewClient("k", WithDownloadTimeout(-time.Second)).DownloadTimeout(); got != 0 {
+		t.Errorf("a negative download timeout = %s, want 0 (no limit)", got)
+	}
+	// The metadata timeout does not set the download timeout.
+	if got := NewClient("k", WithTimeout(5*time.Second)).DownloadTimeout(); got != 10*time.Minute {
+		t.Errorf("WithTimeout changed the download timeout to %s", got)
+	}
+
+	ctx, cancel := withTimeout(context.Background(), 0)
+	defer cancel()
+	if _, ok := ctx.Deadline(); ok {
+		t.Error("withTimeout(0) set a deadline; zero means none")
+	}
+	if ctx.Err() != nil {
+		t.Errorf("withTimeout(0) context is already done: %v", ctx.Err())
+	}
+
+	ctx, cancel = withTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, ok := ctx.Deadline(); !ok {
+		t.Error("withTimeout(1m) set no deadline")
+	}
+}

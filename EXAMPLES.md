@@ -327,6 +327,10 @@ uspto bulk files PTGRXML
 
 # Download a specific weekly file
 uspto bulk download PTGRXML ipg260101.zip -o ./data/
+
+# A file download gets 10 minutes in total. Give a large file more time
+# (seconds or a duration; 0 = no limit)
+uspto bulk download PTGRXML ipg260101.zip -o ./data/ --download-timeout 2h
 ```
 
 ## Export Data for Spreadsheets and Dashboards

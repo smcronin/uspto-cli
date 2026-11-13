@@ -487,6 +487,7 @@ uspto bulk get PTGRXML --include-files --latest --type Data
 # List and download files
 uspto bulk files PTFWPRE --limit 10
 uspto bulk download PTGRXML ipg240102.zip -o ./data/
+uspto bulk download PTGRXML ipg240102.zip -o ./data/ --download-timeout 2h   # large file or slow link
 ```
 
 ### Status Codes
@@ -554,6 +555,24 @@ Built for AI agents and automation:
 - **Same-origin raw access** rejects absolute URLs so a TSDR credential cannot be sent to another host
 
 A strong agent workflow is: run a narrow `trademark search`; retain source/provenance and candidate IDs; deduplicate; run `case status` or `batch`; then request full case JSON, document metadata, and only the binary artifacts needed for selected records. Use `--dry-run` to inspect planned routes and `-f json --minify -q` for machine-readable calls.
+
+## Timeouts
+
+Two global flags, for two kinds of request:
+
+| Flag | Applies to | Default |
+| --- | --- | --- |
+| `--timeout <seconds>` | Metadata and search requests on every service, including `--download` exports of search results | 30 |
+| `--download-timeout <seconds or duration>` | One file download, start to finish: file-wrapper documents, grant/pgpub XML, bulk data files, and trademark PDFs, ZIPs and images | 10 minutes for patent (ODP) files and for trademark (TSDR) files |
+
+`--download-timeout` takes seconds (`1800`) or a duration (`30m`, `2h`); `0` removes the limit. The limit covers the whole transfer, so a multi-gigabyte bulk file on a slow link needs more than the default:
+
+```bash
+uspto bulk download PTGRXML ipg240102.zip -o ./data/ --download-timeout 2h
+uspto app download-all 16123456 -o ./wrapper/ --download-timeout 0
+```
+
+A download that runs out of time fails without leaving a partial file, and the error names the flag. `--timeout` no longer limits trademark downloads (it used to cut them off at 30 seconds).
 
 ## Rate Limiting
 
