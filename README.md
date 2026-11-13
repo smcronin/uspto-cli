@@ -471,7 +471,7 @@ If your agent runtime loads skills from a user directory (for example `~/.claude
 Built for AI agents and automation:
 
 - **Structured JSON envelope** with `ok`, `command`, `commandPath`, `provider`, `pagination`, `results`, `facets`, `version`
-- **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error
+- **Typed exit codes**: 0=OK, 1=general, 2=usage, 3=auth, 4=not-found, 5=rate-limited, 6=server-error. Exit 2 (`error.type` `INVALID_ARGUMENTS`) covers every input the caller has to fix: unknown commands, subcommands and flags, flag values that do not parse, failed validation (dates, application numbers, `--limit 0`, conflicting flags) and unknown `-f` formats
 - **`--dry-run`** shows the API request without executing (all commands)
 - **`--minify`** for compact JSON, **`--quiet`** suppresses progress output
 - **`--all`** auto-paginates up to 10,000 results

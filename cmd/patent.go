@@ -133,7 +133,7 @@ func init() {
 func runPatentBundle(cmd *cobra.Command, args []string) error {
 	inputID := strings.TrimSpace(args[0])
 	if inputID == "" {
-		return fmt.Errorf("id cannot be empty")
+		return usageErrorf("id cannot be empty")
 	}
 
 	inputType, err := normalizeBundleIDType(patentBundleIDType)
@@ -340,7 +340,7 @@ func resolvePatentBundle(ctx context.Context, inputID, idType string) (*patentBu
 	case idTypePatent:
 		return resolvePatentBundleFromSearch(ctx, inputID, idTypePatent, "applicationMetaData.patentNumber")
 	default:
-		return nil, nil, fmt.Errorf("unsupported id type %q", idType)
+		return nil, nil, usageErrorf("unsupported id type %q", idType)
 	}
 }
 
@@ -630,7 +630,7 @@ func normalizeBundleIDType(v string) (string, error) {
 	case idTypeAuto, idTypeApp, idTypePublication, idTypePatent:
 		return normalized, nil
 	default:
-		return "", fmt.Errorf("invalid --id-type %q: expected auto, app, publication, or patent", v)
+		return "", usageErrorf("invalid --id-type %q: expected auto, app, publication, or patent", v)
 	}
 }
 

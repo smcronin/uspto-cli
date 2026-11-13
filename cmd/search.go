@@ -174,7 +174,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if searchFlags.filedWithin != "" {
 		resolved, err := resolveRelativeDate(searchFlags.filedWithin)
 		if err != nil {
-			return fmt.Errorf("invalid --filed-within value %q: %w", searchFlags.filedWithin, err)
+			return usageErrorf("invalid --filed-within value %q: %w", searchFlags.filedWithin, err)
 		}
 		// Only override if --filed-after was not explicitly set.
 		if searchFlags.filedAfter == "" {
@@ -538,16 +538,16 @@ func annotateSearch404(err error) error {
 
 func validateSearchInputs() error {
 	if searchFlags.limit <= 0 {
-		return fmt.Errorf("invalid --limit %d: must be > 0", searchFlags.limit)
+		return usageErrorf("invalid --limit %d: must be > 0", searchFlags.limit)
 	}
 	if searchFlags.offset < 0 {
-		return fmt.Errorf("invalid --offset %d: must be >= 0", searchFlags.offset)
+		return usageErrorf("invalid --offset %d: must be >= 0", searchFlags.offset)
 	}
 	if searchFlags.page < 0 {
-		return fmt.Errorf("invalid --page %d: must be >= 1", searchFlags.page)
+		return usageErrorf("invalid --page %d: must be >= 1", searchFlags.page)
 	}
 	if searchFlags.granted && searchFlags.pending {
-		return fmt.Errorf("cannot combine --granted and --pending")
+		return usageErrorf("cannot combine --granted and --pending")
 	}
 	if err := validateSortExpr("--sort", searchFlags.sort); err != nil {
 		return err
@@ -561,15 +561,15 @@ func validateSearchInputs() error {
 	for _, expr := range searchFlags.filters {
 		name, value, ok := strings.Cut(expr, "=")
 		if !ok {
-			return fmt.Errorf("invalid --filter %q: expected field=value", expr)
+			return usageErrorf("invalid --filter %q: expected field=value", expr)
 		}
 		// An empty side used to be dropped silently, which ran the search
 		// without the filter the caller asked for.
 		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("invalid --filter %q: missing field name before '='", expr)
+			return usageErrorf("invalid --filter %q: missing field name before '='", expr)
 		}
 		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("invalid --filter %q: missing value after '='", expr)
+			return usageErrorf("invalid --filter %q: missing value after '='", expr)
 		}
 	}
 	return nil
@@ -577,7 +577,7 @@ func validateSearchInputs() error {
 
 func validateSearchMode(cmd *cobra.Command) error {
 	if searchFlags.countOnly && downloadFormat(cmd) != "" {
-		return fmt.Errorf("cannot combine --count-only and --download")
+		return usageErrorf("cannot combine --count-only and --download")
 	}
 	return nil
 }

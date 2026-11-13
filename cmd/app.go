@@ -29,7 +29,7 @@ var appNumberRegex = regexp.MustCompile(`^\d{6,12}$`)
 // validateAppNumber checks that the application number is valid.
 func validateAppNumber(appNumber string) error {
 	if !appNumberRegex.MatchString(appNumber) {
-		return fmt.Errorf("invalid application number %q: must be 6-12 digits", appNumber)
+		return usageErrorf("invalid application number %q: must be 6-12 digits", appNumber)
 	}
 	return nil
 }
@@ -632,7 +632,7 @@ func resolveDownloadFormat(format string) (mimeType string, ext string, label st
 	if ext, ok := downloadFormatExtensions[upper]; ok {
 		return upper, ext, canonicalFormatLabels[upper], nil
 	}
-	return "", "", "", fmt.Errorf("unknown download format %q (valid: pdf, docx, xml)", format)
+	return "", "", "", usageErrorf("unknown download format %q (valid: pdf, docx, xml)", format)
 }
 
 // documentOptionsParams converts document listing options to query params.
@@ -737,7 +737,7 @@ func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Docume
 	parts := strings.SplitN(expr, ":", 2)
 	field := strings.ToLower(strings.TrimSpace(parts[0]))
 	if field != "date" && field != "officialdate" {
-		return nil, fmt.Errorf("invalid --sort %q: supported fields are date or officialDate", expr)
+		return nil, usageErrorf("invalid --sort %q: supported fields are date or officialDate", expr)
 	}
 	desc := false
 	if len(parts) == 2 {
@@ -747,7 +747,7 @@ func sortDocumentsByDateExpr(docs []types.Document, expr string) ([]types.Docume
 		case "desc":
 			desc = true
 		default:
-			return nil, fmt.Errorf("invalid --sort %q: order must be asc or desc", expr)
+			return nil, usageErrorf("invalid --sort %q: order must be asc or desc", expr)
 		}
 	}
 
@@ -770,7 +770,7 @@ func resolveDocumentSelection(docs []types.Document, selector string) (int, *typ
 
 	if idx, err := strconv.Atoi(selector); err == nil {
 		if idx < 1 || idx > len(docs) {
-			return 0, nil, fmt.Errorf("document index %d out of range (1-%d)", idx, len(docs))
+			return 0, nil, usageErrorf("document index %d out of range (1-%d)", idx, len(docs))
 		}
 		return idx, &docs[idx-1], nil
 	}
@@ -780,7 +780,7 @@ func resolveDocumentSelection(docs []types.Document, selector string) (int, *typ
 			return i + 1, &docs[i], nil
 		}
 	}
-	return 0, nil, fmt.Errorf("document identifier %q not found", selector)
+	return 0, nil, usageErrorf("document identifier %q not found", selector)
 }
 
 func uniqueOutputPath(path string, seen map[string]int) (string, bool) {

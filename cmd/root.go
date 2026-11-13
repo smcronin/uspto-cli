@@ -60,12 +60,43 @@ func init() {
 	pf.IntVar(&flagTimeout, "timeout", 30, "Request timeout in seconds")
 	pf.BoolVar(&flagDryRun, "dry-run", false, "Show the API request without executing it")
 	pf.BoolVar(&flagMinify, "minify", false, "Compact JSON output (no indentation)")
+
+	// A flag that fails to parse (--limit abc, --limit with no value) is a
+	// usage error like any other: exit 2, INVALID_ARGUMENTS. Subcommands
+	// inherit this function from the root.
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &invalidArgsError{message: err.Error()}
+	})
+
+	// Command groups reject an unknown subcommand instead of printing help
+	// and exiting 0. (The trademark groups have their own validator.)
+	for _, group := range []*cobra.Command{appCmd, ptabCmd, bulkCmd, petitionCmd, patentCmd, configCmd} {
+		group.Args = validateGroupArgs
+		group.RunE = showGroupHelp
+	}
+}
+
+// outputFormats are the values --format accepts.
+var outputFormats = []string{"table", "json", "csv", "ndjson"}
+
+// validateOutputFormat rejects an unknown --format value. It used to fall
+// through to the table renderer without a word.
+func validateOutputFormat(format string) error {
+	for _, known := range outputFormats {
+		if format == known {
+			return nil
+		}
+	}
+	return usageErrorf("invalid --format %q: expected %s", format, strings.Join(outputFormats, ", "))
 }
 
 // initConfig runs before every command. It loads environment variables,
 // resolves the API key, configures color output, and sets up the API client.
 func initConfig(cmd *cobra.Command) error {
 	setActiveCommand(cmd)
+	if err := validateOutputFormat(flagFormat); err != nil {
+		return err
+	}
 	resolvedKey, err := resolveAPIKey()
 	if err != nil {
 		return err
@@ -168,6 +199,11 @@ func providerForCommand(cmd *cobra.Command) apiProvider {
 	if cmd == nil || (cmd.Parent() == nil && cmd.Name() == "uspto") {
 		return providerNone
 	}
+	// A command group (app, ptab, bulk, ...) only prints help or rejects an
+	// unknown subcommand; it never calls a provider.
+	if cmd.HasSubCommands() {
+		return providerNone
+	}
 	path := strings.Fields(cmd.CommandPath())
 	if len(path) >= 2 && path[1] == "trademark" {
 		if len(path) == 2 || (len(path) == 3 && (path[2] == "case" || path[2] == "docs" || path[2] == "multimedia")) {
@@ -212,6 +248,34 @@ func (e *credentialError) Error() string { return e.message }
 type invalidArgsError struct{ message string }
 
 func (e *invalidArgsError) Error() string { return e.message }
+
+// usageErrorf builds an error for input the caller has to fix: a bad flag
+// value, an impossible flag combination, a malformed identifier. handleError
+// reports it as INVALID_ARGUMENTS with exit code 2, which tells an agent to
+// correct the command instead of retrying it. The format accepts %w.
+func usageErrorf(format string, args ...any) error {
+	return &invalidArgsError{message: fmt.Errorf(format, args...).Error()}
+}
+
+// validateGroupArgs is the Args validator for command groups that have no
+// action of their own. Without it cobra prints the group's help and exits 0
+// for `uspto app nosuchsub`, which reads as success to a script.
+func validateGroupArgs(cmd *cobra.Command, args []string) error {
+	setActiveCommand(cmd)
+	if len(args) == 0 {
+		return nil
+	}
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		msg += " (did you mean " + strings.Join(suggestions, ", ") + "?)"
+	}
+	return &invalidArgsError{message: msg + fmt.Sprintf(". Run `%s --help` for the list of subcommands", cmd.CommandPath())}
+}
+
+// showGroupHelp is the RunE of a command group invoked without a subcommand.
+func showGroupHelp(cmd *cobra.Command, _ []string) error {
+	return cmd.Help()
+}
 
 func setActiveCommand(cmd *cobra.Command) {
 	if cmd == nil {

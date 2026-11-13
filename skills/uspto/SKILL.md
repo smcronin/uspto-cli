@@ -363,7 +363,7 @@ Parse for: `35 U.S.C. § 102/103/112`, `Claim(s) X-Y is/are rejected`, prior art
 
 | Exit Code | Meaning | Action |
 |-----------|---------|--------|
-| 2 | Usage error | Check flags, app number format (bare digits) |
+| 2 | Usage error (`error.type` `INVALID_ARGUMENTS`): bad flag value, date, app number, flag combination, unknown subcommand or `-f` format | Fix the command (flags, app number as bare digits); retrying it unchanged fails the same way |
 | 3 | Auth failure | `uspto config show` to verify; `config set-api-key` to reset |
 | 4 | Not found | May predate 2001 coverage or not exist |
 | 5 | Rate limited | Auto-retried 3x. If persistent, wait `error.retryAfterSeconds` when present, otherwise 30s |

@@ -47,10 +47,10 @@ Provide the key as an argument, load it from your current environment
 			sources++
 		}
 		if sources == 0 {
-			return fmt.Errorf("provide an API key, or use --from-env / --from-dotenv")
+			return usageErrorf("provide an API key, or use --from-env / --from-dotenv")
 		}
 		if sources > 1 {
-			return fmt.Errorf("use only one source: argument, --from-env, or --from-dotenv")
+			return usageErrorf("use only one source: argument, --from-env, or --from-dotenv")
 		}
 
 		var apiKey string
@@ -116,10 +116,10 @@ from a dotenv file with --from-dotenv.`,
 			sources++
 		}
 		if sources == 0 {
-			return fmt.Errorf("provide a TSDR API key, or use --from-env / --from-dotenv")
+			return usageErrorf("provide a TSDR API key, or use --from-env / --from-dotenv")
 		}
 		if sources > 1 {
-			return fmt.Errorf("use only one source: argument, --from-env, or --from-dotenv")
+			return usageErrorf("use only one source: argument, --from-env, or --from-dotenv")
 		}
 
 		var apiKey string

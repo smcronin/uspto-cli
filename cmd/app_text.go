@@ -90,7 +90,7 @@ Examples:
 			return err
 		}
 		if appTextLatestFlag && len(args) > 1 {
-			return fmt.Errorf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
+			return usageErrorf("--latest cannot be used together with an explicit docIndex/documentIdentifier")
 		}
 
 		docOpts := types.DocumentOptions{
@@ -289,10 +289,10 @@ func validateTextFormatRequest(requested string) error {
 	}
 	mimeType, _, _, err := resolveDownloadFormat(req)
 	if err != nil {
-		return fmt.Errorf("unknown text format %q (valid: auto, xml, docx)", requested)
+		return usageErrorf("unknown text format %q (valid: auto, xml, docx)", requested)
 	}
 	if mimeType == "PDF" {
-		return fmt.Errorf("pdf text extraction is not supported; choose auto, xml, or docx")
+		return usageErrorf("pdf text extraction is not supported; choose auto, xml, or docx")
 	}
 	return nil
 }
@@ -313,10 +313,10 @@ func resolveTextFormat(doc *types.Document, requested string) (mimeType string, 
 
 	mimeType, _, label, err = resolveDownloadFormat(req)
 	if err != nil {
-		return "", "", "", fmt.Errorf("unknown text format %q (valid: auto, xml, docx)", requested)
+		return "", "", "", usageErrorf("unknown text format %q (valid: auto, xml, docx)", requested)
 	}
 	if mimeType == "PDF" {
-		return "", "", "", fmt.Errorf("pdf text extraction is not supported; choose xml or docx when available")
+		return "", "", "", usageErrorf("pdf text extraction is not supported; choose xml or docx when available")
 	}
 
 	downloadURL = findDownloadOption(doc, mimeType)
