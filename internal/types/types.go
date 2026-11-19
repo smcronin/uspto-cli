@@ -1500,3 +1500,27 @@ type FullTextResult struct {
 	PublicationNumber string `json:"publicationNumber,omitempty"`
 	PublicationDate   string `json:"publicationDate,omitempty"`
 }
+
+// ---------------------------------------------------------------------------
+// Trademark Decisions and Proceedings (ODP 5.1)
+// ---------------------------------------------------------------------------
+
+// TrademarkDecisionSearchResponse is the response of the Trademark Decisions
+// and Proceedings search endpoint. Records are kept as generic maps: the live
+// service returns fields the published schema does not list
+// (proceedingNumber, textractStatus, deleteIndicator) and sends serialNumber
+// and registrationNumber as numbers although the schema calls them strings.
+type TrademarkDecisionSearchResponse struct {
+	Count             int                      `json:"count"`
+	RequestIdentifier string                   `json:"requestIdentifier,omitempty"`
+	Records           []map[string]interface{} `json:"trademarkDecisionsDataBag"`
+	Facets            map[string][]FacetValue  `json:"facets,omitempty"`
+}
+
+// TrademarkDecisionGetResponse is the response of the search-by-document-
+// identifier endpoint, whose data bag is a single object, not a list.
+type TrademarkDecisionGetResponse struct {
+	Count             int                    `json:"count"`
+	RequestIdentifier string                 `json:"requestIdentifier,omitempty"`
+	Record            map[string]interface{} `json:"trademarkDecisionsDataBag"`
+}

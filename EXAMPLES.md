@@ -173,6 +173,34 @@ uspto trademark docs bundle sn:72131351 --asset pdf --dry-run
 
 Absolute and protocol-relative URLs are rejected. For endpoint semantics, identifiers, schemas, and observed service behavior, use the [repository TSDR reference](docs/tsdr-api/README.md).
 
+## Track Expungements, Director Petitions and Sanctions
+
+The Open Data Portal's Trademark Decisions and Proceedings dataset (added 2026-11-13) holds expungement and reexamination proceedings, petitions to the Director, and administrative orders. These commands use the ODP key.
+
+```bash
+# What did the Director decide on petitions this month?
+uspto trademark decisions search --category petitions --from 2026-11-01 --to 2026-11-30
+
+# Has anyone tried to expunge or reexamine this registration?
+uspto trademark decisions search --registration 5513424 --sort decisionActionDate:asc
+
+# Which document types make up the expungement and reexamination docket?
+uspto trademark decisions search --category expungement-reexam --facets documentTypeDescriptionText,proceedingTypeCategory --limit 1 -f json -q
+
+# Sanctions and show-cause orders that mention a phrase anywhere in the document
+uspto trademark decisions search --category administrative --text "specimen farm"
+
+# Read one order: the record, then the PDF
+uspto trademark decisions get <documentIdentifier> -f json -q
+uspto trademark decisions download <documentIdentifier> -o order.pdf
+
+# The whole administrative docket as a spreadsheet
+uspto trademark decisions search --category administrative --download csv > administrative-orders.csv
+
+# Hand a record's serial number to TSDR for the case itself (TSDR key)
+uspto trademark case status sn:87712766
+```
+
 ## Let Your AI Agent Do Trademark Research
 
 A reliable trademark-agent sequence is discovery, deduplication, authoritative hydration, metadata filtering, and selective artifact retrieval:

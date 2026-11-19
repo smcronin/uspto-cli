@@ -1,6 +1,6 @@
 ---
 name: uspto
-description: "Search and retrieve USPTO patent and trademark data: patent applications, PTAB, file wrappers, families, official Trademark Search, and TSDR cases/documents/images using the uspto CLI."
+description: "Search and retrieve USPTO patent and trademark data: patent applications, PTAB, file wrappers, families, official Trademark Search, TSDR cases/documents/images, and trademark decisions and proceedings (expungement, reexamination, petitions to the Director, administrative sanctions) using the uspto CLI."
 ---
 
 # USPTO CLI
@@ -10,6 +10,7 @@ description: "Search and retrieve USPTO patent and trademark data: patent applic
 Use this skill when the user asks to:
 - Search trademarks by wordmark, owner, goods/services, class, design code, attorney, date, or live/dead status
 - Retrieve trademark status, owners, prosecution events, assignments, maintenance data, documents, or mark images through TSDR
+- Search trademark expungement and reexamination proceedings, petitions to the Director, or administrative orders and sanctions, and download those documents
 - Search for patents by keyword, inventor, assignee, CPC class, examiner, or date range
 - Look up a specific patent application's metadata, prosecution history, continuity, or assignments
 - Download patent documents (PDFs, DOCX, XML) from the file wrapper
@@ -101,6 +102,24 @@ uspto trademark docs list sn:97054561 -f json -q
 Case and document verbs are nested: use `trademark case status` and
 `trademark docs list`, not `trademark status` or `trademark list`. The CLI
 rejects omitted nesting with exit 2 and an actionable hint.
+
+Trademark decisions and proceedings (expungement, reexamination, petitions to
+the Director, administrative orders and sanctions) are a separate Open Data
+Portal dataset that uses the **ODP key**, not the TSDR key:
+
+```bash
+uspto trademark decisions search --category petitions --from 2026-11-01 -f json -q
+uspto trademark decisions search --serial 87712766 --sort decisionActionDate:asc -f json -q
+uspto trademark decisions search --text "specimen farm" --category administrative -f json -q
+uspto trademark decisions get <documentIdentifier> -f json -q
+uspto trademark decisions download <documentIdentifier> -o order.pdf -f json -q
+```
+
+`--category` is `expungement-reexam`, `petitions` or `administrative`. The
+record's text field holds only the first 500 characters; download the PDF to
+read a document. See the "Decisions and proceedings" section of
+[references/trademarks.md](references/trademarks.md) for every flag and the
+service's limits.
 
 ### Patent Bundle
 

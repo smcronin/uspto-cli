@@ -33,6 +33,8 @@ cmd/
   trademark_case.go        - trademark case status/get/goods/parties/events/.../export/bundle
   trademark_docs.go        - trademark docs list/info/page/fetch/download/download-all/bundle/selected
   trademark_ops.go         - trademark batch, image, last-update, casemap, multimedia, api-spec, request
+  trademark_decisions.go   - trademark decisions search/get/download (ODP Trademark Decisions and
+                             Proceedings API; the one trademark group that uses the ODP key)
   atomic_replace_*.go      - Platform-specific atomic file replace for trademark downloads
 internal/
   types/types.go           - ODP response types, XML structs for grant parsing, CLI envelope and exit codes
@@ -51,7 +53,7 @@ tests/
 ## Key Conventions
 - All commands support `-f json` (envelope: `{ok, command, commandPath, provider, pagination, results, facets, warnings, partial, version, error}`)
 - Additional formats: `-f csv`, `-f ndjson`, `-f table` (default)
-- ODP key from `--api-key`, `USPTO_API_KEY`, or the config file; TSDR uses a separate key (`--tsdr-api-key`, `USPTO_TSDR_API_KEY`); trademark search needs none
+- ODP key from `--api-key`, `USPTO_API_KEY`, or the config file; TSDR uses a separate key (`--tsdr-api-key`, `USPTO_TSDR_API_KEY`); trademark search needs none; `trademark decisions` uses the ODP key
 - ODP rate limiter: sequential requests (burst=1) within one process, 100 ms minimum gap. The last-request timestamp file is read once at start-up, so separate `uspto` processes are not coordinated (the TSDR client does coordinate across processes with lock files)
 - ODP retries, at most 3: 429 waits 5 s or `Retry-After` if longer; 5xx waits 1/2/3 s; a non-timeout transport error waits 250/500/750 ms. A required wait above 30 s is returned to the caller instead
 - The ODP key is sent only to the API origin, never to redirect targets or absolute URLs on other hosts
@@ -85,7 +87,7 @@ go test ./tests/integration/ -v -run "BUG"                 # All bug regression 
 - Test names follow `TestTNNNx_Description` pattern (e.g., `TestT004b_AssigneeSearch_BUG001`)
 
 ## API Base URLs
-Patent ODP: https://api.uspto.gov (all endpoints under /api/v1/)
+Patent ODP: https://api.uspto.gov (all endpoints under /api/v1/; trademark decisions under /api/v1/trademark/decision-proceeding/)
 Trademark Search: https://tmsearch.uspto.gov (versioned path discovered at runtime)
 TSDR: https://tsdrapi.uspto.gov (endpoints under /ts/cd/)
 

@@ -32,6 +32,11 @@ uspto trademark case get sn:97054561 -f json
 # Inspect its file wrapper and build a reusable local bundle
 uspto trademark docs list sn:97054561
 uspto trademark case bundle sn:97054561 --output ./openai-mark
+
+# Expungement/reexamination proceedings, petitions to the Director and
+# administrative sanctions come from the Open Data Portal (ODP key)
+uspto trademark decisions search --category administrative --limit 5
+uspto trademark decisions download <documentIdentifier>
 ```
 
 `trademark search` uses the public backend currently used by the official [Trademark Search](https://tmsearch.uspto.gov/) UI. USPTO does not publish that backend as a stable developer API, so treat search hits as candidates and hydrate selected identifiers through TSDR. See the [trademark API reference](docs/tsdr-api/README.md) for the verified service boundaries, endpoint inventory, and schemas.
@@ -44,6 +49,7 @@ USPTO patent and trademark APIs do not share one credential:
 | --- | --- | --- | --- |
 | Patent search, file wrappers, PTAB, petitions, and bulk-product discovery | Open Data Portal at `api.uspto.gov` | ODP key in `X-API-KEY` | `USPTO_API_KEY` / `uspto config set-api-key` |
 | Trademark discovery by wording, owner, goods/services, or class | Trademark Search companion at `tmsearch.uspto.gov` | None currently required | None |
+| Trademark decisions and proceedings (expungement, reexamination, petitions to the Director, administrative orders) | Open Data Portal at `api.uspto.gov` | ODP key in `X-API-KEY` | `USPTO_API_KEY` / `uspto config set-api-key` |
 | Official trademark status, documents, images, and case artifacts | TSDR at `tsdrapi.uspto.gov` | Separate TSDR key in `USPTO-API-KEY` | `USPTO_TSDR_API_KEY` / `uspto config set-tsdr-api-key` |
 
 Get the ODP key from the [MyODP dashboard](https://data.uspto.gov/myodp). Get the separate TSDR key from the [USPTO API Manager](https://account.uspto.gov/api-manager/). Never send one service's key to the other service.
@@ -128,6 +134,7 @@ Use `uspto trademark` (aliases: `tm`, `marks`) for the complete trademark surfac
 | Goal | Command |
 | --- | --- |
 | Discover candidate marks | `trademark search` |
+| Search expungement/reexamination proceedings, petitions to the Director and administrative orders; download their PDFs (ODP key) | `trademark decisions search`, `get`, `download` |
 | Compact or complete official case data | `trademark case status`, `case get` |
 | Goods/services, parties, prosecution events, designs, assignments, publications | `trademark case goods`, `parties`, `events`, `designs`, `assignments`, `publications` |
 | Registration maintenance data | `trademark case maintenance` |
@@ -139,6 +146,52 @@ Use `uspto trademark` (aliases: `tm`, `marks`) for the complete trademark surfac
 | Check update metadata or inspect an opaque case-map token | `trademark last-update`, experimental `trademark casemap` |
 | Inspect sound/motion-mark media | `trademark multimedia` |
 | Retrieve the live contract or any safe GET/POST retrieval route | `trademark api-spec`, `trademark request` |
+
+#### Decisions and proceedings (Open Data Portal)
+
+`trademark decisions` (aliases: `decision`, `proceedings`) covers the Trademark Decisions and Proceedings dataset the Open Data Portal added in release 5.1 (2026-11-13): expungement and reexamination proceedings, petitions to the Director, and administrative orders and sanctions. It uses the **ODP key** (`USPTO_API_KEY`), not the TSDR key.
+
+```bash
+# Newest petitions to the Director this month
+uspto trademark decisions search --category petitions --from 2026-11-01
+
+# Everything on file for one registration, oldest first
+uspto trademark decisions search --serial 87712766 --sort decisionActionDate:asc -f json -q
+
+# Full-text search of the documents, restricted to administrative orders
+uspto trademark decisions search --text "specimen farm" --category administrative -f json -q
+
+# Precedential decisions; proceedings the Director started; expungements against one country's registrants
+uspto trademark decisions search --precedential
+uspto trademark decisions search --director-initiated --proceeding-type reexamination --limit 10
+uspto trademark decisions search --proceeding-type expungement --country CHINA --facets documentTypeDescriptionText --limit 1 -f json -q
+
+# One record, then its PDF
+uspto trademark decisions get <documentIdentifier> -f json -q
+uspto trademark decisions download <documentIdentifier> -o show-cause-order.pdf
+
+# Export every match (pages of 3000, stitched into one CSV or JSON document)
+uspto trademark decisions search --category administrative --download csv > administrative.csv
+```
+
+| Flag | Field |
+| --- | --- |
+| `--category expungement-reexam\|petitions\|administrative` | `decisionProceedingCategory` (`ExpungReexam`, `PetitionsToDirector`, `Administrative`) |
+| `--proceeding-type expungement\|reexamination` | `proceedingTypeCategory` |
+| `--serial`, `--registration` | `serialNumber`, `registrationNumber` (`sn:` / `rn:` prefixes accepted) |
+| `--mark`, `--party`, `--petitioner`, `--registrant`, `--country` | `markLiteralText`, `partyName`, `petitionerName`, `registrantName`, `registrantCitizenshipCountryName` |
+| `--doc-type`, `--petition-number`, `--basis` | `documentTypeDescriptionText`, `petitionNumber`, `filingBasis` |
+| `--text` | `ocrSearchText` (the whole document text is searched) |
+| `--precedential`, `--director-initiated` | `precedentialIndicator:true`, `initiatedByDirectorIndicator:true` |
+| `--from`, `--to` | `decisionActionDate` range |
+
+A positional query uses the ODP simplified syntax and is ANDed with the flags. Things worth knowing:
+
+- USPTO returns only the first 500 characters of a document's text (`ocrSearchText`), in search and in `get`. Download the PDF for the rest.
+- `download` works for expungement, reexamination and administrative records. Petition-to-the-Director documents are generally not in the decisions file store; the command exits 4 and names the TSDR command for that serial number (`uspto trademark docs list sn:<serial>`).
+- One search request returns at most 100 rows and one export request 3000. `--limit` above 100, `--all` and `--download` page automatically and add tie-breaking sort fields, because the service orders same-day records differently between requests.
+- `--sort` takes `field:asc|desc`. Sortable: `decisionActionDate`, `decisionProceedingCategory`, `documentTypeDescriptionText`, `fileSize`, `filingBasis`, `investigationNumber`, `markLiteralText`, `partyName`, `petitionNumber`, `petitionerName`, `proceedingNumber`, `proceedingTypeCategory`, `registrantCitizenshipCountryName`, `registrantName`, `registrationNumber`, `serialNumber`.
+- A search with no match is an empty result (exit 0), not an error.
 
 #### Search and candidate hydration
 

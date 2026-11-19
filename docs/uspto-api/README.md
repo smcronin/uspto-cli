@@ -11,6 +11,7 @@ Complete reference for the USPTO Open Data Portal REST API at `api.uspto.gov`.
 | [endpoints-patent.md](./endpoints-patent.md) | Patent Application API (16 endpoints) |
 | [endpoints-ptab.md](./endpoints-ptab.md) | PTAB Trial, Decision, Document, Appeal, Interference APIs (24 endpoints) |
 | [endpoints-petition.md](./endpoints-petition.md) | Petition Decision API (5 endpoints) |
+| [endpoints-trademark-decisions.md](./endpoints-trademark-decisions.md) | Trademark Decisions and Proceedings API (4 routes, with live-verified behavior) |
 | [endpoints-bulk.md](./endpoints-bulk.md) | Bulk Data API (3 endpoints) |
 | [query-syntax.md](./query-syntax.md) | Search query syntax, operators, field names |
 | [response-schemas.md](./response-schemas.md) | All response JSON schemas |

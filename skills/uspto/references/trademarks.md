@@ -10,6 +10,7 @@ code, trademark prosecution history, registration maintenance, or TSDR file.
 | --- | --- | --- |
 | Discover marks by wording, owner, goods/services, class, attorney, design code, date, or live/dead status | `uspto trademark search` | None |
 | Retrieve an identified official record, prosecution history, document, mark image, maintenance data, or update time | `uspto trademark ...` other than `search` | Separate TSDR key |
+| Search expungement and reexamination proceedings, petitions to the Director, administrative orders and sanctions; download those documents | `uspto trademark decisions search`, `get`, `download` | Patent ODP key (`USPTO_API_KEY`) |
 | Analyze the whole trademark corpus | `uspto bulk ...` and a local index | ODP key/product access |
 
 Trademark Search is the public backend used by the official USPTO web UI. It
@@ -262,6 +263,87 @@ Swagger also exposes `trademark casemap <opaque-idtoken>` for tokens produced
 by internal TSDR workflows. It is experimental and is not an identifier mapper;
 pass `sn:`, `rn:`, `ir:`, `ref:`, and `pn:` identifiers directly to case
 commands.
+
+## Decisions and proceedings
+
+`uspto trademark decisions` (aliases `decision`, `proceedings`) reads the Open
+Data Portal's Trademark Decisions and Proceedings dataset, added in ODP
+release 5.1 on 2026-11-13. It is the one trademark command group that uses the
+patent ODP key (`USPTO_API_KEY`, header `X-API-KEY`, host `api.uspto.gov`); a
+TSDR key is neither needed nor accepted. About 26,000 records in three
+categories:
+
+| `--category` | API value | Contents |
+| --- | --- | --- |
+| `expungement-reexam` | `ExpungReexam` | Expungement and reexamination proceedings: petitions received, notices of institution, office actions, responses, terminations, cancellations |
+| `petitions` | `PetitionsToDirector` | Petitions to the Director: granted, denied, dismissed, withdrawn |
+| `administrative` | `Administrative` | Show-cause orders, sanctions orders and administrative orders |
+
+```bash
+# Filters combine with AND; a positional query in ODP simplified syntax is ANDed too
+uspto trademark decisions search --category petitions --from 2026-11-01 --to 2026-11-30 -f json -q
+uspto trademark decisions search --serial 87712766 --sort decisionActionDate:asc -f json -q
+uspto trademark decisions search --registration rn:5513424 -f json -q
+uspto trademark decisions search --mark "CRUSADE AGAINST ANGER" -f json -q
+uspto trademark decisions search --mark "GALA*" -f json -q
+uspto trademark decisions search --party "Bang Shia" -f json -q
+uspto trademark decisions search --text "specimen farm" --category administrative -f json -q
+uspto trademark decisions search --proceeding-type expungement --country CHINA --limit 10 -f json -q
+uspto trademark decisions search --precedential -f json -q
+uspto trademark decisions search --director-initiated --limit 10 -f json -q
+uspto trademark decisions search 'documentTypeDescriptionText:"Sanctions" AND decisionActionDate:[2025-01-01 TO 2025-12-31]' -f json -q
+
+# Counts by field: pagination.total is the match count, facets the breakdown
+uspto trademark decisions search --category expungement-reexam --facets documentTypeDescriptionText,proceedingTypeCategory --limit 1 -f json -q
+
+# One record, and its PDF
+uspto trademark decisions get <documentIdentifier> -f json -q
+uspto trademark decisions download <documentIdentifier> -o ./orders/ -f json -q
+
+# Every match: paged search, or a raw CSV/JSON export
+uspto trademark decisions search --category administrative --all -f ndjson -q
+uspto trademark decisions search --category administrative --download csv > administrative.csv
+```
+
+Other search flags: `--petitioner`, `--registrant`, `--doc-type`,
+`--petition-number`, `--basis` (`1(a)`, `44(e)`, `66(a)`), `--fields`,
+`--offset`, `--no-text`.
+
+Record fields: `documentIdentifier` (the key for `get` and `download`),
+`decisionProceedingCategory`, `proceedingTypeCategory` (`EXPUNGEMENT`,
+`REEXAMINATION`), `documentTypeDescriptionText`, `decisionActionDate`,
+`serialNumber`, `registrationNumber`, `markLiteralText`, `partyName`,
+`petitionerName`, `petitionNumber`, `registrantName`,
+`registrantCitizenshipCountryName`, `filingBasis`, `precedentialIndicator`,
+`initiatedByDirectorIndicator`, `fileName`, `fileSize`,
+`lastModifiedDateTime`, `ocrSearchText`, `documentURI` (TSDR case link),
+`markImageURI`, `fileDownloadURI` (administrative records only). Fields a
+record lacks are omitted; administrative records have no serial number or
+mark.
+
+Limits and behavior to rely on:
+
+- `ocrSearchText` is only the first 500 characters of the document text, in
+  search results and in `get`. `--text` still searches the whole text. To read
+  a document, `download` the PDF. Never present the excerpt as the full
+  decision.
+- `download` serves expungement, reexamination and administrative documents.
+  Petition-to-the-Director documents are generally not in the decisions file
+  store: the command exits 4 and names
+  `uspto trademark docs list sn:<serial>`, which needs the TSDR key.
+- A search request returns at most 100 rows; `--limit` above 100 and `--all`
+  page automatically. `--download` pages by 3000. There is no 10,000-row
+  ceiling on this dataset.
+- A search with no match returns `results: []` with exit 0.
+- `--sort field:asc|desc`; the default is newest `decisionActionDate` first.
+  `lastModifiedDateTime` and `documentIdentifier` are not sortable.
+- With `--fields`, USPTO omits the URI fields; `documentIdentifier` is always
+  returned.
+- Read `warnings` on multi-page results: the service can repeat a record
+  across pages. The CLI adds tie-breaking sort fields and drops repeats, and
+  warns when it had to drop any.
+- To go from a record to the case itself, pass its serial number to TSDR:
+  `uspto trademark case status sn:<serialNumber>`.
 
 ## Rate limits and recovery
 

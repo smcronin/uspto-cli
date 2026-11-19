@@ -261,6 +261,11 @@ func providerForCommand(cmd *cobra.Command) apiProvider {
 		if path[2] == "search" {
 			return providerTMSearch
 		}
+		// Trademark Decisions and Proceedings live on the Open Data Portal
+		// and take the ODP key, unlike the rest of the trademark group.
+		if path[2] == "decisions" {
+			return providerODP
+		}
 		return providerTSDR
 	}
 	for c := cmd; c != nil; c = c.Parent() {
