@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/smcronin/uspto-cli/internal/api"
 	"github.com/smcronin/uspto-cli/internal/types"
 	"github.com/spf13/cobra"
@@ -31,8 +32,9 @@ const (
 )
 
 // tmDecisionFields are the fields the service accepts in fields, sort and
-// facets. documentIdentifier and the URI fields are not selectable: the
-// identifier is always returned and the URIs only without a field selection.
+// facets. documentIdentifier and the URI fields are not selectable. The
+// identifier is always returned; documentURI and markImageURI come back when
+// serialNumber is returned; fileDownloadURI only without a field selection.
 var tmDecisionFields = []string{
 	"decisionActionDate", "decisionProceedingCategory", "deleteIndicator",
 	"documentTypeDescriptionText", "fileName", "fileSize", "filingBasis",
@@ -60,7 +62,7 @@ Categories (--category):
   administrative       Show-cause orders, sanctions and administrative orders`,
 	Example: `  uspto trademark decisions search --category petitions --from 2026-11-01
   uspto trademark decisions search --serial 87712766 -f json
-  uspto trademark decisions search --text "specimen farm" --category administrative
+  uspto trademark decisions search --text "unauthorized practice" --category administrative
   uspto trademark decisions get <documentIdentifier> -f json
   uspto trademark decisions download <documentIdentifier> -o order.pdf`,
 	Args: validateTrademarkGroupArgs,
@@ -119,7 +121,7 @@ Searchable fields: ` + strings.Join(tmDecisionFields, ", "),
   uspto trademark decisions search --serial 87712766 -f json
   uspto trademark decisions search --registration 5513424 --sort decisionActionDate:asc
   uspto trademark decisions search --mark "CRUSADE AGAINST ANGER"
-  uspto trademark decisions search --text "specimen farm" --category administrative
+  uspto trademark decisions search --text "unauthorized practice" --category administrative
   uspto trademark decisions search --precedential -f json
   uspto trademark decisions search --category expungement-reexam --facets documentTypeDescriptionText --limit 1
   uspto trademark decisions search --category administrative --download csv > administrative.csv`,
@@ -147,7 +149,7 @@ func init() {
 	f.StringVar(&tmDecisionSearchFlags.from, "from", "", "Decision action date on or after YYYY-MM-DD")
 	f.StringVar(&tmDecisionSearchFlags.to, "to", "", "Decision action date on or before YYYY-MM-DD")
 	f.StringVarP(&tmDecisionSearchFlags.sort, "sort", "s", "", "Sort field and order, for example decisionActionDate:asc (default: newest first)")
-	f.StringVar(&tmDecisionSearchFlags.fields, "fields", "", "Comma-separated fields to return (URI fields are then omitted by USPTO)")
+	f.StringVar(&tmDecisionSearchFlags.fields, "fields", "", "Comma-separated fields to return (TSDR links come back only with serialNumber; fileDownloadURI is omitted)")
 	f.StringVar(&tmDecisionSearchFlags.facets, "facets", "", "Comma-separated facet fields, for example decisionProceedingCategory")
 	f.IntVarP(&tmDecisionSearchFlags.limit, "limit", "l", 25, "Maximum number of results; above 100 is fetched in pages")
 	f.IntVarP(&tmDecisionSearchFlags.offset, "offset", "o", 0, "Starting offset for pagination")
@@ -465,11 +467,16 @@ func runTrademarkDecisionsSearch(cmd *cobra.Command, args []string) error {
 	if repeats > 0 {
 		notes.Warnings = append(notes.Warnings, tmDecisionRepeatWarning(repeats))
 	}
-	var data interface{} = out
 	if flagFormat == "table" || flagFormat == "" {
-		data = tmDecisionTableRows(out)
+		writeTrademarkDecisionTable(out)
+		if len(facets) > 0 {
+			writeFacetsTable(facets)
+		}
+	} else {
+		outputResultWithNotes(cmd, out, pagination, facets, notes)
 	}
-	outputResultWithNotes(cmd, data, pagination, facets, notes)
+	// Outside JSON there is no envelope to carry the warnings.
+	reportWarnings(notes.Warnings)
 	return nil
 }
 
@@ -694,33 +701,40 @@ func normalizeTrademarkDecision(record map[string]interface{}, includeText bool)
 	return out
 }
 
-// tmDecisionTableRows picks the columns worth a terminal's width; the other
-// formats carry every field. The numeric prefixes keep the table writer's
-// alphabetical column order meaningful.
-func tmDecisionTableRows(records []map[string]interface{}) []map[string]string {
-	rows := make([]map[string]string, 0, len(records))
+// writeTrademarkDecisionTable prints the columns worth a terminal's width,
+// in reading order; the other formats carry every field.
+func writeTrademarkDecisionTable(records []map[string]interface{}) {
+	if len(records) == 0 {
+		if !flagQuiet {
+			fmt.Fprintln(os.Stderr, "No results.")
+		}
+		return
+	}
 	str := func(record map[string]interface{}, key string) string {
 		if v, ok := record[key]; ok {
 			return fmt.Sprint(v)
 		}
 		return ""
 	}
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"date", "category", "document", "serial", "mark", "party", "document identifier"})
 	for _, record := range records {
 		name := str(record, "partyName")
 		if name == "" {
 			name = str(record, "registrantName")
 		}
-		rows = append(rows, map[string]string{
-			"1 date":       str(record, "decisionActionDate"),
-			"2 category":   str(record, "decisionProceedingCategory"),
-			"3 document":   truncateRunes(str(record, "documentTypeDescriptionText"), 44),
-			"4 serial":     str(record, "serialNumber"),
-			"5 mark":       truncateRunes(str(record, "markLiteralText"), 24),
-			"6 party":      truncateRunes(name, 30),
-			"7 documentId": str(record, "documentIdentifier"),
+		t.AppendRow(table.Row{
+			str(record, "decisionActionDate"),
+			str(record, "decisionProceedingCategory"),
+			truncateRunes(str(record, "documentTypeDescriptionText"), 44),
+			str(record, "serialNumber"),
+			truncateRunes(str(record, "markLiteralText"), 24),
+			truncateRunes(name, 30),
+			str(record, "documentIdentifier"),
 		})
 	}
-	return rows
+	t.Render()
 }
 
 func truncateRunes(s string, n int) string {

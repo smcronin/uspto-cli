@@ -188,7 +188,7 @@ uspto trademark decisions search --registration 5513424 --sort decisionActionDat
 uspto trademark decisions search --category expungement-reexam --facets documentTypeDescriptionText,proceedingTypeCategory --limit 1 -f json -q
 
 # Sanctions and show-cause orders that mention a phrase anywhere in the document
-uspto trademark decisions search --category administrative --text "specimen farm"
+uspto trademark decisions search --category administrative --text "unauthorized practice"
 
 # Read one order: the record, then the PDF
 uspto trademark decisions get <documentIdentifier> -f json -q
