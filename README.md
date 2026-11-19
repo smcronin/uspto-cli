@@ -159,7 +159,7 @@ uspto trademark decisions search --category petitions --from 2026-11-01
 uspto trademark decisions search --serial 87712766 --sort decisionActionDate:asc -f json -q
 
 # Full-text search of the documents, restricted to administrative orders
-uspto trademark decisions search --text "specimen farm" --category administrative -f json -q
+uspto trademark decisions search --text "unauthorized practice" --category administrative -f json -q
 
 # Precedential decisions; proceedings the Director started; expungements against one country's registrants
 uspto trademark decisions search --precedential
@@ -192,6 +192,7 @@ A positional query uses the ODP simplified syntax and is ANDed with the flags. T
 - One search request returns at most 100 rows and one export request 3000. `--limit` above 100, `--all` and `--download` page automatically and add tie-breaking sort fields, because the service orders same-day records differently between requests.
 - `--sort` takes `field:asc|desc`. Sortable: `decisionActionDate`, `decisionProceedingCategory`, `documentTypeDescriptionText`, `fileSize`, `filingBasis`, `investigationNumber`, `markLiteralText`, `partyName`, `petitionNumber`, `petitionerName`, `proceedingNumber`, `proceedingTypeCategory`, `registrantCitizenshipCountryName`, `registrantName`, `registrationNumber`, `serialNumber`.
 - A search with no match is an empty result (exit 0), not an error.
+- With `--fields`, USPTO returns `documentURI` and `markImageURI` only when `serialNumber` is one of the fields, and leaves `fileDownloadURI` out. `documentIdentifier` is always returned.
 
 #### Search and candidate hydration
 

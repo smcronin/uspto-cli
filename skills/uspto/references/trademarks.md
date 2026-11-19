@@ -287,7 +287,7 @@ uspto trademark decisions search --registration rn:5513424 -f json -q
 uspto trademark decisions search --mark "CRUSADE AGAINST ANGER" -f json -q
 uspto trademark decisions search --mark "GALA*" -f json -q
 uspto trademark decisions search --party "Bang Shia" -f json -q
-uspto trademark decisions search --text "specimen farm" --category administrative -f json -q
+uspto trademark decisions search --text "unauthorized practice" --category administrative -f json -q
 uspto trademark decisions search --proceeding-type expungement --country CHINA --limit 10 -f json -q
 uspto trademark decisions search --precedential -f json -q
 uspto trademark decisions search --director-initiated --limit 10 -f json -q
@@ -296,7 +296,7 @@ uspto trademark decisions search 'documentTypeDescriptionText:"Sanctions" AND de
 # Counts by field: pagination.total is the match count, facets the breakdown
 uspto trademark decisions search --category expungement-reexam --facets documentTypeDescriptionText,proceedingTypeCategory --limit 1 -f json -q
 
-# One record, and its PDF
+# One record (results is an object, not a list), and its PDF
 uspto trademark decisions get <documentIdentifier> -f json -q
 uspto trademark decisions download <documentIdentifier> -o ./orders/ -f json -q
 
@@ -317,9 +317,10 @@ Record fields: `documentIdentifier` (the key for `get` and `download`),
 `registrantCitizenshipCountryName`, `filingBasis`, `precedentialIndicator`,
 `initiatedByDirectorIndicator`, `fileName`, `fileSize`,
 `lastModifiedDateTime`, `ocrSearchText`, `documentURI` (TSDR case link),
-`markImageURI`, `fileDownloadURI` (administrative records only). Fields a
-record lacks are omitted; administrative records have no serial number or
-mark.
+`markImageURI`, `fileDownloadURI` (administrative records only). `get` adds
+`textractStatus` (`SUCCEEDED`, `Complete` or `FAILED`: whether USPTO's text
+extraction worked). Fields a record lacks are omitted; administrative records
+have no serial number or mark.
 
 Limits and behavior to rely on:
 
@@ -336,9 +337,11 @@ Limits and behavior to rely on:
   ceiling on this dataset.
 - A search with no match returns `results: []` with exit 0.
 - `--sort field:asc|desc`; the default is newest `decisionActionDate` first.
-  `lastModifiedDateTime` and `documentIdentifier` are not sortable.
-- With `--fields`, USPTO omits the URI fields; `documentIdentifier` is always
-  returned.
+  `lastModifiedDateTime` and `documentIdentifier` are not sortable: USPTO
+  answers 400 (CLI exit 1) and the message lists the sortable fields.
+- With `--fields`, USPTO returns `documentURI` and `markImageURI` only when
+  `serialNumber` is one of the fields, and leaves `fileDownloadURI` out.
+  `documentIdentifier` is always returned.
 - Read `warnings` on multi-page results: the service can repeat a record
   across pages. The CLI adds tie-breaking sort fields and drops repeats, and
   warns when it had to drop any.

@@ -110,7 +110,7 @@ Portal dataset that uses the **ODP key**, not the TSDR key:
 ```bash
 uspto trademark decisions search --category petitions --from 2026-11-01 -f json -q
 uspto trademark decisions search --serial 87712766 --sort decisionActionDate:asc -f json -q
-uspto trademark decisions search --text "specimen farm" --category administrative -f json -q
+uspto trademark decisions search --text "unauthorized practice" --category administrative -f json -q
 uspto trademark decisions get <documentIdentifier> -f json -q
 uspto trademark decisions download <documentIdentifier> -o order.pdf -f json -q
 ```
