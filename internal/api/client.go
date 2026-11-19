@@ -1085,6 +1085,41 @@ func (c *Client) GetPetitionDecision(ctx context.Context, recordID string, inclu
 }
 
 // ==========================================================================
+// Trademark Decisions and Proceedings
+// ==========================================================================
+
+// TrademarkDecisionsPath is the base path of the Trademark Decisions and
+// Proceedings API (expungement and reexamination proceedings, petitions to
+// the Director, administrative orders and sanctions).
+const TrademarkDecisionsPath = "/api/v1/trademark/decision-proceeding"
+
+// SearchTrademarkDecisions searches trademark decisions and proceedings. The
+// endpoint accepts a limit of 1 to 100.
+func (c *Client) SearchTrademarkDecisions(ctx context.Context, params map[string]string) (*types.TrademarkDecisionSearchResponse, error) {
+	return requestJSON[types.TrademarkDecisionSearchResponse](c, ctx, http.MethodGet,
+		TrademarkDecisionsPath+"/search", nil, params)
+}
+
+// DownloadTrademarkDecisions hits the search download endpoint and returns
+// the raw CSV or JSON. The endpoint accepts a limit of 1 to 3000.
+func (c *Client) DownloadTrademarkDecisions(ctx context.Context, params map[string]string) ([]byte, error) {
+	return c.request(ctx, http.MethodGet, TrademarkDecisionsPath+"/search/download", nil, params)
+}
+
+// GetTrademarkDecision retrieves one record by its document identifier.
+func (c *Client) GetTrademarkDecision(ctx context.Context, documentID string) (*types.TrademarkDecisionGetResponse, error) {
+	return requestJSON[types.TrademarkDecisionGetResponse](c, ctx, http.MethodGet,
+		TrademarkDecisionsPath+"/search/"+url.PathEscape(documentID), nil, nil)
+}
+
+// TrademarkDecisionFilePath is the API path that redirects to the stored
+// document. The file extension is part of the key: without it the redirect
+// target answers with the portal's HTML page instead of the document.
+func TrademarkDecisionFilePath(documentID, ext string) string {
+	return TrademarkDecisionsPath + "/file/proceedings-decisions/" + url.PathEscape(documentID+ext)
+}
+
+// ==========================================================================
 // Document Download
 // ==========================================================================
 

@@ -29,7 +29,10 @@ and raw case artifacts from TSDR.
 
 These are different services:
   search     Keyless official Trademark Search UI backend (experimental API)
-  retrieval TSDR at tsdrapi.uspto.gov with USPTO_TSDR_API_KEY
+  retrieval  TSDR at tsdrapi.uspto.gov with USPTO_TSDR_API_KEY
+  decisions  Open Data Portal at api.uspto.gov with USPTO_API_KEY: expungement
+             and reexamination proceedings, petitions to the Director, and
+             administrative orders and sanctions
 
 The patent Open Data Portal key will not authenticate to TSDR. Get a separate
 TSDR key at https://account.uspto.gov/api-manager/.`,
@@ -37,6 +40,7 @@ TSDR key at https://account.uspto.gov/api-manager/.`,
   uspto trademark case status sn:97054561
   uspto trademark docs list sn:97054561
   uspto trademark image 97054561 -o mark.png
+  uspto trademark decisions search --category petitions --from 2026-11-01
   uspto trademark request /ts/cd/casestatus/sn97054561/info.json -f json`,
 	Args: validateTrademarkGroupArgs,
 	RunE: showTrademarkGroupHelp,
